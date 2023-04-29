@@ -1,0 +1,12 @@
+[package]
+name = "project_x_procgen"
+description = "Project X: crate pertaining to procedural generation in the game."
+version = "0.0.1"
+authors = ["pierreyoda <pierreyoda@users.noreply.github.com>"]
+edition = "2021"
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

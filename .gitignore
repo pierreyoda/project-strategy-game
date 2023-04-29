@@ -1,0 +1,5 @@
+# rustc
+target
+
+# wasm-bindgen (through client's webpack+wasm-pack plugin)
+wasm-pkg

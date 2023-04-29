@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "core",
+    "procgen",
+    "wasm_bridge",
+]
