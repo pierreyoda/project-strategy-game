@@ -7,6 +7,10 @@
 pub mod buildings;
 pub mod economy;
 pub mod ids;
+pub mod infrastructure;
+pub mod logistics;
 pub mod military;
 pub mod people;
 pub mod properties;
+pub mod resources;
+pub mod settlements;

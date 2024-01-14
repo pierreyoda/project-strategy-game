@@ -3,7 +3,7 @@
 //! See: https://www.redblobgames.com/grids/hexagons/#coordinates
 
 use std::{
-    hash::{Hash, Hasher},
+    hash::Hash,
     ops::{Add, Sub},
 };
 
@@ -46,7 +46,7 @@ pub trait HexMapCoordinatesSystem:
 /// It is a `u16`, which should be more than enough, even in computations.
 pub type CubeCoordsScalar = i16;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CubeCoords {
     q: CubeCoordsScalar,
     r: CubeCoordsScalar,
@@ -110,13 +110,6 @@ impl Sub for CubeCoords {
             r: self.q - rhs.q,
             s: self.q - rhs.q,
         }
-    }
-}
-
-/// Needed for storage in `HexMap`.
-impl Hash for CubeCoords {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        todo!()
     }
 }
 

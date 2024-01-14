@@ -3,10 +3,18 @@
 use std::fmt::Debug;
 
 #[derive(Debug)]
-pub struct HexMapArtificialTileDate {
+pub struct HexMapArtificialTileData {
+    supply_node: Option<Box<dyn HexMapTileSupplyNode>>,
+    infrastructure: Option<Vec<Box<dyn HexMapTileInfrastructure>>>,
     settlement: Option<Box<dyn HexMapTileSettlement>>,
     buildings: Option<Vec<Box<dyn HexMapTileBuilding>>>,
 }
+
+/// A built supply node on the tile.
+pub trait HexMapTileSupplyNode: Debug {}
+
+/// A built infrastructure on the tile.
+pub trait HexMapTileInfrastructure: Debug {}
 
 /// A lived-in settlement on the tile, regardless of size or status (from tiny remote outpost or village, to State capital).
 pub trait HexMapTileSettlement: Debug {}

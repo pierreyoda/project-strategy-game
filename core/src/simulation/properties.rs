@@ -2,8 +2,7 @@
 ///!
 ///! For instance, a property can be the resource extraction rate for a mining facility building.
 ///!
-///! Aimed at being used from scripts.so Rust types **must not** leak to the "API surface" of properties.
-///
+///! Aimed at being used from scripts, so Rust types **must not** leak to the "API surface" of properties.
 use std::collections::HashMap;
 
 use super::ids::{SimulationID, WithSimulationID};
@@ -13,6 +12,7 @@ use super::ids::{SimulationID, WithSimulationID};
 pub enum SimulationPropertyValue {
     /// A small integer
     SmallInteger(i16),
+    /// An integer.
     Integer(i32),
     /// A floating point number property.
     ///

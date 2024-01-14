@@ -23,9 +23,15 @@ pub enum HexMapDirection {
     NorthWest,
 }
 
-// TODO: dont forget preaollocation from size map
+// TODO: dont forget preallocation from size map
 pub struct HexMap {
     tiles: HexMapStorage,
+}
+
+impl HexMap {
+    pub fn from_tiles(tiles: HexMapStorage) -> Self {
+        Self { tiles }
+    }
 }
 
 impl fmt::Debug for HexMap {
@@ -38,6 +44,7 @@ impl fmt::Debug for HexMap {
 mod tests {
     use crate::hex_map::{
         coordinates::{CubeCoords, CubeCoordsScalar},
+        tile::HexMapTile,
         HexMap, HexMapStorage,
     };
 
@@ -53,7 +60,10 @@ mod tests {
         for q in left..=right {
             let q_offset = q >> 1;
             for r in (top - q_offset)..=(bottom - q_offset) {
-                tiles.insert(CubeCoords::from_axial_coords(q, r), todo!());
+                tiles.insert(
+                    CubeCoords::from_axial_coords(q, r),
+                    HexMapTile::from_properties(10),
+                );
             }
         }
         HexMap { tiles }

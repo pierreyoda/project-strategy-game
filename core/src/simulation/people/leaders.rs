@@ -4,11 +4,14 @@
 //! but it concerns anyone which is vital (or just interesting) to model at an individual scale.
 //!
 //! For many reasons (including performance, but also gameplay-related concerns like UI), the simulated leader "pool"
-//! will tend to limit itself to echelons in the society where the leader acts for a "big" group of aspect ot their State.
+//! will tend to limit itself to echelons in the society where the leader acts for a "big" group of aspects ot their State.
 //!
 //! For instance, mayors of significant cities will be important to be represented, but not their entire cabinet.
 
-use crate::simulation::ids::{SimulationID, WithSimulationID};
+use crate::simulation::{
+    economy::MaintenanceCost,
+    ids::{SimulationID, WithSimulationID},
+};
 
 #[derive(Debug)]
 pub enum IndividualName {
@@ -36,10 +39,10 @@ pub struct IndividualIDCard {
 /// Leader present at game start will become an Ancestor if it dies (this may be rare, depending on turns scale).
 ///
 /// An Ancestor is not necessarily dead, but does not have an active impact on the simulation.
-/// For instance, your capital's mayors' parents may be alice but their impact, even on their own son/daughter,
+/// For instance, your capital's mayors' parents may be alive but their impact, even on their own son/daughter,
 /// will not be explicitly modelled (would be too costly performance-wise to do that for every leaders).
 /// Still in that case, the parent(s)' influence on that mayor will already be represented in the Leader's properties
-/// through the education their imparted in the mayor's childhood.
+/// through the education they imparted in the mayor's childhood.
 ///
 /// An Ancestor will be represented by much less "data" compared to a Leader,
 /// which is needed for performance reasons first and foremost (including in-memory or on-disk storage size).
@@ -65,7 +68,7 @@ pub struct Lineage {
     /// Stored as (parent1, parent2).
     ///
     /// In practically all cases, this corresponds to (mother, father)
-    /// in the biological sens.
+    /// in the biological sense.
     ///
     /// However, room is left there to model peculiar situations like a leader being adopted.
     /// For instance, In the Roman Empire of old, their first emperor was Augustus, who was adopted by Ceasar in his will.
@@ -77,10 +80,9 @@ pub struct Lineage {
 #[derive(Debug)]
 pub struct Leader {
     id_card: IndividualIDCard,
-    firstname: String,
-    surname: String,
     /// See `Leader.traits`
     traits: Vec<Trait>,
+    upkeep: Vec<MaintenanceCost>,
 }
 
 impl WithSimulationID for Leader {
@@ -100,7 +102,7 @@ pub enum Trait {
     /// A trait pertaining to a singular personality aspect of an individual.
     ///
     /// Examples: honest, corrupt.
-    TraitPersonality(TraitAbility),
+    TraitPersonality(TraitPersonality),
     /// A trait pertaining to a singular, publicly-known ability for an individual.
     ///
     /// Examples: excellent logistician.

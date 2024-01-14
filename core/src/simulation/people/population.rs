@@ -1,6 +1,9 @@
 //! People simulation at a group aggregate scale.
 
-use crate::simulation::ids::{SimulationID, WithSimulationID};
+use crate::simulation::{
+    economy::MaintenanceCost,
+    ids::{SimulationID, WithSimulationID},
+};
 
 /// A population group is an abstraction to represent the collective specificities and impact
 /// (eg. goods consumption, or voting tendencies).
@@ -8,6 +11,8 @@ use crate::simulation::ids::{SimulationID, WithSimulationID};
 pub struct PopulationGroup {
     /// Must be `SimulationID::EntityID`.
     id: SimulationID,
+    size: u32,
+    upkeep: Vec<MaintenanceCost>,
 }
 
 impl WithSimulationID for PopulationGroup {

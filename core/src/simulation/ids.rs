@@ -30,7 +30,7 @@ pub type SimulationMapEntityID = u32;
 /// convenience - it's easier to give unique names without a relatively complex machinery, with probably poor DevX.
 /// It's a trade-off made for easier game script development.
 ///
-/// Cannot be `&static str` due to scripting constraints, so use the heap-allocated String is used.
+/// Cannot be `&static str` due to scripting constraints, so the heap-allocated String is used.
 pub type SimulationAbstractID = String;
 
 /// ID of a utility component attached to a simulation component.
