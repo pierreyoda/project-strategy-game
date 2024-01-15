@@ -3,6 +3,7 @@ use crate::hex_map::coordinates::HexMapCoordinates;
 use super::{
     ids::{SimulationID, WithSimulationID},
     people::leaders::Leader,
+    properties::SimulationPropertyStorage,
 };
 
 /// A military unit.
@@ -11,6 +12,7 @@ pub struct Unit {
     /// Must be `SimulationID::SimulationMapEntityID`.
     id: SimulationID,
     position: HexMapCoordinates,
+    attributes: SimulationPropertyStorage,
 }
 
 impl WithSimulationID for Unit {
@@ -28,6 +30,7 @@ pub struct HqUnit {
     position: HexMapCoordinates,
     superior: Option<Box<HqUnit>>,
     subordinates: Option<Vec<Box<HqUnit>>>,
+    attributes: SimulationPropertyStorage,
     attached_units: Vec<Unit>,
 }
 

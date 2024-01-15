@@ -33,14 +33,6 @@ pub type SimulationMapEntityID = u32;
 /// Cannot be `&static str` due to scripting constraints, so the heap-allocated String is used.
 pub type SimulationAbstractID = String;
 
-/// ID of a utility component attached to a simulation component.
-///
-/// See  `SimulationPropertyStorage` for instance.
-///
-/// Uses a String for better debugging. "Prefixed" by the simulation component the container is attached to.
-/// TODO: find a better, more generic name than "container" (adapt to needs raising in the POC)
-pub type SimulationAttachedContainerID = String;
-
 /// ID of a property attached to a simulation object, entity or concept.
 ///
 /// It's a String for the same reason as `SimulationAbstractID`, since properties are for scripts to define and use.
@@ -64,7 +56,6 @@ pub enum SimulationID {
     EntityID(SimulationEntityID),
     MapEntityID(SimulationMapEntityID),
     Abstract(SimulationAbstractID),
-    AttachedContainer(SimulationAttachedContainerID),
     Property(SimulationPropertyID),
 }
 
@@ -81,17 +72,8 @@ impl SimulationID {
         Self::Abstract(unique_id.to_string())
     }
 
-    /// The given `key` must be unique among all components attached to the parent.
-    pub fn new_attached_container_id(parent_id: &SimulationID, key: &str) -> Self {
-        Self::AttachedContainer(parent_id.generate_prefixed_attached_unique_string_id(key))
-    }
-
     pub fn new_property_id(unique_id: String) -> Self {
         Self::Property(unique_id)
-    }
-
-    pub fn generate_prefixed_attached_unique_string_id(&self, key: &str) -> String {
-        todo!()
     }
 
     pub fn as_unique_string(&self) -> String {
@@ -105,7 +87,6 @@ impl Hash for SimulationID {
             Self::EntityID(entity_id) => entity_id.hash(state),
             Self::MapEntityID(map_entity_id) => map_entity_id.hash(state),
             Self::Abstract(abstract_id) => abstract_id.hash(state),
-            Self::AttachedContainer(attached_container_id) => attached_container_id.hash(state),
             Self::Property(property_id) => property_id.hash(state),
         }
     }
