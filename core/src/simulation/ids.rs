@@ -58,7 +58,7 @@ pub type SimulationPropertyID = String;
 ///
 /// - Avoid cloning any `SimulationID`, except when necessary.
 /// - Use the static methods provided to instantiate a new `SimulationID`
-/// (would for instance facilitate adding a unicity asserter in the simulation, by just moving the used methods around)
+/// (would for instance facilitate adding a uniqueness asserter in the simulation, by just moving the used methods around)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SimulationID {
     EntityID(SimulationEntityID),

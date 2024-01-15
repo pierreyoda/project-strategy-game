@@ -18,7 +18,7 @@ pub enum SimulationPropertyValue {
     ///
     /// Uses `f64` for precision.
     Float(f64),
-    /// A text number property.
+    /// A text property.
     ///
     /// Stored as a String, so heap-allocated.
     Text(String),
@@ -28,7 +28,7 @@ pub enum SimulationPropertyValue {
 pub struct SimulationProperty {
     /// Must be a `SimulationID::Property`.
     id: SimulationID,
-    /// Current value of he property.
+    /// Current value of the property.
     value: SimulationPropertyValue,
 }
 

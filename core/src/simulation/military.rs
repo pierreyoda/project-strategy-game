@@ -26,6 +26,9 @@ pub struct HqUnit {
     id: SimulationID,
     leader: Option<Leader>,
     position: HexMapCoordinates,
+    superior: Option<Box<HqUnit>>,
+    subordinates: Option<Vec<Box<HqUnit>>>,
+    attached_units: Vec<Unit>,
 }
 
 impl WithSimulationID for HqUnit {
