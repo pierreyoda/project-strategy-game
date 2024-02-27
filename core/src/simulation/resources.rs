@@ -1,10 +1,11 @@
-use crate::hex_map::layers::world::HexMapTileDeposit;
+use crate::hex_map::layers::natural::HexMapTileDeposit;
 
 use super::ids::{SimulationID, WithSimulationID};
 
 #[derive(Debug)]
 pub enum Resource {
     Credits,
+    Water,
     Food,
     Electricity,
     Metals,

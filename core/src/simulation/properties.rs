@@ -48,6 +48,7 @@ impl SimulationPropertyStorage {
         id: SimulationID,
         initial_value: SimulationPropertyValue,
     ) -> Self {
+        assert!(matches!(id, SimulationID::Property(_)));
         // TODO: check ID type, return script-aware error if needed
         self.properties.insert(id, initial_value);
         self

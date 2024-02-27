@@ -1,21 +1,34 @@
 use crate::hex_map::coordinates::HexMapCoordinates;
 
 use super::{
+    economy::{ConstructionCost, MaintenanceCost},
     ids::{SimulationID, WithSimulationID},
     people::leaders::Leader,
     properties::SimulationPropertyStorage,
 };
 
-/// A military unit.
+/// Template of a military unit.
 #[derive(Debug)]
-pub struct Unit {
-    /// Must be `SimulationID::SimulationMapEntityID`.
+pub struct UnitTemplate {
+    /// Must be `SimulationID::SimulationAbstractID`.
     id: SimulationID,
-    position: HexMapCoordinates,
+    r#type: String,
+    cost: Vec<ConstructionCost>,
+    upkeep: Vec<MaintenanceCost>,
     attributes: SimulationPropertyStorage,
 }
 
-impl WithSimulationID for Unit {
+/// A military unit.
+#[derive(Debug)]
+pub struct Unit<'a> {
+    /// Must be `SimulationID::SimulationMapEntityID`.
+    id: SimulationID,
+    position: HexMapCoordinates,
+    template: &'a UnitTemplate,
+    health_points: u16,
+}
+
+impl<'a> WithSimulationID for Unit<'a> {
     fn id(&self) -> &SimulationID {
         &self.id
     }
@@ -23,18 +36,18 @@ impl WithSimulationID for Unit {
 
 /// A HeadQuarters military unit.
 #[derive(Debug)]
-pub struct HqUnit {
+pub struct HqUnit<'a> {
     /// Must be `SimulationID::SimulationMapEntityID`.
     id: SimulationID,
-    leader: Option<Leader>,
     position: HexMapCoordinates,
-    superior: Option<Box<HqUnit>>,
-    subordinates: Option<Vec<Box<HqUnit>>>,
+    leader: Option<Leader>,
+    superior: Option<Box<HqUnit<'a>>>,
+    subordinates: Option<Vec<Box<HqUnit<'a>>>>,
     attributes: SimulationPropertyStorage,
-    attached_units: Vec<Unit>,
+    attached_units: Vec<Unit<'a>>,
 }
 
-impl WithSimulationID for HqUnit {
+impl<'a> WithSimulationID for HqUnit<'a> {
     fn id(&self) -> &SimulationID {
         &self.id
     }

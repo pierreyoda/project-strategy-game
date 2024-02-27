@@ -21,3 +21,14 @@ pub trait HexMapTileSettlement: Debug {}
 
 /// A built building on the tile.
 pub trait HexMapTileBuilding: Debug {}
+
+impl HexMapArtificialTileData {
+    pub fn new() -> Self {
+        Self {
+            supply_node: None,
+            infrastructure: None,
+            settlement: None,
+            buildings: None,
+        }
+    }
+}

@@ -5,9 +5,15 @@
 use std::fmt::Debug;
 
 #[derive(Debug)]
-pub struct HexMapWorldTileData {
+pub struct HexMapNaturalTileData {
     deposits: Option<Vec<Box<dyn HexMapTileDeposit>>>,
 }
 
 /// A resource deposit on the tile.
 pub trait HexMapTileDeposit: Debug {}
+
+impl HexMapNaturalTileData {
+    pub fn new() -> Self {
+        Self { deposits: None }
+    }
+}

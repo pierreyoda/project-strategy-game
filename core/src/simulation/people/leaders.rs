@@ -80,6 +80,7 @@ pub struct Lineage {
 #[derive(Debug)]
 pub struct Leader {
     id_card: IndividualIDCard,
+    lineage: Option<Lineage>,
     /// See `Leader.traits`
     traits: Vec<Trait>,
     upkeep: Vec<MaintenanceCost>,

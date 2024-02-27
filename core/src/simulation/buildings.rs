@@ -1,32 +1,42 @@
 use crate::hex_map::layers::dynamic::HexMapTileBuilding;
 
 use super::{
-    economy::MaintenanceCost,
+    economy::{ConstructionCost, MaintenanceCost},
     ids::{SimulationID, WithSimulationID},
     resources::Resource,
 };
 
+/// Resource output of a building, per turn.
 #[derive(Debug)]
 pub struct BuildingProduction {
     resource: Resource,
     amount: u16,
 }
 
-/// A building somewhere on the world map. Not supposed to be moved.
+/// Template of a building.
 #[derive(Debug)]
-pub struct Building {
-    /// Must be `SimulationID::SimulationMapEntityID`.
+pub struct BuildingTemplate {
+    /// Must be `SimulationID::SimulationAbstractID`.
     id: SimulationID,
     r#type: String,
-    health_points: u16,
+    cost: Vec<ConstructionCost>,
     maintenance_costs: Vec<MaintenanceCost>,
     production: Vec<BuildingProduction>,
 }
 
-impl WithSimulationID for Building {
+/// A building somewhere on the world map. Not supposed to be moved.
+#[derive(Debug)]
+pub struct Building<'a> {
+    /// Must be `SimulationID::SimulationMapEntityID`.
+    id: SimulationID,
+    template: &'a BuildingTemplate,
+    health_points: u16,
+}
+
+impl<'a> WithSimulationID for Building<'a> {
     fn id(&self) -> &SimulationID {
         &self.id
     }
 }
 
-impl HexMapTileBuilding for Building {}
+impl<'a> HexMapTileBuilding for Building<'a> {}
