@@ -1,0 +1,12 @@
+[package]
+name = "project_x_scripting"
+version = "0.1.0"
+authors = ["pierreyoda <pierreyoda@users.noreply.github.com>"]
+edition = "2021"
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+rhai = "1.17.0"
