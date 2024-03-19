@@ -17,7 +17,7 @@ lto = true # Link-Time Optimisation: faster and smaller code but longer compilat
 project_x_core = { path = "../core" }
 project_x_procgen = { path = "../procgen" }
 # external:
-wasm-bindgen = "0.2.90"
+wasm-bindgen = "0.2.92"
 
 # enabled in debug only due to required infrastructure (std::fmt, std::panicking)
 [target."cfg(debug_assertions)".dependencies]
