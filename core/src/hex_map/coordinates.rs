@@ -43,7 +43,7 @@ pub trait HexMapCoordinatesSystem:
 /// This is used instead of generics to avoid extra complexity, which would affect
 /// the usage of `HexMapCubeCoordinates` everywhere in the system due to abstraction leakage.
 ///
-/// It is a `u16`, which should be more than enough, even in computations.
+/// It is a `i16`, which should be more than enough, even in computations.
 pub type CubeCoordsScalar = i16;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

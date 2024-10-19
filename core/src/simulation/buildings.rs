@@ -1,17 +1,15 @@
+use std::collections::HashMap;
+
 use crate::hex_map::layers::dynamic::HexMapTileBuilding;
 
 use super::{
-    economy::{ConstructionCost, MaintenanceCost},
+    economy::{ConstructionCosts, MaintenanceCosts},
     ids::{SimulationID, WithSimulationID},
-    resources::Resource,
+    resources::{Resource, ResourceQuantity},
 };
 
-/// Resource output of a building, per turn.
-#[derive(Debug)]
-pub struct BuildingProduction {
-    resource: Resource,
-    amount: u16,
-}
+/// Resources output of a building, per turn.
+pub type BuildingProduction = HashMap<Resource, ResourceQuantity>;
 
 /// Template of a building.
 #[derive(Debug)]
@@ -19,9 +17,9 @@ pub struct BuildingTemplate {
     /// Must be `SimulationID::SimulationAbstractID`.
     id: SimulationID,
     r#type: String,
-    cost: Vec<ConstructionCost>,
-    maintenance_costs: Vec<MaintenanceCost>,
-    production: Vec<BuildingProduction>,
+    cost: ConstructionCosts,
+    maintenance_costs: MaintenanceCosts,
+    production: BuildingProduction,
 }
 
 /// A building somewhere on the world map. Not supposed to be moved.

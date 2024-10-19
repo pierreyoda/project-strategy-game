@@ -1,15 +1,9 @@
-use super::resources::Resource;
+use std::collections::HashMap;
 
-/// Construction cost, per turn.
-#[derive(Debug)]
-pub struct ConstructionCost {
-    resource: Resource,
-    amount: u16,
-}
+use super::resources::{Resource, ResourceQuantity};
+
+/// Construction cost.
+pub type ConstructionCosts = HashMap<Resource, ResourceQuantity>;
 
 /// Maintenance cost, per turn.
-#[derive(Debug)]
-pub struct MaintenanceCost {
-    resource: Resource,
-    amount: u16,
-}
+pub type MaintenanceCosts = HashMap<Resource, ResourceQuantity>;

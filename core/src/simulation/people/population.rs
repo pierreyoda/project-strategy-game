@@ -1,7 +1,7 @@
 //! People simulation at a group aggregate scale.
 
 use crate::simulation::{
-    economy::MaintenanceCost,
+    economy::MaintenanceCosts,
     ids::{SimulationID, WithSimulationID},
 };
 
@@ -12,7 +12,7 @@ pub struct PopulationGroup {
     /// Must be `SimulationID::EntityID`.
     id: SimulationID,
     size: u32,
-    upkeep: Vec<MaintenanceCost>,
+    upkeep: MaintenanceCosts,
 }
 
 impl WithSimulationID for PopulationGroup {

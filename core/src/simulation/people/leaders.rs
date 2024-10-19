@@ -9,7 +9,7 @@
 //! For instance, mayors of significant cities will be important to be represented, but not their entire cabinet.
 
 use crate::simulation::{
-    economy::MaintenanceCost,
+    economy::MaintenanceCosts,
     ids::{SimulationID, WithSimulationID},
 };
 
@@ -83,7 +83,7 @@ pub struct Leader {
     lineage: Option<Lineage>,
     /// See `Leader.traits`
     traits: Vec<Trait>,
-    upkeep: Vec<MaintenanceCost>,
+    upkeep: MaintenanceCosts,
 }
 
 impl WithSimulationID for Leader {

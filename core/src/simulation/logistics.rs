@@ -2,21 +2,15 @@ use crate::hex_map::layers::dynamic::HexMapTileSupplyNode;
 
 use super::{
     ids::{SimulationID, WithSimulationID},
-    resources::Resource,
+    resources::ResourceDataStorage,
 };
-
-#[derive(Debug)]
-pub struct ResourceStockpile {
-    resource: Resource,
-    quantity: u16,
-}
 
 #[derive(Debug)]
 pub struct SupplyNode {
     /// Must be `SimulationID::SimulationMapEntityID`.
     id: SimulationID,
     level: u8,
-    stockpile: Vec<ResourceStockpile>,
+    resources: ResourceDataStorage,
 }
 
 impl WithSimulationID for SupplyNode {

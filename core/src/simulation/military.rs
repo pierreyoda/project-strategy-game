@@ -1,7 +1,7 @@
 use crate::hex_map::coordinates::HexMapCoordinates;
 
 use super::{
-    economy::{ConstructionCost, MaintenanceCost},
+    economy::{ConstructionCosts, MaintenanceCosts},
     ids::{SimulationID, WithSimulationID},
     people::leaders::Leader,
     properties::SimulationPropertyStorage,
@@ -13,8 +13,8 @@ pub struct UnitTemplate {
     /// Must be `SimulationID::SimulationAbstractID`.
     id: SimulationID,
     r#type: String,
-    cost: Vec<ConstructionCost>,
-    upkeep: Vec<MaintenanceCost>,
+    cost: ConstructionCosts,
+    upkeep: MaintenanceCosts,
     attributes: SimulationPropertyStorage,
 }
 

@@ -1,7 +1,7 @@
 use crate::hex_map::layers::dynamic::HexMapTileInfrastructure;
 
 use super::{
-    economy::MaintenanceCost,
+    economy::MaintenanceCosts,
     ids::{SimulationID, WithSimulationID},
 };
 
@@ -11,7 +11,7 @@ pub struct Infrastructure {
     /// Must be `SimulationID::SimulationMapEntityID`.
     id: SimulationID,
     r#type: String,
-    maintenance_costs: Vec<MaintenanceCost>,
+    maintenance_costs: MaintenanceCosts,
 }
 
 impl WithSimulationID for Infrastructure {
