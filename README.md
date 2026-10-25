@@ -14,4 +14,4 @@ Besides the multi-platform desktop `client` (using Electron, in part for an adva
 
 - `core`: everything concerning the game and its underlying engine, apart from the more or less narrowly scoped crates that follow.
 - `procgen`: procedural generation of everything generated for the start of a new game playthrough, like realistic terrain, factions placement, and so much more long term.
-- `wasm_bridge`: bindings and wrappers for usage from Node.js/Typescript in the `client`. Uses [wasm-bindgen](https://rustwasm.github.io/docs/wasm-bindgen).
+- `wasm_bridge`: bindings and wrappers for usage from Node.js/Typescript in the `client`. Uses [wasm-bindgen](https://wasm-bindgen.github.io/wasm-bindgen/).
