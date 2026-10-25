@@ -9,4 +9,4 @@ readme = "README.md"
 path = "src/lib.rs"
 
 [dependencies]
-rhai = "1.17.0"
+rhai = "1.27.0"
