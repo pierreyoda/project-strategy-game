@@ -3,7 +3,7 @@ name = "project_x_core"
 description = "Project X: the foundation for the whole game."
 version = "0.0.1"
 authors = ["pierreyoda <pierreyoda@users.noreply.github.com>"]
-edition = "2021"
+edition = "2024"
 readme = "README.md"
 
 [lib]

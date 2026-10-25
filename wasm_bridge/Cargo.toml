@@ -3,7 +3,7 @@ name = "project_x_wasm_bridge"
 description = "Project X: WASM bridge crate for use in the client, with full Typescript support."
 version = "0.0.1"
 authors = ["pierreyoda <pierreyoda@users.noreply.github.com>"]
-edition = "2021"
+edition = "2024"
 
 [lib]
 path = "src/lib.rs"
