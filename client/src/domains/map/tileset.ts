@@ -30,7 +30,7 @@ const tileRandom = ({ col, row }: OffsetCoords, salt: number): number => {
  * Variant of a terrain's tiles to draw on the given tile: always the same one, so that the map looks the same
  * wherever and whenever it is drawn.
  */
-export const pickTileVariant = <T>(tiles: { base: T[]; decorated: T[] }, coords: OffsetCoords): T => {
+export const pickTileVariant = <T>(tiles: { base: readonly T[]; decorated: readonly T[] }, coords: OffsetCoords): T => {
   const isDecorated = tiles.decorated.length > 0 && tileRandom(coords, 1) < DECORATED_TILES_SHARE;
   const variants = isDecorated ? tiles.decorated : tiles.base;
   return variants[Math.floor(tileRandom(coords, 2) * variants.length)];
