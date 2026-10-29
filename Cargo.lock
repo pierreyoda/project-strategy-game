@@ -74,6 +74,7 @@ name = "project_x_procgen"
 version = "0.0.1"
 dependencies = [
  "noise",
+ "project_x_core",
 ]
 
 [[package]]

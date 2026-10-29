@@ -10,4 +10,7 @@ readme = "README.md"
 path = "src/lib.rs"
 
 [dependencies]
+# internal:
+project_x_core = { path = "../core" }
+# external:
 noise = "0.9"
