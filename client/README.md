@@ -2,7 +2,9 @@
 
 ## Technical Overview
 
-Uses Electron (with Forge) and Typescript. WasmPackPlugin for webpack allows this application to interact with the Rust "back-end" through the `wasm_bridge` crate, located at the root of the project.
+Uses Electron (with Forge and its Vite plugin) and Typescript. This application interacts with the Rust "back-end" through the `wasm_bridge` crate, located at the root of the project: the `vite.wasm-pack.ts` plugin builds it with wasm-pack, and Vite loads the result through its [WebAssembly support](https://vite.dev/guide/features#webassembly).
+
+The main process is built as an ES module, since Vite's WebAssembly ES module integration requires top-level await.
 
 ## Development
 
@@ -16,4 +18,6 @@ Requirements:
   - Or, for a custom toolchain, [follow this guide](https://rustwasm.github.io/wasm-pack/book/prerequisites/non-rustup-setups.html)
 - The [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) tool installed (it's on `brew`, on NPM, has a Windows installer, a bash install script or you can just `cargo install wasm-pack`)
 
-> Before invoking webpack in any way, you will need to run the command `yarn bootstrap:wasm`. This is needed for now since we use a Cargo Workspace to structure the Rust part of the project.
+The WASM package is built automatically by `yarn start` (debug build, rebuilt when the Rust crates change) and `yarn package` / `yarn make` (release build).
+
+> Vite does not type-check: run `yarn typecheck` for that. It needs the WASM package's typings, so if no build was run yet, run `yarn bootstrap:wasm` first.

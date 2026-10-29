@@ -3,7 +3,8 @@
   "productName": "Project X",
   "version": "0.0.1",
   "description": "Project X game client.",
-  "main": ".webpack/main",
+  "type": "module",
+  "main": ".vite/build/index.js",
   "private": true,
   "scripts": {
     "bootstrap:wasm": "wasm-pack build --out-dir '../wasm-pkg' --out-name 'project-x-wasm-pkg' --target bundler ../wasm_bridge",
@@ -11,7 +12,8 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "eslint --ext .ts,.tsx ."
+    "lint": "eslint --ext .ts,.tsx .",
+    "typecheck": "tsc"
   },
   "keywords": [],
   "author": {
@@ -20,26 +22,20 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "@electron-forge/cli": "7.11.1",
-    "@electron-forge/maker-deb": "7.11.1",
-    "@electron-forge/maker-rpm": "7.11.1",
-    "@electron-forge/maker-squirrel": "7.11.1",
-    "@electron-forge/maker-zip": "7.11.1",
-    "@electron-forge/plugin-webpack": "7.11.1",
-    "@typescript-eslint/eslint-plugin": "8.53.0",
-    "@typescript-eslint/parser": "8.53.0",
-    "@vercel/webpack-asset-relocator-loader": "1.10.0",
-    "@wasm-tool/wasm-pack-plugin": "1.7.0",
-    "css-loader": "7.1.2",
-    "electron": "40.0.0",
-    "eslint": "9.39.2",
+    "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-deb": "8.0.1",
+    "@electron-forge/maker-rpm": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1",
+    "@electron-forge/maker-zip": "8.0.1",
+    "@electron-forge/plugin-vite": "8.0.1",
+    "@types/electron-squirrel-startup": "1.0.2",
+    "@typescript-eslint/eslint-plugin": "8.72.1",
+    "@typescript-eslint/parser": "8.72.1",
+    "electron": "45.1.0",
+    "eslint": "9.39.5",
     "eslint-plugin-import": "2.32.0",
-    "fork-ts-checker-webpack-plugin": "9.1.0",
-    "node-loader": "2.1.0",
-    "style-loader": "4.0.0",
-    "ts-loader": "9.5.4",
-    "ts-node": "10.9.2",
-    "typescript": "5.9.3"
+    "typescript": "6.0.3",
+    "vite": "8.3.5"
   },
   "dependencies": {
     "electron-squirrel-startup": "1.0.1"
