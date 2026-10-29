@@ -95,8 +95,8 @@ impl Add for CubeCoords {
     fn add(self, rhs: Self) -> Self::Output {
         Self {
             q: self.q + rhs.q,
-            r: self.q + rhs.q,
-            s: self.q + rhs.q,
+            r: self.r + rhs.r,
+            s: self.s + rhs.s,
         }
     }
 }
@@ -107,8 +107,8 @@ impl Sub for CubeCoords {
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
             q: self.q - rhs.q,
-            r: self.q - rhs.q,
-            s: self.q - rhs.q,
+            r: self.r - rhs.r,
+            s: self.s - rhs.s,
         }
     }
 }
@@ -136,7 +136,7 @@ impl HexMapCoordinates {
 mod tests {
     use crate::hex_map::coordinates::HexMapCoordinatesSystem;
 
-    use super::CUBE_COORDS_CACHED_DIRECTIONS;
+    use super::{CUBE_COORDS_CACHED_DIRECTIONS, CubeCoords};
 
     #[test]
     fn test_cube_coords_directions_cache() {
@@ -144,6 +144,30 @@ mod tests {
             assert_eq!(relative_coords.q + relative_coords.r + relative_coords.s, 0);
             assert_eq!(relative_coords.length(), 1f64);
         }
+    }
+
+    #[test]
+    fn test_cube_coords_add_sub() {
+        let a = CubeCoords::from_cube_coords(3, -5, 2);
+        let b = CubeCoords::from_cube_coords(-1, 4, -3);
+        assert_eq!(a + b, CubeCoords::from_cube_coords(2, -1, -1));
+        assert_eq!(a - b, CubeCoords::from_cube_coords(4, -9, 5));
+        assert_eq!(a + b - b, a);
+    }
+
+    #[test]
+    fn test_cube_coords_distance_to() {
+        let origin = CubeCoords::from_cube_coords(0, 0, 0);
+        assert_eq!(origin.distance_to(origin), 0f64);
+        for direction in CUBE_COORDS_CACHED_DIRECTIONS {
+            let neighbor = origin + direction;
+            assert_eq!(origin.distance_to(neighbor), 1f64);
+            assert_eq!(origin.distance_to(neighbor + direction), 2f64);
+        }
+        let a = CubeCoords::from_cube_coords(3, -5, 2);
+        let b = CubeCoords::from_cube_coords(-1, 4, -3);
+        assert_eq!(a.distance_to(b), 9f64);
+        assert_eq!(b.distance_to(a), 9f64);
     }
 
     // TODO: more tests
