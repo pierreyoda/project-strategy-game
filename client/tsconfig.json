@@ -4,14 +4,15 @@
     "module": "preserve",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "types": ["node", "vite/client"],
+    "types": ["node", "vite/client", "svelte"],
     "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "isolatedModules": true,
+    "verbatimModuleSyntax": true,
     "noImplicitAny": true,
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "*.ts"]
 }

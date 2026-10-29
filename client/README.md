@@ -2,7 +2,7 @@
 
 ## Technical Overview
 
-Uses Electron (with Forge and its Vite plugin) and Typescript. This application interacts with the Rust "back-end" through the `wasm_bridge` crate, located at the root of the project: the `vite.wasm-pack.ts` plugin builds it with wasm-pack, and Vite loads the result through its [WebAssembly support](https://vite.dev/guide/features#webassembly).
+Uses Electron (with Forge and its Vite plugin) and Typescript, with a [Svelte](https://svelte.dev/) and [Tailwind CSS](https://tailwindcss.com/) renderer. This application interacts with the Rust "back-end" through the `wasm_bridge` crate, located at the root of the project: the `vite.wasm-pack.ts` plugin builds it with wasm-pack, and Vite loads the result through its [WebAssembly support](https://vite.dev/guide/features#webassembly).
 
 The main process is built as an ES module, since Vite's WebAssembly ES module integration requires top-level await.
 
