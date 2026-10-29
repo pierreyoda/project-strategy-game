@@ -18,6 +18,9 @@ project_x_core = { path = "../core" }
 project_x_procgen = { path = "../procgen" }
 # external:
 js-sys = "0.3.106"
+# the wire format between the bridge and the client lives here, not in `core`
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
 wasm-bindgen = "0.2.129"
 
 # enabled in debug only due to required infrastructure (std::fmt, std::panicking)

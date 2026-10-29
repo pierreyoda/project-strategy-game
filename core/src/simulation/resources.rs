@@ -1,12 +1,14 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-use crate::hex_map::layers::natural::HexMapTileDeposit;
+use crate::hex_map::coordinates::CubeCoords;
 
-use super::ids::{SimulationID, WithSimulationID};
+use super::ids::SimulationID;
 
 pub type ResourceQuantity = u16;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+/// `Ord` as well as `Hash`: resources are iterated during turn resolution, and a resolution whose
+/// outcome depends on iteration order is not reproducible from a seed.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Resource {
     Credits,
     Water,
@@ -27,13 +29,29 @@ pub struct ResourceData {
     depletion: Option<ResourceQuantity>,
 }
 
-pub type ResourceDataStorage = HashMap<Resource, ResourceData>;
+impl ResourceData {
+    pub fn quantity(&self) -> ResourceQuantity {
+        self.quantity
+    }
+
+    pub fn income(&self) -> Option<ResourceQuantity> {
+        self.income
+    }
+
+    pub fn depletion(&self) -> Option<ResourceQuantity> {
+        self.depletion
+    }
+}
+
+pub type ResourceDataStorage = BTreeMap<Resource, ResourceData>;
 
 pub trait ResourceDataStore {
     fn set_income(&mut self, resource: Resource, income: ResourceQuantity) -> bool;
     fn set_depletion(&mut self, resource: Resource, depletion: ResourceQuantity) -> bool;
     fn replenish(&mut self, resource: Resource, amount: ResourceQuantity);
     fn consume(&mut self, resource: Resource, amount: ResourceQuantity) -> bool;
+    /// Quantity currently held, zero if the resource was never stored.
+    fn quantity_of(&self, resource: Resource) -> ResourceQuantity;
     /// Called every turn. If a resource lacks the quantity compared to its per-turn depletion, return its key.
     fn update(&mut self) -> Option<Resource>;
 }
@@ -85,6 +103,10 @@ impl ResourceDataStore for ResourceDataStorage {
         }
     }
 
+    fn quantity_of(&self, resource: Resource) -> ResourceQuantity {
+        self.get(&resource).map_or(0, ResourceData::quantity)
+    }
+
     fn update(&mut self) -> Option<Resource> {
         for (resource, resource_datum) in self.iter_mut() {
             resource_datum.quantity += resource_datum.income.unwrap_or(0);
@@ -99,20 +121,32 @@ impl ResourceDataStore for ResourceDataStorage {
     }
 }
 
+/// A natural resource deposit on a tile, referenced by the tile through its `DepositId`.
 #[derive(Debug)]
 pub struct ResourceDeposit {
-    /// Must be `SimulationID::SimulationMapEntityID`.
-    id: SimulationID,
+    /// What the deposit holds. Must be a `SimulationID::Abstract`.
+    definition: SimulationID,
+    position: CubeCoords,
     resources: ResourceDataStorage,
 }
 
-impl WithSimulationID for ResourceDeposit {
-    fn id(&self) -> &SimulationID {
-        &self.id
+impl ResourceDeposit {
+    pub fn definition(&self) -> &SimulationID {
+        &self.definition
+    }
+
+    pub fn position(&self) -> CubeCoords {
+        self.position
+    }
+
+    pub fn resources(&self) -> &ResourceDataStorage {
+        &self.resources
+    }
+
+    pub fn resources_mut(&mut self) -> &mut ResourceDataStorage {
+        &mut self.resources
     }
 }
-
-impl HexMapTileDeposit for ResourceDeposit {}
 
 #[cfg(test)]
 mod tests {
@@ -137,6 +171,8 @@ mod tests {
         assert_eq!(resources.get(&Resource::Water).unwrap().quantity, 50);
         assert!(!resources.consume(Resource::Food, 300));
         assert_eq!(resources.get(&Resource::Food).unwrap().quantity, 250);
+        assert_eq!(resources.quantity_of(Resource::Water), 50);
+        assert_eq!(resources.quantity_of(Resource::Uranium), 0);
     }
 
     #[test]
@@ -159,5 +195,21 @@ mod tests {
         assert!(resources.set_depletion(Resource::Credits, 50));
         assert_eq!(resources.update(), None);
         assert_eq!(resources.get(&Resource::Credits).unwrap().quantity, 1);
+    }
+
+    /// `update` stops on the first resource that comes short: which one that is must not depend on
+    /// the iteration order of the storage.
+    #[test]
+    fn test_resource_data_storage_update_is_deterministic() {
+        let shortages: Vec<Option<Resource>> = (0..8)
+            .map(|_| {
+                let mut resources = build_mock_data_storage();
+                assert!(resources.set_depletion(Resource::Water, 200));
+                assert!(resources.set_depletion(Resource::Food, 300));
+                resources.update()
+            })
+            .collect();
+        // `Credits` < `Water` < `Food` in declaration order, and `Credits` is not short
+        assert!(shortages.iter().all(|&s| s == Some(Resource::Water)));
     }
 }

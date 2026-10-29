@@ -1,22 +1,28 @@
-use crate::hex_map::layers::dynamic::HexMapTileSupplyNode;
+use crate::hex_map::coordinates::CubeCoords;
 
-use super::{
-    ids::{SimulationID, WithSimulationID},
-    resources::ResourceDataStorage,
-};
+use super::resources::ResourceDataStorage;
 
 #[derive(Debug)]
 pub struct SupplyNode {
-    /// Must be `SimulationID::SimulationMapEntityID`.
-    id: SimulationID,
+    position: CubeCoords,
     level: u8,
     resources: ResourceDataStorage,
 }
 
-impl WithSimulationID for SupplyNode {
-    fn id(&self) -> &SimulationID {
-        &self.id
+impl SupplyNode {
+    pub fn position(&self) -> CubeCoords {
+        self.position
+    }
+
+    pub fn level(&self) -> u8 {
+        self.level
+    }
+
+    pub fn resources(&self) -> &ResourceDataStorage {
+        &self.resources
+    }
+
+    pub fn resources_mut(&mut self) -> &mut ResourceDataStorage {
+        &mut self.resources
     }
 }
-
-impl HexMapTileSupplyNode for SupplyNode {}

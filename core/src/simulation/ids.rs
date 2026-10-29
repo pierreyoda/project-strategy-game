@@ -1,36 +1,28 @@
+//! Identification of everything the simulation manipulates.
+//!
+//! Two families of identifiers, deliberately kept apart:
+//!
+//! - **Runtime IDs** (`NationId`, `UnitId`, ...) identify an *instance* living in the `World`'s stores.
+//!   They are dense, `Copy` scalars: cheap to hash, cheap to compare, cheap to ship to the client as
+//!   a typed array, and they index straight into the projection buffers (see `game::projection`).
+//! - **`SimulationID`** identifies a *definition*: a unit or building template, a leader trait, a
+//!   property key. Those come from scripts, so they are heap-allocated `String`s, which is a
+//!   trade-off made for easier game script development.
+//!
+//! A runtime instance never gets a `String` key, and a definition never gets a dense one.
+
 use std::{
-    fmt::Display,
-    hash::{Hash, Hasher},
+    fmt::{Debug, Display},
+    hash::Hash,
 };
 
-/// ID of an entity, like a leader or a population group.
-///
-/// Not "physically" present on the game map, but can be attached to entities that are (eg. leader of a building or military unit).
-///
-/// Since there will be many entities in the game simulation, an efficient scalar is chosen
-/// (not a String, and &'static str is not possible due to scripting constraints).
-///
-/// **NB** The entity ID scalar being an `u32`, there can be at most "u32::max = 4 294 967 295" entities in a given game,
-/// which should be more than enough. Still, it can be changed to an "u64" if needed some day, and just by changing the type here.
-///
-/// See: https://doc.rust-lang.org/std/u32/constant.MAX.html
-pub type SimulationEntityID = u32;
-
-/// ID of an on-map entity, which is under the hood stored in the played `HexMap`.
-///
-/// Can be buildings, or military units.
-///
-/// See `SimulationEntityID` for the choice of "u32" here.
-pub type SimulationMapEntityID = u32;
-
-/// ID of an "abstract" simulation aspect, i.e. which is not physically represented in the game but still tangible for the simulation.
-/// It can be a leader's trait, for instance, or an atomic simulation system like an economy concept.
+/// ID of an "abstract" simulation aspect, i.e. which is not physically represented in the game but still tangible
+/// for the simulation. It can be a leader's trait, for instance, or a unit template.
 ///
 /// More often than not, the IDs of this category will come from scripts, which is why a String is chosen here, for
 /// convenience - it's easier to give unique names without a relatively complex machinery, with probably poor DevX.
-/// It's a trade-off made for easier game script development.
 ///
-/// Cannot be `&static str` due to scripting constraints, so the heap-allocated String is used.
+/// Cannot be `&'static str` due to scripting constraints, so the heap-allocated String is used.
 pub type SimulationAbstractID = String;
 
 /// ID of a property attached to a simulation object, entity or concept.
@@ -38,36 +30,24 @@ pub type SimulationAbstractID = String;
 /// It's a String for the same reason as `SimulationAbstractID`, since properties are for scripts to define and use.
 pub type SimulationPropertyID = String;
 
-/// Global (simulation-wide) identification for a simulation component (entity/object/unit/concept/...) in the simulation.
+/// Identification of a simulation *definition*: never of a runtime instance, which uses the dense
+/// IDs of this module instead.
 ///
-/// **Must not change** for any simulation component, whatever it does.
-///
-/// Regardless of the underlying type of ID, all IDs must be unique when it comes to their common representation, the hash.
-///
-/// Similarly, the output of the `Display` trait implementation is unique across the whole simulation.
+/// Regardless of the underlying type of ID, all IDs must be unique when it comes to their common representation,
+/// the hash. Similarly, the output of the `Display` trait implementation is unique across the whole simulation.
 ///
 /// ## Usage
 ///
 /// - Avoid cloning any `SimulationID`, except when necessary.
 /// - Use the static methods provided to instantiate a new `SimulationID`
-/// (would for instance facilitate adding a uniqueness asserter in the simulation, by just moving the used methods around)
-#[derive(Clone, Debug, PartialEq, Eq)]
+///   (would for instance facilitate adding a uniqueness asserter in the simulation, by just moving the used methods around)
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SimulationID {
-    EntityID(SimulationEntityID),
-    MapEntityID(SimulationMapEntityID),
     Abstract(SimulationAbstractID),
     Property(SimulationPropertyID),
 }
 
 impl SimulationID {
-    pub fn new_entity_id(unique_id: SimulationEntityID) -> Self {
-        Self::EntityID(unique_id)
-    }
-
-    pub fn new_map_entity_id(unique_id: SimulationMapEntityID) -> Self {
-        Self::MapEntityID(unique_id)
-    }
-
     pub fn new_abstract_id(unique_id: &str) -> Self {
         Self::Abstract(unique_id.to_string())
     }
@@ -81,24 +61,176 @@ impl SimulationID {
     }
 }
 
-impl Hash for SimulationID {
-    fn hash<H: Hasher>(&self, state: &mut H) {
+impl Display for SimulationID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // the prefixes keep the two namespaces from ever colliding
         match self {
-            Self::EntityID(entity_id) => entity_id.hash(state),
-            Self::MapEntityID(map_entity_id) => map_entity_id.hash(state),
-            Self::Abstract(abstract_id) => abstract_id.hash(state),
-            Self::Property(property_id) => property_id.hash(state),
+            Self::Abstract(id) => write!(f, "abstract:{id}"),
+            Self::Property(id) => write!(f, "property:{id}"),
         }
     }
 }
 
-/// Convenience Trait for any simulation aspect that has a `SimulationID`.
+/// Convenience Trait for any simulation definition that has a `SimulationID`.
 pub trait WithSimulationID {
     fn id(&self) -> &SimulationID;
 }
 
-impl Display for SimulationID {
+/// A dense, `Copy` identifier of a runtime instance stored in an `EntityStore`.
+///
+/// Implementors are generated by `define_entity_id!`: do not implement it by hand, the round-trip
+/// between `index` and `from_index` is an invariant the stores rely on.
+pub trait EntityIndex: Copy + Eq + Ord + Hash + Debug {
+    /// Highest index an instance of this kind can take. The value just above it is the `None` sentinel
+    /// used in the projection buffers, which is why it is not the scalar's own maximum.
+    const MAX_INDEX: usize;
+
+    fn from_index(index: usize) -> Self;
+    fn index(self) -> usize;
+}
+
+macro_rules! define_entity_id {
+    ($(#[$doc:meta])* $name:ident, $scalar:ty) => {
+        $(#[$doc])*
+        ///
+        /// Dense runtime ID: see `EntityIndex`.
+        #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name($scalar);
+
+        impl $name {
+            pub const fn raw(self) -> $scalar {
+                self.0
+            }
+        }
+
+        impl EntityIndex for $name {
+            // the maximum is reserved as the "no entity" sentinel of the projection buffers
+            const MAX_INDEX: usize = <$scalar>::MAX as usize - 1;
+
+            fn from_index(index: usize) -> Self {
+                assert!(index <= Self::MAX_INDEX, concat!("too many ", stringify!($name), "s"));
+                Self(index as $scalar)
+            }
+
+            fn index(self) -> usize {
+                self.0 as usize
+            }
+        }
+
+        impl Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, concat!(stringify!($name), "({})"), self.0)
+            }
+        }
+    };
+}
+
+define_entity_id!(
+    /// A nation: there are few of them, and the client ships them as a `Uint16Array`.
+    NationId,
+    u16
+);
+define_entity_id!(
+    /// A settlement, from a remote outpost to a State capital.
+    SettlementId,
+    u32
+);
+define_entity_id!(
+    /// A military unit.
+    UnitId,
+    u32
+);
+define_entity_id!(
+    /// A HeadQuarters military unit.
+    HqUnitId,
+    u32
+);
+define_entity_id!(
+    /// A building on the world map.
+    BuildingId,
+    u32
+);
+define_entity_id!(
+    /// A piece of infrastructure on the world map.
+    InfrastructureId,
+    u32
+);
+define_entity_id!(
+    /// A logistics supply node.
+    SupplyNodeId,
+    u32
+);
+define_entity_id!(
+    /// A leader, i.e. an individually modelled person.
+    LeaderId,
+    u32
+);
+define_entity_id!(
+    /// A population group.
+    PopulationGroupId,
+    u32
+);
+define_entity_id!(
+    /// A natural resource deposit on a tile.
+    DepositId,
+    u32
+);
+
+/// Any runtime instance, when its kind is only known at runtime: what a command rejection or a
+/// removal in a `TurnChanges` has to name.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EntityRef {
+    Nation(NationId),
+    Settlement(SettlementId),
+    Unit(UnitId),
+    HqUnit(HqUnitId),
+    Building(BuildingId),
+    Infrastructure(InfrastructureId),
+    SupplyNode(SupplyNodeId),
+    Leader(LeaderId),
+    PopulationGroup(PopulationGroupId),
+    Deposit(DepositId),
+}
+
+impl Display for EntityRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match self {
+            Self::Nation(id) => write!(f, "{id}"),
+            Self::Settlement(id) => write!(f, "{id}"),
+            Self::Unit(id) => write!(f, "{id}"),
+            Self::HqUnit(id) => write!(f, "{id}"),
+            Self::Building(id) => write!(f, "{id}"),
+            Self::Infrastructure(id) => write!(f, "{id}"),
+            Self::SupplyNode(id) => write!(f, "{id}"),
+            Self::Leader(id) => write!(f, "{id}"),
+            Self::PopulationGroup(id) => write!(f, "{id}"),
+            Self::Deposit(id) => write!(f, "{id}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EntityIndex, NationId, SimulationID, UnitId};
+
+    #[test]
+    fn test_entity_id_index_round_trip() {
+        for index in [0usize, 1, 42, 65_534] {
+            assert_eq!(NationId::from_index(index).index(), index);
+            assert_eq!(UnitId::from_index(index).index(), index);
+        }
+        assert_eq!(NationId::MAX_INDEX, u16::MAX as usize - 1);
+        assert_eq!(UnitId::MAX_INDEX, u32::MAX as usize - 1);
+    }
+
+    #[test]
+    fn test_simulation_id_namespaces_do_not_collide() {
+        let abstract_id = SimulationID::new_abstract_id("infantry");
+        let property_id = SimulationID::new_property_id("infantry".to_string());
+        assert_ne!(abstract_id, property_id);
+        assert_ne!(
+            abstract_id.as_unique_string(),
+            property_id.as_unique_string()
+        );
     }
 }

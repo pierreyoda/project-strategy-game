@@ -21,4 +21,20 @@ impl HexMapTile {
     pub fn elevation(&self) -> i16 {
         self.elevation
     }
+
+    pub fn natural(&self) -> &HexMapNaturalTileData {
+        &self.layer_natural
+    }
+
+    pub fn natural_mut(&mut self) -> &mut HexMapNaturalTileData {
+        &mut self.layer_natural
+    }
+
+    pub fn artificial(&self) -> &HexMapArtificialTileData {
+        &self.layer_artificial
+    }
+
+    pub fn artificial_mut(&mut self) -> &mut HexMapArtificialTileData {
+        &mut self.layer_artificial
+    }
 }

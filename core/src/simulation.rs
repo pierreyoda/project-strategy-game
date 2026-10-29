@@ -4,6 +4,7 @@
 
 pub mod buildings;
 pub mod economy;
+pub mod fog;
 pub mod ids;
 pub mod infrastructure;
 pub mod logistics;
@@ -13,3 +14,4 @@ pub mod people;
 pub mod properties;
 pub mod resources;
 pub mod settlements;
+pub mod store;

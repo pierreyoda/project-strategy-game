@@ -26,12 +26,18 @@ pub enum IndividualName {
 /// Basic information identifying a Leader or Ancestor.
 ///
 /// All information contained here is publicly accessible in the game's world.
-/// For simplicity, we use the firstname/surname even if it does not specifically
+///
+/// It carries no ID: a leader is a runtime instance, so it is identified by the `LeaderId` of the
+/// store it lives in, and an ancestor only ever exists inside the `Lineage` that owns it.
 #[derive(Debug)]
 pub struct IndividualIDCard {
-    /// **Unique** entity ID in the simulation. Must be a `SimulationID::SimulationEntityID`.
-    id: SimulationID,
     name: IndividualName,
+}
+
+impl IndividualIDCard {
+    pub fn name(&self) -> &IndividualName {
+        &self.name
+    }
 }
 
 /// An ancestor of a Leader
@@ -53,9 +59,13 @@ pub struct Ancestor {
     traits: Vec<Trait>,
 }
 
-impl WithSimulationID for Ancestor {
-    fn id(&self) -> &SimulationID {
-        &self.id_card.id
+impl Ancestor {
+    pub fn id_card(&self) -> &IndividualIDCard {
+        &self.id_card
+    }
+
+    pub fn traits(&self) -> &[Trait] {
+        &self.traits
     }
 }
 
@@ -77,6 +87,12 @@ pub struct Lineage {
     ancestors: Vec<(Ancestor, Ancestor)>,
 }
 
+impl Lineage {
+    pub fn ancestors(&self) -> &[(Ancestor, Ancestor)] {
+        &self.ancestors
+    }
+}
+
 #[derive(Debug)]
 pub struct Leader {
     id_card: IndividualIDCard,
@@ -86,13 +102,27 @@ pub struct Leader {
     upkeep: MaintenanceCosts,
 }
 
-impl WithSimulationID for Leader {
-    fn id(&self) -> &SimulationID {
-        &self.id_card.id
+impl Leader {
+    pub fn id_card(&self) -> &IndividualIDCard {
+        &self.id_card
+    }
+
+    pub fn lineage(&self) -> Option<&Lineage> {
+        self.lineage.as_ref()
+    }
+
+    pub fn traits(&self) -> &[Trait] {
+        &self.traits
+    }
+
+    pub fn upkeep(&self) -> &MaintenanceCosts {
+        &self.upkeep
     }
 }
 
 /// A Trait is a singular characteristic of a Leader.
+///
+/// Script-defined, so identified by a `SimulationID`: unlike a leader, a trait is a definition.
 #[derive(Debug)]
 pub enum Trait {
     /// A trait pertaining to a singular physical characteristic of an individual.
@@ -132,30 +162,30 @@ impl WithSimulationID for Trait {
 
 #[derive(Debug)]
 pub struct TraitPhysical {
-    /// Must be `SimulationID::SimulationAbstractID.
+    /// Must be a `SimulationID::Abstract`.
     id: SimulationID,
 }
 
 #[derive(Debug)]
 pub struct TraitPersonality {
-    /// Must be `SimulationID::SimulationAbstractID.
+    /// Must be a `SimulationID::Abstract`.
     id: SimulationID,
 }
 
 #[derive(Debug)]
 pub struct TraitAbility {
-    /// Must be `SimulationID::SimulationAbstractID.
+    /// Must be a `SimulationID::Abstract`.
     id: SimulationID,
 }
 
 #[derive(Debug)]
 pub struct TraitLifestyle {
-    /// Must be `SimulationID::SimulationAbstractID.
+    /// Must be a `SimulationID::Abstract`.
     id: SimulationID,
 }
 
 #[derive(Debug)]
 pub struct TraitCustom {
-    /// Must be `SimulationID::SimulationAbstractID.
+    /// Must be a `SimulationID::Abstract`.
     id: SimulationID,
 }
