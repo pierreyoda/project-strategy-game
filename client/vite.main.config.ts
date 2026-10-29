@@ -18,5 +18,6 @@ export default defineConfig({
       platform: "node",
     },
   },
+  // also builds the WASM bridge for the renderer: Forge builds the main process before it
   plugins: [wasmPack()],
 });

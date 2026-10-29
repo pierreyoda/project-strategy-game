@@ -2,22 +2,14 @@
 
 use noise::utils::ColorGradient;
 
-use super::MapGeneratorSettings;
+use super::{
+    MapGeneratorSettings,
+    terrain::{TERRAIN_GRADIENT_BOUNDS, elevation_band_bounds},
+};
 
 #[cfg(feature = "debug-images")]
 pub mod image;
 pub mod text;
-
-/// Upper bounds of each elevation band but the last one, taken from the positions of
-/// noise's terrain gradient (in planetary elevation units, relative to sea level).
-const TERRAIN_GRADIENT_BOUNDS: [f64; 6] = [
-    -256.0 / 16384.0,
-    0.0,
-    1024.0 / 16384.0,
-    2048.0 / 16384.0,
-    4096.0 / 16384.0,
-    6144.0 / 16384.0,
-];
 
 /// Elevation bands and colors of elevations in meters, following noise's terrain gradient.
 struct TerrainLegend {
@@ -36,7 +28,7 @@ impl TerrainLegend {
         let (scale, bias) = settings.get_elevation_scale_bias();
         let sea_level = settings.get_sea_level();
         Self {
-            bounds: TERRAIN_GRADIENT_BOUNDS.map(|bound| (sea_level + bound).mul_add(scale, bias)),
+            bounds: elevation_band_bounds(settings),
             scale,
             bias,
             sea_level,

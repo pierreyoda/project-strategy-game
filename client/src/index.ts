@@ -36,7 +36,6 @@ const createWindow = (): void => {
       throw new Error("Rust-WASM API loading: error");
     }
     console.log(wasmApi.core.buildHello());
-    console.log(wasmApi.procgen.buildHello());
   });
 };
 

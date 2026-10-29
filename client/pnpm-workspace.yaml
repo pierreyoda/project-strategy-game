@@ -4,3 +4,5 @@ nodeLinker: hoisted
 allowBuilds:
   # Selects the 7-Zip binary used by the Squirrel maker (Windows installers).
   electron-winstaller: true
+  # Pulled by Storybook: its postinstall only validates the binary, resolved anyway from the optional @esbuild/* package.
+  esbuild: false

@@ -1,1 +1,75 @@
 @import "tailwindcss";
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/500.css";
+@import "@fontsource/barlow/600.css";
+@import "@fontsource/rajdhani/500.css";
+@import "@fontsource/rajdhani/600.css";
+@import "@fontsource/rajdhani/700.css";
+
+/* Design tokens. `static` always emits them as CSS variables, for use outside of Tailwind CSS classes (map renderer, Storybook...). */
+@theme static {
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Rajdhani", "Barlow", ui-sans-serif, sans-serif;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  /* Surfaces, from back to front. */
+  --color-ground: #090e14;
+  --color-surface-sunken: #0a1017;
+  --color-surface: #0f161f;
+  --color-surface-raised: #16202b;
+  --color-surface-overlay: #1c2836;
+  --color-line: #243243;
+  --color-line-strong: #405670;
+
+  /* Text: all pass WCAG AA (4.5:1) on every surface. */
+  --color-fg: #e2e9f1;
+  --color-fg-muted: #9aa8b8;
+  --color-fg-subtle: #8293a7;
+
+  /* Interaction, and statuses. */
+  --color-accent: #3ec6e8;
+  --color-accent-hover: #74d8f1;
+  --color-accent-press: #22a9cc;
+  --color-on-accent: #03141b;
+  --color-success: #4cc38a;
+  --color-warning: #f0b43c;
+  --color-danger: #f06560;
+  --color-danger-fill: #c9413c;
+  --color-danger-fill-hover: #b5382f;
+
+  /* Resources, mirroring `core::simulation::resources::Resource`. */
+  --color-resource-credits: #f2c14e;
+  --color-resource-water: #4d9bf5;
+  --color-resource-food: #6cc35a;
+  --color-resource-electricity: #a68cf7;
+  --color-resource-metals: #a9b6c4;
+  --color-resource-oil: #e08a4a;
+  --color-resource-uranium: #cde34a;
+
+  /* Chamfered corners, cut by the `chamfer` utility. */
+  --radius-cut-sm: 3px;
+  --radius-cut-md: 6px;
+  --radius-cut-lg: 10px;
+
+  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+
+/* Turns `rounded-*` corners into bevels. Unsupported before Chromium 139: corners stay rounded. */
+@utility chamfer {
+  corner-shape: bevel;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-ground);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
