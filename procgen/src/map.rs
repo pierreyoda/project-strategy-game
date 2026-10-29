@@ -6,6 +6,7 @@ pub use self::{
     projection::CylinderProjection,
     sampling::ElevationField,
     settings::{MAX_SEED, MapGeneratorSeedScalar, MapGeneratorSettings},
+    terrain::{TerrainClassifier, TerrainKind},
 };
 
 mod graph;
@@ -15,6 +16,7 @@ mod projection;
 pub mod renderers;
 mod sampling;
 mod settings;
+mod terrain;
 
 #[derive(Debug)]
 pub enum MapGeneratorEvent {

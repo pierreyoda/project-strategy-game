@@ -17,6 +17,7 @@ lto = true # Link-Time Optimisation: faster and smaller code but longer compilat
 project_x_core = { path = "../core" }
 project_x_procgen = { path = "../procgen" }
 # external:
+js-sys = "0.3.106"
 wasm-bindgen = "0.2.129"
 
 # enabled in debug only due to required infrastructure (std::fmt, std::panicking)

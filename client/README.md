@@ -2,7 +2,9 @@
 
 ## Technical Overview
 
-Uses Electron (with Forge) and Typescript. WasmPackPlugin for webpack allows this application to interact with the Rust "back-end" through the `wasm_bridge` crate, located at the root of the project.
+Uses Electron (with Forge and its Vite plugin) and Typescript, with a [Svelte](https://svelte.dev/) and [Tailwind CSS](https://tailwindcss.com/) renderer. This application interacts with the Rust "back-end" through the `wasm_bridge` crate, located at the root of the project: the `vite.wasm-pack.ts` plugin builds it with wasm-pack, and Vite loads the result through its [WebAssembly support](https://vite.dev/guide/features#webassembly).
+
+The main process is built as an ES module, since Vite's WebAssembly ES module integration requires top-level await.
 
 ## Development
 
@@ -10,10 +12,14 @@ For a better IDE experience (at least for Visual Studio Code), you should probab
 
 Requirements:
 
-- Latest Rust stable toolchain. To be precise, the 1.61 version should work as of writing this, but all development is done and targets the latest stable version: latest features *will* be used when needed.
+- Latest Rust stable toolchain. To be precise, the 1.61 version should work as of writing this, but all development is done and targets the latest stable version: latest features _will_ be used when needed.
 - The `wasm32-unknown-unknown` target setup for the Rust toolchain
   - Run `rustup target add wasm32-unknown-unknown` with rustup
   - Or, for a custom toolchain, [follow this guide](https://rustwasm.github.io/wasm-pack/book/prerequisites/non-rustup-setups.html)
 - The [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) tool installed (it's on `brew`, on NPM, has a Windows installer, a bash install script or you can just `cargo install wasm-pack`)
 
-> Before invoking webpack in any way, you will need to run the command `yarn bootstrap:wasm`. This is needed for now since we use a Cargo Workspace to structure the Rust part of the project.
+The WASM package is built automatically by `pnpm start` (debug build, rebuilt when the Rust crates change) and `pnpm package` / `pnpm make` (release build).
+
+UI components are developed in isolation with [Storybook](https://storybook.js.org/): run `pnpm storybook` (or `pnpm storybook:build` for a static build). Stories are colocated with their component as `*.stories.svelte` files, written in [Svelte CSF](https://github.com/storybookjs/addon-svelte-csf).
+
+> Vite does not type-check: run `pnpm typecheck` for that. It needs the WASM package's typings, so if no build was run yet, run `pnpm bootstrap:wasm` first.
