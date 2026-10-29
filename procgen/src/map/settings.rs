@@ -83,8 +83,8 @@ impl Default for MapGeneratorSettings {
     fn default() -> Self {
         Self {
             seed: 0,
-            columns: 0,
-            rows: 0,
+            columns: 80,
+            rows: 52,
             continent_frequency: 1.0,
             continent_lacunarity: 2.208984375,
             mountain_lacunarity: 2.142578125,
@@ -124,6 +124,7 @@ impl MapGeneratorSettings {
         rows: CubeCoordsScalar,
     ) -> Self {
         assert!(seed <= MAX_SEED, "seed <= MAX_SEED");
+        assert!(columns > 0 && rows > 0, "columns > 0 && rows > 0");
         Self {
             seed,
             columns,
@@ -170,5 +171,33 @@ impl MapGeneratorSettings {
     /// elevation units.
     pub fn get_continent_height_scale(&self) -> f64 {
         (1.0 - self.sea_level) / 4.0
+    }
+
+    /// Scale and bias converting planetary elevation units to meters, like the final
+    /// planet subgroup of libnoise's complex planet example: `value.mul_add(scale, bias)`.
+    pub fn get_elevation_scale_bias(&self) -> (f64, f64) {
+        let scale = (self.max_elevation - self.min_elevation) / 2.0;
+        let bias = self.min_elevation + ((self.max_elevation - self.min_elevation) / 2.0);
+        (scale, bias)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use project_x_core::hex_map::shape::RectangularHexMapShape;
+
+    use super::MapGeneratorSettings;
+
+    #[test]
+    fn test_default_settings_have_a_valid_map_size() {
+        let settings = MapGeneratorSettings::default();
+        let shape = RectangularHexMapShape::new(settings.get_columns(), settings.get_rows());
+        assert_eq!(shape.tiles_count(), 80 * 52);
+    }
+
+    #[test]
+    #[should_panic(expected = "columns > 0 && rows > 0")]
+    fn test_settings_reject_an_empty_map() {
+        MapGeneratorSettings::new(0, 80, 0);
     }
 }

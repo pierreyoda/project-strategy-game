@@ -9,8 +9,13 @@ readme = "README.md"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# debugging renderer drawing maps as images
+debug-images = ["dep:image"]
+
 [dependencies]
 # internal:
 project_x_core = { path = "../core" }
 # external:
+image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
 noise = "0.9"

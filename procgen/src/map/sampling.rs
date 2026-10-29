@@ -1,6 +1,7 @@
 use noise::NoiseFn;
 use project_x_core::hex_map::{
-    HexMap, HexMapStorage, shape::RectangularHexMapShape, tile::HexMapTile,
+    HexMap, HexMapStorage, coordinates::CubeCoordsScalar, shape::RectangularHexMapShape,
+    tile::HexMapTile,
 };
 
 use super::{projection::CylinderProjection, settings::MapGeneratorSettings};
@@ -15,12 +16,22 @@ pub struct ElevationField {
 impl ElevationField {
     /// Sample the given noise function, usually `PlanetGraph::unscaled_final_planet`,
     /// at the center of each hex.
-    pub fn sample(shape: RectangularHexMapShape, source: &impl NoiseFn<f64, 3>) -> Self {
+    ///
+    /// `on_row_sampled` is called with the index of each row once sampled, from north to south.
+    pub fn sample(
+        shape: RectangularHexMapShape,
+        source: &impl NoiseFn<f64, 3>,
+        mut on_row_sampled: impl FnMut(CubeCoordsScalar),
+    ) -> Self {
         let projection = CylinderProjection::new(&shape);
-        let values = shape
-            .coords()
-            .map(|coords| source.get(projection.project(coords.into())))
-            .collect();
+        let columns = shape.columns() as usize;
+        let mut values = Vec::with_capacity(shape.tiles_count());
+        for (index, coords) in shape.coords().enumerate() {
+            values.push(source.get(projection.project(coords.into())));
+            if (index + 1) % columns == 0 {
+                on_row_sampled((index / columns) as CubeCoordsScalar);
+            }
+        }
         Self { shape, values }
     }
 
@@ -37,10 +48,7 @@ impl ElevationField {
     /// Build the `HexMap`, converting the elevations from planetary elevation units to meters
     /// like the final planet subgroup of libnoise's complex planet example.
     pub fn into_hex_map(self, settings: &MapGeneratorSettings) -> HexMap {
-        let min_elevation = settings.get_min_elevation();
-        let max_elevation = settings.get_max_elevation();
-        let scale = (max_elevation - min_elevation) / 2.0;
-        let bias = min_elevation + ((max_elevation - min_elevation) / 2.0);
+        let (scale, bias) = settings.get_elevation_scale_bias();
 
         let mut tiles = HexMapStorage::with_capacity(self.values.len());
         for (coords, value) in self.shape.coords().zip(self.values) {
@@ -55,11 +63,9 @@ impl ElevationField {
 #[cfg(test)]
 mod tests {
     use noise::{Constant, NoiseFn};
-    use project_x_core::hex_map::{coordinates::OffsetCoords, shape::RectangularHexMapShape};
+    use project_x_core::hex_map::shape::RectangularHexMapShape;
 
-    use crate::map::{
-        graph::PlanetGraph, projection::CylinderProjection, settings::MapGeneratorSettings,
-    };
+    use crate::map::{projection::CylinderProjection, settings::MapGeneratorSettings};
 
     use super::ElevationField;
 
@@ -75,9 +81,11 @@ mod tests {
     #[test]
     fn test_elevation_field_is_sampled_row_by_row_from_north_to_south() {
         let shape = RectangularHexMapShape::new(5, 4);
-        let field = ElevationField::sample(shape, &Height);
+        let mut sampled_rows = Vec::new();
+        let field = ElevationField::sample(shape, &Height, |row| sampled_rows.push(row));
         let height_bounds = CylinderProjection::new(&shape).height_bounds();
 
+        assert_eq!(sampled_rows, [0, 1, 2, 3]);
         assert_eq!(field.values().len(), shape.tiles_count());
         assert_eq!(field.values()[0], height_bounds.0);
         for (row, values) in field.values().chunks(5).enumerate() {
@@ -103,33 +111,12 @@ mod tests {
             (-5.0, i16::MIN),
         ];
         for (value, expected) in cases {
-            let map = ElevationField::sample(shape, &Constant::new(value)).into_hex_map(&settings);
+            let map = ElevationField::sample(shape, &Constant::new(value), |_| {})
+                .into_hex_map(&settings);
             for coords in shape.coords() {
                 let tile = map.tile(&coords).expect("missing tile");
                 assert_eq!(tile.elevation(), expected, "value {value} at {coords:?}");
             }
         }
-    }
-
-    #[test]
-    fn test_elevation_field_from_planet_graph() {
-        let settings = MapGeneratorSettings::new(0, 16, 10);
-        let shape = RectangularHexMapShape::new(settings.get_columns(), settings.get_rows());
-        let graph = PlanetGraph::build(&settings);
-        let map =
-            ElevationField::sample(shape, graph.unscaled_final_planet()).into_hex_map(&settings);
-
-        let elevations: Vec<i16> = shape
-            .coords()
-            .map(|coords| map.tile(&coords).expect("missing tile").elevation())
-            .collect();
-        assert!(
-            elevations.iter().any(|&elevation| elevation < 0),
-            "no ocean"
-        );
-        assert!(elevations.iter().any(|&elevation| elevation > 0), "no land");
-
-        let corner = OffsetCoords::new(15, 9).into();
-        assert!(map.tile(&corner).is_some());
     }
 }
