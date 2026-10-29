@@ -10,10 +10,12 @@
 
   type GameViewProps = {
     map: HexMapData;
+    /** Draws the flat colors of the terrains only, without the textures of their tiles. */
+    flatColors?: boolean;
     /** Called when the pointer moves to another tile, with `null` once it leaves the map. */
     onTileHover?: (tile: OffsetCoords | null) => void;
   };
-  const { map, onTileHover }: GameViewProps = $props();
+  const { map, flatColors = false, onTileHover }: GameViewProps = $props();
 
   /** A hex is 64 world units tall. */
   const layout = createHexLayout(32);
@@ -112,6 +114,6 @@
 <div bind:this={host} class="size-full overflow-hidden">
   <canvas bind:this={canvas} class="block"></canvas>
   {#if pixi}
-    <HexMapRenderer {pixi} {map} {layout} {onTileHover} />
+    <HexMapRenderer {pixi} {map} {layout} {flatColors} {onTileHover} />
   {/if}
 </div>

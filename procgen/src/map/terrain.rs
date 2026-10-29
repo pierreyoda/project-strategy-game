@@ -39,6 +39,8 @@ pub enum TerrainKind {
     Hills = 3,
     Mountains = 4,
     Ice = 5,
+    /// Ice at the elevations of hills and mountains.
+    RoughIce = 6,
 }
 
 /// Classifies the tiles of a map generated with the given settings, from their elevation
@@ -68,17 +70,22 @@ impl TerrainClassifier {
 
     /// Terrain of the tile at the given coordinates, with the given elevation in meters.
     pub fn classify(&self, coords: OffsetCoords, elevation: i16) -> TerrainKind {
-        let row = coords.row();
-        if row < self.polar_rows || row >= self.rows - self.polar_rows {
-            return TerrainKind::Ice;
-        }
         let elevation = f64::from(elevation);
-        match self.bounds.iter().position(|&bound| elevation < bound) {
+        let kind = match self.bounds.iter().position(|&bound| elevation < bound) {
             Some(0) => TerrainKind::DeepWater,
             Some(1) => TerrainKind::ShallowWater,
             Some(2) => TerrainKind::Flat,
             Some(3) => TerrainKind::Hills,
             _ => TerrainKind::Mountains,
+        };
+
+        let row = coords.row();
+        if row >= self.polar_rows && row < self.rows - self.polar_rows {
+            kind
+        } else if matches!(kind, TerrainKind::Hills | TerrainKind::Mountains) {
+            TerrainKind::RoughIce
+        } else {
+            TerrainKind::Ice
         }
     }
 }
@@ -100,6 +107,7 @@ mod tests {
             TerrainKind::Hills,
             TerrainKind::Mountains,
             TerrainKind::Ice,
+            TerrainKind::RoughIce,
         ];
         for (discriminant, kind) in kinds.into_iter().enumerate() {
             assert_eq!(kind as u8, discriminant as u8, "{kind:?}");
@@ -147,5 +155,22 @@ mod tests {
             kinds.collect::<Vec<_>>(),
             [TerrainKind::Ice, TerrainKind::Flat, TerrainKind::Ice]
         );
+    }
+
+    #[test]
+    fn test_terrain_classifier_roughens_ice_at_hills_elevations() {
+        let classifier = TerrainClassifier::new(&MapGeneratorSettings::default());
+        let pole = OffsetCoords::new(0, 0);
+        let cases = [
+            (i16::MIN, TerrainKind::Ice),
+            (-1, TerrainKind::Ice),
+            (1023, TerrainKind::Ice),
+            (1024, TerrainKind::RoughIce),
+            (2048, TerrainKind::RoughIce),
+            (i16::MAX, TerrainKind::RoughIce),
+        ];
+        for (elevation, kind) in cases {
+            assert_eq!(classifier.classify(pole, elevation), kind, "{elevation} m");
+        }
     }
 }

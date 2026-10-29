@@ -6,3 +6,10 @@ allowBuilds:
   electron-winstaller: true
   # Pulled by Storybook: its postinstall only validates the binary, resolved anyway from the optional @esbuild/* package.
   esbuild: false
+  # Also pulled by AssetPack: its install script only checks the prebuilt binaries, from the optional @img/* packages.
+  sharp: false
+  # Pulled by AssetPack, for audio files only: allow it to process some (its postinstall makes ffmpeg executable).
+  # One package per platform, without wildcards.
+  "@ffmpeg-installer/darwin-arm64": false
+  # Pulled by AssetPack's GPU texture encoders, unused: an optional native addon.
+  cpu-features: false

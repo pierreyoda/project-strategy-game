@@ -25,6 +25,7 @@
   let error = $state<string | null>(null);
   let hoveredTile = $state<OffsetCoords | null>(null);
   const hoveredTileIndex = $derived(hoveredTile && map && tileIndex(map, hoveredTile));
+  let flatColors = $state(false);
 
   // generating cancels the generation in progress: only the latest one updates the state
   let generation = 0;
@@ -79,7 +80,7 @@
 
 <div class="flex h-screen flex-col">
   <header class="flex items-center gap-6 border-b border-line bg-surface px-4 py-2 text-sm">
-    <h1 class="font-display text-lg font-semibold tracking-wide">Planet generator</h1>
+    <h1 class="font-display text-lg font-semibold tracking-wide whitespace-nowrap">Planet generator</h1>
     <form
       class="flex items-center gap-3"
       onsubmit={(event) => {
@@ -93,8 +94,11 @@
       <Button type="submit" variant="primary" size="sm" icon="map" disabled={settingsError !== null}>Generate</Button>
       <Button size="sm" onclick={generateWithRandomSeed}>Random seed</Button>
     </form>
+    <Button variant="ghost" size="sm" aria-pressed={flatColors} onclick={() => (flatColors = !flatColors)}>
+      Flat colors
+    </Button>
 
-    <div class="ml-auto flex items-center gap-4 text-fg-muted tabular-nums">
+    <div class="ml-auto flex items-center gap-4 whitespace-nowrap text-fg-muted tabular-nums">
       {#if settingsError}
         <span class="text-warning">{settingsError}</span>
       {:else if error}
@@ -120,7 +124,7 @@
   </header>
   <div class="min-h-0 flex-1">
     {#if map}
-      <GameView {map} onTileHover={(tile) => (hoveredTile = tile)} />
+      <GameView {map} {flatColors} onTileHover={(tile) => (hoveredTile = tile)} />
     {/if}
   </div>
 </div>

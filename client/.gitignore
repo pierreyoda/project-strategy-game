@@ -89,6 +89,10 @@ typings/
 # Electron-Forge
 out/
 
+# AssetPack (see vite.assetpack.ts)
+.assetpack/
+public/assets/
+
 # Storybook
 storybook-static/
 *storybook.log

@@ -25,7 +25,7 @@ export const createFakeHexMap = (seed: number, columns = 80, rows = 52): HexMapD
       const index = row * columns + col;
       elevations[index] = elevation;
       if (row < polarRows || row >= rows - polarRows) {
-        terrain[index] = TerrainKind.Ice;
+        terrain[index] = elevation < 1024 ? TerrainKind.Ice : TerrainKind.RoughIce;
       } else if (elevation < -128) {
         terrain[index] = TerrainKind.DeepWater;
       } else if (elevation < 0) {

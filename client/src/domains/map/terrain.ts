@@ -1,4 +1,4 @@
-/** Terrain of a tile. */
+/** Terrain of a tile, mirroring `TerrainKind` in the `procgen` crate. */
 export const TerrainKind = {
   DeepWater: 0,
   ShallowWater: 1,
@@ -6,6 +6,8 @@ export const TerrainKind = {
   Hills: 3,
   Mountains: 4,
   Ice: 5,
+  /** Ice at the elevations of hills and mountains. */
+  RoughIce: 6,
 } as const;
 export type TerrainKind = (typeof TerrainKind)[keyof typeof TerrainKind];
 
@@ -16,6 +18,7 @@ export const TERRAIN_NAMES: Record<TerrainKind, string> = {
   [TerrainKind.Hills]: "Hills",
   [TerrainKind.Mountains]: "Mountains",
   [TerrainKind.Ice]: "Ice",
+  [TerrainKind.RoughIce]: "Rough ice",
 };
 
 /** Flat colors, for debugging and far zoomed out views. */
@@ -26,4 +29,5 @@ export const TERRAIN_COLORS: Record<TerrainKind, number> = {
   [TerrainKind.Hills]: 0xa89060,
   [TerrainKind.Mountains]: 0x8c8478,
   [TerrainKind.Ice]: 0xe6eef2,
+  [TerrainKind.RoughIce]: 0xbfd3de,
 };
