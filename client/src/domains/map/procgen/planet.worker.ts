@@ -11,8 +11,12 @@ const respond = (response: PlanetGeneratorResponse, transfer: Transferable[] = [
 onmessage = async ({ data: { settings } }: MessageEvent<PlanetGeneratorRequest>) => {
   try {
     const { procgen_generate_planet } = await bridge;
-    const planet = procgen_generate_planet(settings.seed, settings.columns, settings.rows, (percentage) =>
-      respond({ type: "progress", percentage }),
+    const planet = procgen_generate_planet(
+      settings.seed,
+      settings.columns,
+      settings.rows,
+      settings.oceanCoverage,
+      (percentage) => respond({ type: "progress", percentage }),
     );
     let map: HexMapData;
     try {

@@ -47,7 +47,18 @@ pub struct MapGeneratorSettings {
     badlands_twist: f64,
     /// Specifies the planet's sea level. This value must be between -1.0
     /// (minimum planet elevation) and +1.0 (maximum planet elevation).
+    ///
+    /// Must stay at 0.0, like the original example: the graph scales the land elevations
+    /// around 0.0 by `get_continent_height_scale`, so any other value drowns the continents
+    /// instead of raising the seas. `ocean_coverage` is the knob for how much sea there is.
     sea_level: f64,
+    /// Share of the map covered by the seas, from 0.0 (no sea) to 1.0 (no land).
+    /// Earth is about 0.71.
+    ///
+    /// Unlike `sea_level`, this is applied to the sampled elevations rather than to the
+    /// noise graph: the water line is their matching quantile, which pins the land budget
+    /// of every seed instead of letting it swing with the noise.
+    ocean_coverage: f64,
     /// Specifies the level on the planet in which continental shelves appear.
     /// This value must be between -1.0 (minimum planet elevation) and +1.0
     /// (maximum planet elevation), and must be less than `SEA_LEVEL`.
@@ -85,7 +96,10 @@ impl Default for MapGeneratorSettings {
             seed: 0,
             columns: 80,
             rows: 52,
-            continent_frequency: 1.0,
+            // 0.75 rather than the original example's 1.0: the whole continent definition,
+            // sampled over a full planet, grows by a third, so that a handful of huge
+            // continents hold almost all the land, with open ocean in between
+            continent_frequency: 0.75,
             continent_lacunarity: 2.208984375,
             mountain_lacunarity: 2.142578125,
             hills_lacunarity: 2.162109375,
@@ -95,8 +109,13 @@ impl Default for MapGeneratorSettings {
             hills_twist: 1.0,
             badlands_twist: 1.0,
             sea_level: 0.0,
+            // Earth is about 71% sea; the noise graph on its own leaves only 33% to 60%
+            // of the map underwater, depending on the seed
+            ocean_coverage: 0.7,
             shelf_level: -0.375,
-            mountains_amount: 0.5,
+            // 0.6 rather than the original example's 0.5: raising the water line sinks the
+            // land by about 800 m, which would otherwise leave the continents nearly flat
+            mountains_amount: 0.6,
             badlands_amount: 0.3125,
             terrain_offset: 1.0,
             mountain_glaciation: 1.375,
@@ -133,6 +152,18 @@ impl MapGeneratorSettings {
         }
     }
 
+    /// Share of the map that the seas should cover, from 0.0 (no sea) to 1.0 (no land).
+    pub fn with_ocean_coverage(self, ocean_coverage: f64) -> Self {
+        assert!(
+            (0.0..=1.0).contains(&ocean_coverage),
+            "0.0 <= ocean_coverage <= 1.0"
+        );
+        Self {
+            ocean_coverage,
+            ..self
+        }
+    }
+
     settings_scalar_accessors! {
         get_seed: seed, MapGeneratorSeedScalar,
         get_columns: columns, CubeCoordsScalar,
@@ -147,6 +178,7 @@ impl MapGeneratorSettings {
         get_hills_twist: hills_twist, f64,
         get_badlands_twist: badlands_twist, f64,
         get_sea_level: sea_level, f64,
+        get_ocean_coverage: ocean_coverage, f64,
         get_shelf_level: shelf_level, f64,
         get_mountains_amount: mountains_amount, f64,
         get_badlands_amount: badlands_amount, f64,
@@ -184,9 +216,13 @@ impl MapGeneratorSettings {
 
 #[cfg(test)]
 mod tests {
-    use project_x_core::hex_map::shape::RectangularHexMapShape;
+    use project_x_core::hex_map::{
+        coordinates::{CubeCoordsScalar, OffsetCoords},
+        shape::RectangularHexMapShape,
+    };
 
-    use super::MapGeneratorSettings;
+    use super::{MapGeneratorSeedScalar, MapGeneratorSettings};
+    use crate::map::MapGenerator;
 
     #[test]
     fn test_default_settings_have_a_valid_map_size() {
@@ -199,5 +235,102 @@ mod tests {
     #[should_panic(expected = "columns > 0 && rows > 0")]
     fn test_settings_reject_an_empty_map() {
         MapGeneratorSettings::new(0, 80, 0);
+    }
+
+    #[test]
+    fn test_settings_take_an_ocean_coverage() {
+        let settings = MapGeneratorSettings::new(0, 80, 52).with_ocean_coverage(0.25);
+        assert_eq!(settings.get_ocean_coverage(), 0.25);
+        assert_eq!(settings.get_seed(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "0.0 <= ocean_coverage <= 1.0")]
+    fn test_settings_reject_an_ocean_coverage_out_of_bounds() {
+        MapGeneratorSettings::default().with_ocean_coverage(1.5);
+    }
+
+    /// Share of the map covered in land, and share covered by its biggest landmass, on a map
+    /// generated with the default settings. Landmasses wrap around east-west, like the map.
+    fn land_shares(seed: MapGeneratorSeedScalar) -> (f64, f64) {
+        let (columns, rows) = (40, 26);
+        let shape = RectangularHexMapShape::new(columns, rows);
+        let settings = MapGeneratorSettings::new(seed, columns, rows);
+        let (scale, bias) = settings.get_elevation_scale_bias();
+        let sea_level = settings.get_sea_level().mul_add(scale, bias);
+        let map = MapGenerator::from_settings(settings).generate(|_| {});
+        let index =
+            |coords: OffsetCoords| coords.row() as usize * columns as usize + coords.col() as usize;
+        let land: Vec<bool> = shape
+            .coords()
+            .map(|coords| {
+                let elevation = map.tile(&coords).expect("missing tile").elevation();
+                f64::from(elevation) >= sea_level
+            })
+            .collect();
+
+        // flood fill each landmass, odd rows being shoved half a hex to the east
+        let mut seen = vec![false; land.len()];
+        let mut biggest = 0;
+        for start in shape.coords().map(OffsetCoords::from) {
+            if seen[index(start)] || !land[index(start)] {
+                continue;
+            }
+            seen[index(start)] = true;
+            let mut stack = vec![start];
+            let mut size = 0;
+            while let Some(coords) = stack.pop() {
+                size += 1;
+                let odd = (coords.row() & 1) as CubeCoordsScalar;
+                let neighbors = [
+                    (-1, 0),
+                    (1, 0),
+                    (odd - 1, -1),
+                    (odd, -1),
+                    (odd - 1, 1),
+                    (odd, 1),
+                ];
+                for (columns_offset, rows_offset) in neighbors {
+                    let row = coords.row() + rows_offset;
+                    if row < 0 || row >= rows {
+                        continue;
+                    }
+                    let col = (coords.col() + columns_offset).rem_euclid(columns);
+                    let neighbor = OffsetCoords::new(col, row);
+                    if !seen[index(neighbor)] && land[index(neighbor)] {
+                        seen[index(neighbor)] = true;
+                        stack.push(neighbor);
+                    }
+                }
+            }
+            biggest = biggest.max(size);
+        }
+
+        let tiles = shape.tiles_count() as f64;
+        (
+            land.iter().filter(|&&land| land).count() as f64 / tiles,
+            biggest as f64 / tiles,
+        )
+    }
+
+    #[test]
+    fn test_default_settings_generate_earth_like_maps() {
+        let settings = MapGeneratorSettings::default();
+        for seed in [0, 1, 2, 3] {
+            let (land, biggest) = land_shares(seed);
+            // the seas cover the wanted share of every map, whatever the seed
+            let expected_land = 1.0 - settings.get_ocean_coverage();
+            assert!(
+                (land - expected_land).abs() < 0.01,
+                "seed {seed}: land covers {:.1}% of the map",
+                land * 100.0
+            );
+            // and one huge continent holds a good third of that land
+            assert!(
+                biggest >= 0.10,
+                "seed {seed}: the biggest landmass covers {:.0}% of the map",
+                biggest * 100.0
+            );
+        }
     }
 }

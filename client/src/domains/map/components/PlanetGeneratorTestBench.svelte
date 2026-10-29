@@ -5,6 +5,7 @@
   import GameView from "../../game/ui/GameView.svelte";
   import { type HexMapData, type OffsetCoords, tileIndex } from "../hexMap";
   import {
+    DEFAULT_OCEAN_COVERAGE,
     MAX_MAP_SIZE,
     MAX_SEED,
     type PlanetSettings,
@@ -16,7 +17,12 @@
   const generator = createPlanetGenerator();
   onDestroy(() => generator.dispose());
 
-  const settings = $state<PlanetSettings>({ seed: 0, columns: 80, rows: 52 });
+  const settings = $state<PlanetSettings>({
+    seed: 0,
+    columns: 80,
+    rows: 52,
+    oceanCoverage: DEFAULT_OCEAN_COVERAGE,
+  });
   const settingsError = $derived(validatePlanetSettings(settings));
 
   let map = $state.raw<HexMapData | null>(null);
@@ -91,6 +97,12 @@
       {@render numberField("Seed", settings.seed, MAX_SEED, (seed) => (settings.seed = seed))}
       {@render numberField("Columns", settings.columns, MAX_MAP_SIZE, (columns) => (settings.columns = columns))}
       {@render numberField("Rows", settings.rows, MAX_MAP_SIZE, (rows) => (settings.rows = rows))}
+      {@render numberField(
+        "Ocean %",
+        Math.round(settings.oceanCoverage * 100),
+        100,
+        (percentage) => (settings.oceanCoverage = percentage / 100),
+      )}
       <Button type="submit" variant="primary" size="sm" icon="map" disabled={settingsError !== null}>Generate</Button>
       <Button size="sm" onclick={generateWithRandomSeed}>Random seed</Button>
     </form>

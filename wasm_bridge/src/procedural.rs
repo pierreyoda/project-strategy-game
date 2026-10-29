@@ -62,12 +62,14 @@ impl GeneratedPlanet {
     }
 }
 
-/// Generate a planet, calling `on_progress` with the progress percentage along the way.
+/// Generate a planet, the seas covering `ocean_coverage` of it, and call `on_progress` with
+/// the progress percentage along the way.
 #[wasm_bindgen]
 pub fn procgen_generate_planet(
     seed: u32,
     columns: i16,
     rows: i16,
+    ocean_coverage: f64,
     #[wasm_bindgen(unchecked_param_type = "(percentage: number) => void")] on_progress: &Function,
 ) -> Result<GeneratedPlanet, JsError> {
     // `MapGeneratorSettings` panics on invalid settings, which is unrecoverable in WASM
@@ -81,16 +83,19 @@ pub fn procgen_generate_planet(
             "the map must have at least one column and one row",
         ));
     }
+    if !(0.0..=1.0).contains(&ocean_coverage) {
+        return Err(JsError::new("the ocean coverage must be from 0 to 1"));
+    }
 
-    let settings = MapGeneratorSettings::new(seed, columns, rows);
-    let map = MapGenerator::from_settings(MapGeneratorSettings::new(seed, columns, rows)).generate(
-        |event| {
-            let MapGeneratorEvent::Progress(percentage) = event;
-            // informational only: an error thrown by the callback does not stop the generation
-            let _ = on_progress.call1(&JsValue::NULL, &JsValue::from(percentage));
-        },
-    );
-    Ok(GeneratedPlanet::from_hex_map(&map, &settings))
+    // the generator takes its settings, which the generated planet needs in turn
+    let settings =
+        || MapGeneratorSettings::new(seed, columns, rows).with_ocean_coverage(ocean_coverage);
+    let map = MapGenerator::from_settings(settings()).generate(|event| {
+        let MapGeneratorEvent::Progress(percentage) = event;
+        // informational only: an error thrown by the callback does not stop the generation
+        let _ = on_progress.call1(&JsValue::NULL, &JsValue::from(percentage));
+    });
+    Ok(GeneratedPlanet::from_hex_map(&map, &settings()))
 }
 
 #[cfg(test)]
