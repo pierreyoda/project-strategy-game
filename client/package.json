@@ -6,6 +6,7 @@
   "type": "module",
   "main": ".vite/build/index.js",
   "private": true,
+  "packageManager": "pnpm@12.14.0",
   "scripts": {
     "bootstrap:wasm": "wasm-pack build --out-dir '../wasm-pkg' --out-name 'project-x-wasm-pkg' --target bundler ../wasm_bridge",
     "start": "electron-forge start",

@@ -1,0 +1,6 @@
+# Electron Forge needs a flat, symlink-free node_modules to package the app.
+nodeLinker: hoisted
+
+allowBuilds:
+  # Selects the 7-Zip binary used by the Squirrel maker (Windows installers).
+  electron-winstaller: true
