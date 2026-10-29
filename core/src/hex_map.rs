@@ -33,6 +33,10 @@ impl HexMap {
     pub fn from_tiles(tiles: HexMapStorage) -> Self {
         Self { tiles }
     }
+
+    pub fn tile(&self, coords: &CubeCoords) -> Option<&HexMapTile> {
+        self.tiles.get(coords)
+    }
 }
 
 impl fmt::Debug for HexMap {

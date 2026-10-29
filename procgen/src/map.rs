@@ -1,12 +1,16 @@
 pub use self::{
     graph::{PlanetGraph, SubGroupId},
     node::NoiseNode,
+    projection::CylinderProjection,
+    sampling::ElevationField,
     settings::{MAX_SEED, MapGeneratorSeedScalar, MapGeneratorSettings},
 };
 
 mod graph;
 mod groups;
 mod node;
+mod projection;
+mod sampling;
 mod settings;
 
 #[derive(Debug)]

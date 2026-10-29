@@ -16,4 +16,9 @@ impl HexMapTile {
             layer_artificial: HexMapArtificialTileData::new(),
         }
     }
+
+    /// Elevation, in meters.
+    pub fn elevation(&self) -> i16 {
+        self.elevation
+    }
 }
