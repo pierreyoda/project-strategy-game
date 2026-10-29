@@ -1,12 +1,12 @@
-import { spawn } from 'node:child_process';
-import { type FSWatcher, watch } from 'node:fs';
-import { resolve } from 'node:path';
-import type { Plugin } from 'vite';
+import { spawn } from "node:child_process";
+import { type FSWatcher, watch } from "node:fs";
+import { resolve } from "node:path";
+import type { Plugin } from "vite";
 
 /** Cargo workspace crates compiled into the WASM bridge. */
-const GAME_RUST_CRATES = ['core', 'procgen', 'wasm_bridge'];
+const GAME_RUST_CRATES = ["core", "procgen", "wasm_bridge"];
 const RUST_SOURCE_REGEX = /\.rs$|Cargo\.toml$/;
-const WASM_OUT_NAME = 'project-x-wasm-pkg';
+const WASM_OUT_NAME = "project-x-wasm-pkg";
 
 /**
  * Builds the `wasm_bridge` crate with wasm-pack into `../wasm-pkg`, where Vite's WebAssembly ES module
@@ -24,14 +24,16 @@ export function wasmPack(): Plugin {
   const buildWasm = () =>
     new Promise<void>((resolveBuild, rejectBuild) => {
       const args = [
-        'build',
-        isProduction ? '--release' : '--dev',
-        ...['--target', 'bundler', '--out-dir', resolve(workspaceDir, 'wasm-pkg'), '--out-name', WASM_OUT_NAME],
-        resolve(workspaceDir, 'wasm_bridge'),
+        "build",
+        isProduction ? "--release" : "--dev",
+        ...["--target", "bundler", "--out-dir", resolve(workspaceDir, "wasm-pkg"), "--out-name", WASM_OUT_NAME],
+        resolve(workspaceDir, "wasm_bridge"),
       ];
-      spawn('wasm-pack', args, { stdio: 'inherit' })
-        .on('error', rejectBuild)
-        .on('exit', code => (code === 0 ? resolveBuild() : rejectBuild(new Error(`wasm-pack exited with code ${code}`))));
+      spawn("wasm-pack", args, { stdio: "inherit" })
+        .on("error", rejectBuild)
+        .on("exit", (code) =>
+          code === 0 ? resolveBuild() : rejectBuild(new Error(`wasm-pack exited with code ${code}`)),
+        );
     }).then(() => {
       isWasmBuilt = true;
     });
@@ -39,14 +41,14 @@ export function wasmPack(): Plugin {
   const scheduleRebuild = () => {
     clearTimeout(rebuildTimeout);
     rebuildTimeout = setTimeout(() => {
-      rebuild = rebuild.then(buildWasm).catch(err => console.error('[wasm-pack]', err));
+      rebuild = rebuild.then(buildWasm).catch((err) => console.error("[wasm-pack]", err));
     }, 100);
   };
 
   return {
-    name: 'project-x:wasm-pack',
+    name: "project-x:wasm-pack",
     configResolved(config) {
-      workspaceDir = resolve(config.root, '..');
+      workspaceDir = resolve(config.root, "..");
       isProduction = config.isProduction;
     },
     async buildStart() {
@@ -63,7 +65,7 @@ export function wasmPack(): Plugin {
     },
     closeWatcher() {
       clearTimeout(rebuildTimeout);
-      watchers.forEach(watcher => watcher.close());
+      watchers.forEach((watcher) => watcher.close());
     },
   };
 }

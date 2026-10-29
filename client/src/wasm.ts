@@ -1,5 +1,5 @@
 const importGameWasmPkg = async () => import("../../wasm-pkg");
-type RawWasmBridgeModule = Omit<Awaited<ReturnType<typeof importGameWasmPkg>>, 'default'>;
+type RawWasmBridgeModule = Omit<Awaited<ReturnType<typeof importGameWasmPkg>>, "default">;
 
 export interface WasmBridgeApi {
   core: WasmBridgeCoreModule;
@@ -7,14 +7,14 @@ export interface WasmBridgeApi {
 }
 
 export interface WasmBridgeCoreModule {
-  buildHello: RawWasmBridgeModule['core_build_hello'];
+  buildHello: RawWasmBridgeModule["core_build_hello"];
 }
 const bindCoreModule = (wasmModule: Readonly<RawWasmBridgeModule>): WasmBridgeCoreModule => ({
   buildHello: wasmModule.core_build_hello,
 });
 
 export interface WasmBridgeProcGenModule {
-  buildHello: RawWasmBridgeModule['procgen_build_hello'];
+  buildHello: RawWasmBridgeModule["procgen_build_hello"];
 }
 const bindProcGenModule = (wasmModule: Readonly<RawWasmBridgeModule>): WasmBridgeProcGenModule => ({
   buildHello: wasmModule.procgen_build_hello,

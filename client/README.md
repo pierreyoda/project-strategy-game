@@ -12,12 +12,12 @@ For a better IDE experience (at least for Visual Studio Code), you should probab
 
 Requirements:
 
-- Latest Rust stable toolchain. To be precise, the 1.61 version should work as of writing this, but all development is done and targets the latest stable version: latest features *will* be used when needed.
+- Latest Rust stable toolchain. To be precise, the 1.61 version should work as of writing this, but all development is done and targets the latest stable version: latest features _will_ be used when needed.
 - The `wasm32-unknown-unknown` target setup for the Rust toolchain
   - Run `rustup target add wasm32-unknown-unknown` with rustup
   - Or, for a custom toolchain, [follow this guide](https://rustwasm.github.io/wasm-pack/book/prerequisites/non-rustup-setups.html)
 - The [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) tool installed (it's on `brew`, on NPM, has a Windows installer, a bash install script or you can just `cargo install wasm-pack`)
 
-The WASM package is built automatically by `yarn start` (debug build, rebuilt when the Rust crates change) and `yarn package` / `yarn make` (release build).
+The WASM package is built automatically by `pnpm start` (debug build, rebuilt when the Rust crates change) and `pnpm package` / `pnpm make` (release build).
 
-> Vite does not type-check: run `yarn typecheck` for that. It needs the WASM package's typings, so if no build was run yet, run `yarn bootstrap:wasm` first.
+> Vite does not type-check: run `pnpm typecheck` for that. It needs the WASM package's typings, so if no build was run yet, run `pnpm bootstrap:wasm` first.
