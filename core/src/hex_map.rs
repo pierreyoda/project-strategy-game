@@ -4,6 +4,7 @@ use self::{coordinates::CubeCoords, tile::HexMapTile};
 
 pub mod coordinates;
 pub mod layers;
+pub mod shape;
 pub mod tile;
 
 pub type HexMapStorage = HashMap<CubeCoords, HexMapTile>;
@@ -32,6 +33,10 @@ impl HexMap {
     pub fn from_tiles(tiles: HexMapStorage) -> Self {
         Self { tiles }
     }
+
+    pub fn tile(&self, coords: &CubeCoords) -> Option<&HexMapTile> {
+        self.tiles.get(coords)
+    }
 }
 
 impl fmt::Debug for HexMap {
@@ -43,28 +48,18 @@ impl fmt::Debug for HexMap {
 #[cfg(test)]
 mod tests {
     use crate::hex_map::{
-        coordinates::{CubeCoords, CubeCoordsScalar},
+        HexMap, HexMapStorage, coordinates::CubeCoordsScalar, shape::RectangularHexMapShape,
         tile::HexMapTile,
-        HexMap, HexMapStorage,
     };
 
     fn generate_small_rectangular_hashmap(
-        left: CubeCoordsScalar,
-        right: CubeCoordsScalar,
-        top: CubeCoordsScalar,
-        bottom: CubeCoordsScalar,
+        columns: CubeCoordsScalar,
+        rows: CubeCoordsScalar,
     ) -> HexMap {
-        assert!(left < right);
-        assert!(top < bottom);
-        let mut tiles = HexMapStorage::new();
-        for q in left..=right {
-            let q_offset = q >> 1;
-            for r in (top - q_offset)..=(bottom - q_offset) {
-                tiles.insert(
-                    CubeCoords::from_axial_coords(q, r),
-                    HexMapTile::from_properties(10),
-                );
-            }
+        let shape = RectangularHexMapShape::new(columns, rows);
+        let mut tiles = HexMapStorage::with_capacity(shape.tiles_count());
+        for coords in shape.coords() {
+            tiles.insert(coords, HexMapTile::from_properties(10));
         }
         HexMap { tiles }
     }

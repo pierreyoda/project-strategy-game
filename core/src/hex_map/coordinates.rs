@@ -71,6 +71,60 @@ impl CubeCoords {
         assert!(q + r + s == 0, "q + r + s == 0");
         Self { q, r, s }
     }
+
+    pub fn q(&self) -> CubeCoordsScalar {
+        self.q
+    }
+
+    pub fn r(&self) -> CubeCoordsScalar {
+        self.r
+    }
+
+    pub fn s(&self) -> CubeCoordsScalar {
+        self.s
+    }
+}
+
+/// Offset coordinates of pointy-top hexes in the "odd-r" layout: odd rows are shoved half a hex to the east.
+///
+/// Meant for rectangular maps (storage, display, wrapping), computations should use `CubeCoords`.
+///
+/// See: https://www.redblobgames.com/grids/hexagons/#coordinates-offset
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OffsetCoords {
+    col: CubeCoordsScalar,
+    row: CubeCoordsScalar,
+}
+
+impl OffsetCoords {
+    pub fn new(col: CubeCoordsScalar, row: CubeCoordsScalar) -> Self {
+        Self { col, row }
+    }
+
+    pub fn col(&self) -> CubeCoordsScalar {
+        self.col
+    }
+
+    pub fn row(&self) -> CubeCoordsScalar {
+        self.row
+    }
+}
+
+// NB: `>> 1` is a floored division by 2, including for negative rows.
+
+impl From<CubeCoords> for OffsetCoords {
+    fn from(value: CubeCoords) -> Self {
+        Self {
+            col: value.q + (value.r >> 1),
+            row: value.r,
+        }
+    }
+}
+
+impl From<OffsetCoords> for CubeCoords {
+    fn from(value: OffsetCoords) -> Self {
+        Self::from_axial_coords(value.col - (value.row >> 1), value.row)
+    }
 }
 
 /// TODO: same order as `HexMapDirection`
@@ -95,8 +149,8 @@ impl Add for CubeCoords {
     fn add(self, rhs: Self) -> Self::Output {
         Self {
             q: self.q + rhs.q,
-            r: self.q + rhs.q,
-            s: self.q + rhs.q,
+            r: self.r + rhs.r,
+            s: self.s + rhs.s,
         }
     }
 }
@@ -107,8 +161,8 @@ impl Sub for CubeCoords {
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
             q: self.q - rhs.q,
-            r: self.q - rhs.q,
-            s: self.q - rhs.q,
+            r: self.r - rhs.r,
+            s: self.s - rhs.s,
         }
     }
 }
@@ -136,13 +190,64 @@ impl HexMapCoordinates {
 mod tests {
     use crate::hex_map::coordinates::HexMapCoordinatesSystem;
 
-    use super::CUBE_COORDS_CACHED_DIRECTIONS;
+    use super::{CUBE_COORDS_CACHED_DIRECTIONS, CubeCoords, OffsetCoords};
 
     #[test]
     fn test_cube_coords_directions_cache() {
         for relative_coords in CUBE_COORDS_CACHED_DIRECTIONS {
             assert_eq!(relative_coords.q + relative_coords.r + relative_coords.s, 0);
             assert_eq!(relative_coords.length(), 1f64);
+        }
+    }
+
+    #[test]
+    fn test_cube_coords_add_sub() {
+        let a = CubeCoords::from_cube_coords(3, -5, 2);
+        let b = CubeCoords::from_cube_coords(-1, 4, -3);
+        assert_eq!(a + b, CubeCoords::from_cube_coords(2, -1, -1));
+        assert_eq!(a - b, CubeCoords::from_cube_coords(4, -9, 5));
+        assert_eq!(a + b - b, a);
+    }
+
+    #[test]
+    fn test_cube_coords_distance_to() {
+        let origin = CubeCoords::from_cube_coords(0, 0, 0);
+        assert_eq!(origin.distance_to(origin), 0f64);
+        for direction in CUBE_COORDS_CACHED_DIRECTIONS {
+            let neighbor = origin + direction;
+            assert_eq!(origin.distance_to(neighbor), 1f64);
+            assert_eq!(origin.distance_to(neighbor + direction), 2f64);
+        }
+        let a = CubeCoords::from_cube_coords(3, -5, 2);
+        let b = CubeCoords::from_cube_coords(-1, 4, -3);
+        assert_eq!(a.distance_to(b), 9f64);
+        assert_eq!(b.distance_to(a), 9f64);
+    }
+
+    #[test]
+    fn test_offset_coords_conversions() {
+        let cases = [
+            ((0, 0), (0, 0)),
+            ((3, 0), (3, 0)),
+            // odd row: shoved half a hex to the east
+            ((0, 1), (0, 1)),
+            ((1, 2), (0, 2)),
+            ((3, 3), (2, 3)),
+            ((-1, -1), (0, -1)),
+            ((0, -2), (1, -2)),
+        ];
+        for ((col, row), (q, r)) in cases {
+            let offset = OffsetCoords::new(col, row);
+            let cube = CubeCoords::from_axial_coords(q, r);
+            assert_eq!(CubeCoords::from(offset), cube, "{offset:?}");
+            assert_eq!(OffsetCoords::from(cube), offset, "{cube:?}");
+        }
+
+        for row in -4..4 {
+            for col in -4..4 {
+                let offset = OffsetCoords::new(col, row);
+                assert_eq!(OffsetCoords::from(CubeCoords::from(offset)), offset);
+            }
         }
     }
 
