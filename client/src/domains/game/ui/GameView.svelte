@@ -4,6 +4,8 @@
   import { onMount } from "svelte";
 
   import HexMapRenderer from "../../map/components/HexMapRenderer.svelte";
+  import MapEntityRenderer from "../../map/components/MapEntityRenderer.svelte";
+  import type { MapEntity } from "../../map/entities";
   import { createHexLayout, hexCenter, mapHeight, wrapBounds } from "../../map/hexLayout";
   import type { HexMapData, OffsetCoords } from "../../map/hexMap";
   import type { PixiContext } from "../../../shared/pixi";
@@ -22,6 +24,11 @@
      * `map` or `world` repaints everything instead.
      */
     dirtyTiles?: Uint32Array | null;
+    /**
+     * Settlements and the like, drawn on the tiles with their colors already resolved. The world's
+     * own are not derived here: which stage a settlement is at is the simulation's to say.
+     */
+    entities?: readonly MapEntity[];
     /** Draws the flat colors of the terrains only, without the textures of their tiles. */
     flatColors?: boolean;
     /** Called when the pointer moves to another tile, with `null` once it leaves the map. */
@@ -40,6 +47,7 @@
     map,
     world = null,
     dirtyTiles = null,
+    entities = [],
     flatColors = false,
     onTileHover,
     onTileClick,
@@ -160,6 +168,7 @@
   <canvas bind:this={canvas} class="block"></canvas>
   {#if pixi}
     <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {onTileHover} {onTileClick} />
+    <MapEntityRenderer {pixi} {map} {layout} {entities} />
     {#if world}
       <WorldOverlayRenderer {pixi} {world} {layout} {dirtyTiles} {selectedTile} />
     {/if}

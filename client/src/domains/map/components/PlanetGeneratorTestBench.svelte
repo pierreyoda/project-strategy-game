@@ -3,6 +3,7 @@
 
   import Button from "../../../shared/ui/Button.svelte";
   import GameView from "../../game/ui/GameView.svelte";
+  import { createFakeEntities } from "../fakeEntities";
   import { type HexMapData, type OffsetCoords, tileIndex } from "../hexMap";
   import {
     DEFAULT_OCEAN_COVERAGE,
@@ -32,6 +33,9 @@
   let hoveredTile = $state<OffsetCoords | null>(null);
   const hoveredTileIndex = $derived(hoveredTile && map && tileIndex(map, hoveredTile));
   let flatColors = $state(false);
+  let showSettlements = $state(false);
+  // stand-ins, to see the sprites on real terrain: the generator has no settlements to place
+  const entities = $derived(map && showSettlements ? createFakeEntities(map) : []);
 
   // generating cancels the generation in progress: only the latest one updates the state
   let generation = 0;
@@ -109,6 +113,14 @@
     <Button variant="ghost" size="sm" aria-pressed={flatColors} onclick={() => (flatColors = !flatColors)}>
       Flat colors
     </Button>
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-pressed={showSettlements}
+      onclick={() => (showSettlements = !showSettlements)}
+    >
+      Settlements
+    </Button>
 
     <div class="ml-auto flex items-center gap-4 whitespace-nowrap text-fg-muted tabular-nums">
       {#if settingsError}
@@ -136,7 +148,7 @@
   </header>
   <div class="min-h-0 flex-1">
     {#if map}
-      <GameView {map} {flatColors} onTileHover={(tile) => (hoveredTile = tile)} />
+      <GameView {map} {entities} {flatColors} onTileHover={(tile) => (hoveredTile = tile)} />
     {/if}
   </div>
 </div>
