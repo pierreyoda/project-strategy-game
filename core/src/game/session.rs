@@ -1028,6 +1028,36 @@ mod tests {
     }
 
     #[test]
+    fn test_units_are_projected_with_their_kind_and_points_left() {
+        let (mut session, first, _, own, _) = two_nation_session();
+        let snapshot = session.snapshot(first);
+        // the kind names a template of the meta, which carries the figures the client shows
+        assert_eq!(snapshot.meta.unit_templates.len(), 1);
+        assert_eq!(snapshot.meta.unit_templates[0].r#type, "scout");
+        assert_eq!(snapshot.meta.unit_templates[0].movement, 2);
+        assert_eq!(snapshot.unit_kinds, vec![0]);
+        assert_eq!(
+            snapshot.unit_movement_left,
+            vec![2],
+            "a fresh turn's points"
+        );
+
+        let version = session.version();
+        session
+            .submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(2, 1)],
+            })
+            .expect("a legal move");
+        // spending points reaches the delta: the unit is journaled by the move
+        let Projection::Delta(delta) = session.project(first, version) else {
+            panic!("a step must not cost a full snapshot");
+        };
+        assert_eq!(delta.unit_ids, vec![own.raw()]);
+        assert_eq!(delta.unit_movement_left, vec![1]);
+    }
+
+    #[test]
     fn test_a_constructed_building_is_projected_with_its_kind_and_level() {
         use crate::simulation::ids::{EntityIndex, SettlementId};
 

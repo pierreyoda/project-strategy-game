@@ -4,6 +4,8 @@ import {
   type ProjectionMeta,
   type SettlementStage,
   UNKNOWN_BUILDING_KIND,
+  UNKNOWN_UNIT_KIND,
+  type UnitsBuffers,
   type WorldDeltaData,
   type WorldProjection,
   type WorldSnapshotData,
@@ -15,6 +17,12 @@ export type UnitView = {
   tile: number;
   owner: number;
   health: number;
+  /** Its template's type (`infantry_division`...), `null` for one the simulation could not name. */
+  type: string | null;
+  /** Movement points per turn, and those left this turn. The simulation's figures, never ours. */
+  movement: number;
+  movementLeft: number;
+  sight: number;
 };
 
 export type SettlementView = {
@@ -81,6 +89,25 @@ export const toHexMapData = (state: WorldState): HexMapData => ({
   terrain: state.terrain,
 });
 
+/** Fold a projection's units into a map of views, the kinds resolved against that projection's meta. */
+const readUnits = (into: Map<number, UnitView>, buffers: UnitsBuffers, meta: ProjectionMeta) => {
+  for (let index = 0; index < buffers.ids.length; index++) {
+    const id = buffers.ids[index];
+    const kind = buffers.kinds[index];
+    const template = kind === UNKNOWN_UNIT_KIND ? undefined : meta.unitTemplates[kind];
+    into.set(id, {
+      id,
+      tile: buffers.tiles[index],
+      owner: buffers.owners[index],
+      health: buffers.health[index],
+      type: template?.type ?? null,
+      movement: template?.movement ?? 0,
+      movementLeft: buffers.movementLeft[index],
+      sight: template?.sight ?? 0,
+    });
+  }
+};
+
 /** Fold a projection's buildings into a map of views, the kinds resolved against that projection's meta. */
 const readBuildings = (into: Map<number, BuildingView>, buffers: BuildingsBuffers, meta: ProjectionMeta) => {
   for (let index = 0; index < buffers.ids.length; index++) {
@@ -98,15 +125,7 @@ const readBuildings = (into: Map<number, BuildingView>, buffers: BuildingsBuffer
 
 const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
   const units = new Map<number, UnitView>();
-  for (let index = 0; index < snapshot.units.ids.length; index++) {
-    const id = snapshot.units.ids[index];
-    units.set(id, {
-      id,
-      tile: snapshot.units.tiles[index],
-      owner: snapshot.units.owners[index],
-      health: snapshot.units.health[index],
-    });
-  }
+  readUnits(units, snapshot.units, snapshot.meta);
   const settlements = new Map<number, SettlementView>();
   for (let index = 0; index < snapshot.settlements.ids.length; index++) {
     const id = snapshot.settlements.ids[index];
@@ -150,15 +169,7 @@ const patch = (state: WorldState, delta: WorldDeltaData): WorldState => {
   for (const id of delta.unitsRemoved) {
     state.units.delete(id);
   }
-  for (let index = 0; index < delta.units.ids.length; index++) {
-    const id = delta.units.ids[index];
-    state.units.set(id, {
-      id,
-      tile: delta.units.tiles[index],
-      owner: delta.units.owners[index],
-      health: delta.units.health[index],
-    });
-  }
+  readUnits(state.units, delta.units, delta.meta);
 
   for (const id of delta.settlementsRemoved) {
     state.settlements.delete(id);

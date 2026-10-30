@@ -55,6 +55,8 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     units.tiles.buffer,
     units.owners.buffer,
     units.health.buffer,
+    units.kinds.buffer,
+    units.movementLeft.buffer,
     settlements.ids.buffer,
     settlements.tiles.buffer,
     settlements.owners.buffer,
@@ -107,6 +109,8 @@ const readSnapshot = (view: {
   unitTiles: Uint32Array;
   unitOwners: Uint16Array;
   unitHealth: Uint16Array;
+  unitKinds: Uint8Array;
+  unitMovementLeft: Uint8Array;
   settlementIds: Uint32Array;
   settlementTiles: Uint32Array;
   settlementOwners: Uint16Array;
@@ -127,7 +131,7 @@ const readSnapshot = (view: {
   tileOwner: view.tileOwner,
   tileSphere: view.tileSphere,
   tileFlags: view.tileFlags,
-  units: { ids: view.unitIds, tiles: view.unitTiles, owners: view.unitOwners, health: view.unitHealth },
+  units: readUnits(view),
   settlements: {
     ids: view.settlementIds,
     tiles: view.settlementTiles,
@@ -135,6 +139,22 @@ const readSnapshot = (view: {
     stages: view.settlementStages,
   },
   buildings: readBuildings(view),
+});
+
+const readUnits = (view: {
+  unitIds: Uint32Array;
+  unitTiles: Uint32Array;
+  unitOwners: Uint16Array;
+  unitHealth: Uint16Array;
+  unitKinds: Uint8Array;
+  unitMovementLeft: Uint8Array;
+}): UnitsBuffers => ({
+  ids: view.unitIds,
+  tiles: view.unitTiles,
+  owners: view.unitOwners,
+  health: view.unitHealth,
+  kinds: view.unitKinds,
+  movementLeft: view.unitMovementLeft,
 });
 
 const readBuildings = (view: {
@@ -164,6 +184,8 @@ const readDelta = (view: {
   unitTiles: Uint32Array;
   unitOwners: Uint16Array;
   unitHealth: Uint16Array;
+  unitKinds: Uint8Array;
+  unitMovementLeft: Uint8Array;
   unitsRemoved: Uint32Array;
   settlementIds: Uint32Array;
   settlementTiles: Uint32Array;
@@ -185,7 +207,7 @@ const readDelta = (view: {
   tileOwner: view.tileOwner,
   tileSphere: view.tileSphere,
   tileFlags: view.tileFlags,
-  units: { ids: view.unitIds, tiles: view.unitTiles, owners: view.unitOwners, health: view.unitHealth },
+  units: readUnits(view),
   unitsRemoved: view.unitsRemoved,
   settlements: {
     ids: view.settlementIds,

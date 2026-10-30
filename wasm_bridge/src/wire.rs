@@ -234,6 +234,16 @@ pub struct MetaWire {
     pub nations: Vec<NationWire>,
     /// What the `buildingKinds` buffers index into: a building's `type`, as its template names it.
     pub building_types: Vec<String>,
+    /// What the `unitKinds` buffers index into.
+    pub unit_templates: Vec<UnitTemplateWire>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnitTemplateWire {
+    pub r#type: String,
+    pub movement: u8,
+    pub sight: u8,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -262,6 +272,15 @@ impl From<&SnapshotMeta> for MetaWire {
             active_nation: value.active_nation,
             nations: value.nations.iter().map(NationWire::from).collect(),
             building_types: value.building_types.clone(),
+            unit_templates: value
+                .unit_templates
+                .iter()
+                .map(|template| UnitTemplateWire {
+                    r#type: template.r#type.clone(),
+                    movement: template.movement,
+                    sight: template.sight,
+                })
+                .collect(),
         }
     }
 }
