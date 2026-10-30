@@ -17,5 +17,8 @@ debug-images = ["dep:image"]
 # internal:
 project_x_core = { path = "../core" }
 # external:
-image = { version = "0.25", optional = true, default-features = false, features = ["png"] }
+image = { version = "0.25", optional = true, default-features = false, features = [
+    "png",
+] }
 noise = "0.9"
+rand = { version = "0.10.3", default-features = false }

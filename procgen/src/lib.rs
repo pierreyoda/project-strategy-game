@@ -26,4 +26,8 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+#[macro_use]
+mod macros;
+
 pub mod map;
+pub mod nations;

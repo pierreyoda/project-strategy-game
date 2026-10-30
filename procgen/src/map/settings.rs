@@ -126,16 +126,6 @@ impl Default for MapGeneratorSettings {
     }
 }
 
-macro_rules! settings_scalar_accessors {
-    ($ ( $name: ident : $field: ident, $type: ty, )* ) => {
-    $(
-        pub fn $name(&self) -> $type {
-            self.$field
-        }
-    )*
-    }
-}
-
 impl MapGeneratorSettings {
     pub fn new(
         seed: MapGeneratorSeedScalar,

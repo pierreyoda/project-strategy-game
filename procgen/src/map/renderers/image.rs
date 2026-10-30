@@ -54,7 +54,8 @@ impl ImageRenderer {
         })
     }
 
-    fn render_grid(
+    /// Draw the hexes of a grid, each in the color given for it, `None` left transparent.
+    pub(crate) fn render_grid(
         &self,
         shape: &RectangularHexMapShape,
         mut color: impl FnMut(OffsetCoords) -> Option<[u8; 3]>,

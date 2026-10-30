@@ -14,9 +14,10 @@ use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 use project_x_core::{
     game::{
         ai::stub_ai_for,
+        journal::TurnChanges,
         projection::{Projection, WorldDelta, WorldSnapshot},
         session::GameSession as CoreSession,
-        state::World,
+        state::{World, WorldMut},
         turn::{StepBudget, TurnProgress},
     },
     hex_map::shape::RectangularHexMapShape,
@@ -26,10 +27,12 @@ use project_x_core::{
         military::{Unit, UnitTemplate},
         nations::Nation,
         resources::{Resource, ResourceDataStore},
+        settlements::Settlement,
     },
 };
-use project_x_procgen::map::{
-    MAX_SEED, MapGenerator, MapGeneratorSettings, TerrainClassifier, TerrainKind,
+use project_x_procgen::{
+    map::{MAX_SEED, MapGenerator, MapGeneratorSettings},
+    nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings, PlanetSurface},
 };
 
 use crate::wire::{CommandWire, EventWire, MetaWire, NewGameSettings, RejectionWire};
@@ -88,17 +91,16 @@ impl GameSession {
         .generate(|_| {});
         let shape = RectangularHexMapShape::new(settings.columns, settings.rows);
 
-        let classifier = TerrainClassifier::new(&generator_settings);
-        let terrain: Vec<u8> = shape
-            .coords()
-            .map(|coords| {
-                let elevation = map.tile(&coords).expect("missing tile").elevation();
-                classifier.classify(coords.into(), elevation) as u8
-            })
-            .collect();
+        let surface = PlanetSurface::classify(&map, &generator_settings);
+        let terrain: Vec<u8> = surface.terrain().iter().map(|&kind| kind as u8).collect();
+        let nations = NationsGenerator::from_settings(NationsGeneratorSettings::new(
+            u64::from(settings.seed),
+            settings.nations,
+        ))
+        .generate(&surface);
 
         let mut world = World::new(shape, map);
-        set_up_scaffold_world(&mut world, settings.nations, &terrain);
+        set_up_scaffold_world(&mut world, settings.nations, &nations);
 
         let local_player = NationId::from_index(0);
         let mut inner = CoreSession::new(world, settings.seed as u64, local_player);
@@ -496,7 +498,10 @@ impl WorldDeltaView {
             .iter()
             .zip(delta.visibility.iter())
             .map(|(&index, &visibility)| {
-                let kind = terrain.get(index as usize).copied().unwrap_or(UNKNOWN_TERRAIN);
+                let kind = terrain
+                    .get(index as usize)
+                    .copied()
+                    .unwrap_or(UNKNOWN_TERRAIN);
                 hidden_unless_explored(visibility, kind)
             })
             .collect();
@@ -540,7 +545,7 @@ impl WorldProjectionView {
 ///
 /// TODO: this is the scaffold standing in for a scenario. Nations, their rosters and their starting
 /// position all belong to scripts, and this function is what they will replace.
-fn set_up_scaffold_world(world: &mut World, nations: u16, terrain: &[u8]) {
+fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedNations) {
     world.register_unit_template(UnitTemplate::new(
         SimulationID::new_abstract_id(SCOUT_TEMPLATE),
         "scout".to_string(),
@@ -548,14 +553,9 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, terrain: &[u8]) {
         2,
     ));
 
-    let shape = world.shape();
-    let habitable: Vec<usize> = terrain
-        .iter()
-        .enumerate()
-        .filter(|(_, kind)| **kind == TerrainKind::Flat as u8 || **kind == TerrainKind::Hills as u8)
-        .map(|(index, _)| index)
-        .collect();
-
+    // the setup writes through the mutation gate like everything else, into changes nobody will
+    // read: nothing has a version to catch up from yet
+    let mut changes = TurnChanges::new();
     for index in 0..nations as usize {
         let mut nation = Nation::new(
             SimulationID::new_abstract_id(&format!("nation_{index}")),
@@ -575,18 +575,30 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, terrain: &[u8]) {
             stockpile.set_income(resource, income);
         }
         let nation = world.register_nation(nation);
-        // spread the starts evenly through the habitable tiles, so nobody starts in anyone's lap
-        if habitable.is_empty() {
-            continue;
-        }
-        let tile = habitable[(index * habitable.len()) / nations.max(1) as usize];
-        let Some(coords) = shape.coords().nth(tile) else {
+
+        // the generator places the nations in this very order; one it found no room for starts
+        // with nothing, like a nation on a planet with no land at all
+        let Some(start) = generated.nations().get(index) else {
             continue;
         };
+        debug_assert_eq!(start.id(), nation);
+        let mut gate = WorldMut::new(world, &mut changes);
+        gate.insert_settlement(Settlement::found(
+            format!("Nation {} capital", index + 1),
+            nation,
+            start.capital(),
+        ));
+        for &tile in start.territory() {
+            if let Some(coords) = gate.world().tile_coords(tile)
+                && let Some(tile) = gate.tile_mut(coords)
+            {
+                tile.artificial_mut().set_owner(Some(nation));
+            }
+        }
         world.place_unit(Unit::recruit(
             SimulationID::new_abstract_id(SCOUT_TEMPLATE),
             nation,
-            coords,
+            start.capital(),
         ));
     }
 }
@@ -630,6 +642,39 @@ mod tests {
     }
 
     #[test]
+    fn test_a_new_game_starts_each_nation_with_a_capital_on_its_own_land() {
+        let session = start_game();
+        let world = session.inner.world();
+        assert_eq!(world.nations().len(), 2);
+        assert_eq!(world.settlements().len(), 2, "one capital each");
+        for (id, nation) in world.nations().iter() {
+            let capital = nation.capital().expect("a capital");
+            let settlement = world
+                .settlements()
+                .get(capital)
+                .expect("the capital exists");
+            assert_eq!(settlement.owner(), id);
+            let tile = world.tile(settlement.position()).expect("on the map");
+            assert_eq!(tile.artificial().settlement(), Some(capital));
+            assert_eq!(tile.artificial().owner(), Some(id));
+            assert!(
+                world.units().iter().any(|(_, unit)| {
+                    unit.owner() == id && unit.position() == settlement.position()
+                }),
+                "the starting unit stands in the capital"
+            );
+        }
+        // the territory around the capitals is owned, the open sea is not
+        let owned = world
+            .shape()
+            .coords()
+            .filter(|&coords| world.tile(coords).unwrap().artificial().owner().is_some())
+            .count();
+        assert!(owned > 2, "{owned} owned tiles");
+        assert!(owned < world.tiles_count() / 2, "{owned} owned tiles");
+    }
+
+    #[test]
     fn test_a_snapshot_hides_the_terrain_of_what_was_never_explored() {
         let session = start_game();
         let snapshot = session.snapshot(0);
@@ -643,8 +688,11 @@ mod tests {
             assert_eq!(kind == UNKNOWN_TERRAIN, seen == 0, "tile {index}");
         }
         // and neither has its elevation
-        for (index, (&elevation, &seen)) in
-            snapshot.elevations().iter().zip(visibility.iter()).enumerate()
+        for (index, (&elevation, &seen)) in snapshot
+            .elevations()
+            .iter()
+            .zip(visibility.iter())
+            .enumerate()
         {
             if seen == 0 {
                 assert_eq!(elevation, 0, "tile {index}");
@@ -660,7 +708,10 @@ mod tests {
         assert!(session.version() > since);
 
         let mut projection = session.project(0, since);
-        assert!(!projection.is_full(), "one turn must not cost a full snapshot");
+        assert!(
+            !projection.is_full(),
+            "one turn must not cost a full snapshot"
+        );
         let delta = projection.take_delta().expect("a delta");
 
         // the tile arrays are parallel to the indices, and sorted so the renderer can paint a row once
@@ -686,6 +737,9 @@ mod tests {
         let meta = session.snapshot(0).meta();
         // the viewer's nation carries its resources, the other one's are not public knowledge
         assert!(meta.contains(r#""id":0"#) && meta.contains(r#""resource":"credits""#));
-        assert!(meta.contains(r#""id":1,"name":"Nation 2","resources":[]"#), "{meta}");
+        assert!(
+            meta.contains(r#""id":1,"name":"Nation 2","resources":[]"#),
+            "{meta}"
+        );
     }
 }

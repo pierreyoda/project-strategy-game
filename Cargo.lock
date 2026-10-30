@@ -267,6 +267,7 @@ dependencies = [
  "image",
  "noise",
  "project_x_core",
+ "rand 0.10.3",
 ]
 
 [[package]]

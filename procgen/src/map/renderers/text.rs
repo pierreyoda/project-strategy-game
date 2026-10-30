@@ -21,7 +21,7 @@ const TERRAIN_GLYPHS: [char; TerrainLegend::BANDS] = ['~', '-', '.', ':', 'n', '
 /// Renders maps as text, optionally with colors (24-bit ANSI escape codes).
 #[derive(Copy, Clone, Debug, Default)]
 pub struct TextRenderer {
-    colors: bool,
+    pub(crate) colors: bool,
 }
 
 impl TextRenderer {
@@ -93,7 +93,8 @@ fn describe_terrain_legend(legend: &TerrainLegend) -> String {
     parts.join("  ")
 }
 
-fn render_grid(
+/// Draw a grid of cells, with a border and the poles marked, like `render_hex_map`.
+pub(crate) fn render_grid(
     shape: &RectangularHexMapShape,
     mut cell: impl FnMut(OffsetCoords) -> TextCell,
 ) -> String {
@@ -112,9 +113,9 @@ fn render_grid(
 }
 
 /// One hex of a rendered map: a glyph followed by a space, on an optional background color.
-struct TextCell {
-    glyph: char,
-    color: Option<[u8; 3]>,
+pub(crate) struct TextCell {
+    pub(crate) glyph: char,
+    pub(crate) color: Option<[u8; 3]>,
 }
 
 impl TextCell {
