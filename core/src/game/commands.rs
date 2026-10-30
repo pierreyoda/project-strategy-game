@@ -17,6 +17,7 @@ use crate::{
     simulation::{
         buildings::Building,
         ids::{EntityRef, NationId, SettlementId, SimulationID, UnitId},
+        movement::{self, StepRefusal},
         resources::{Resource, ResourceDataStore, ResourceQuantity},
         settlements::Settlement,
     },
@@ -24,7 +25,8 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GameCommand {
-    /// Walk a unit along a path of adjacent tiles, one movement point per step.
+    /// Walk a unit along a path of adjacent tiles, each step costing the ground's entry cost
+    /// (see `simulation::movement`). Refused as a whole if any step is.
     MoveUnit { unit: UnitId, path: Vec<CubeCoords> },
     /// Found a settlement where the founding unit stands. The unit is spent.
     FoundSettlement { founder: UnitId, name: String },
@@ -124,37 +126,31 @@ fn move_unit(
         (moved.position(), moved.movement_left())
     };
 
-    // TODO: path.len will need to be replaced by path.total_movement_cost to account for terrain
-    if path.len() > movement_left as usize {
-        return Err(CommandRejection::IllegalMove {
-            reason: "not enough movement points left",
-        });
-    }
-
-    // every step has to be a real tile, adjacent to the one before it
+    // every step is judged by the rules the reachability preview runs, so the two agree
     let state = world.world();
-    let shape = state.shape();
+    let occupied = movement::occupied_tiles(state, Some(unit));
     let mut current = origin;
+    let mut left = movement_left;
+    let mut spent = 0u8;
     for step in path {
-        let step_index = state
-            .tile_index(*step)
-            .ok_or(CommandRejection::IllegalMove {
-                reason: "the path leaves the map",
-            })?;
-        let adjacent = shape
-            .neighbors(current)
-            .any(|neighbor| state.tile_index(neighbor) == Some(step_index));
-        if !adjacent {
-            return Err(CommandRejection::IllegalMove {
-                reason: "the path skips a tile",
-            });
+        match movement::step_cost(state, &occupied, current, *step, left) {
+            Ok((cost, entered)) => {
+                left -= cost;
+                spent += cost;
+                current = entered;
+            }
+            Err(StepRefusal::Occupied) => return Err(CommandRejection::TileOccupied),
+            Err(refusal) => {
+                return Err(CommandRejection::IllegalMove {
+                    reason: refusal.reason(),
+                });
+            }
         }
-        current = *step;
     }
 
     let from = world.world().tile_index(origin).unwrap_or_default();
     let to = world.world().tile_index(current).unwrap_or_default();
-    let steps = path.len() as u8;
+    let steps = spent;
 
     // the tile left behind and the one arrived on both have to be redrawn
     world.mark_tile(origin);
