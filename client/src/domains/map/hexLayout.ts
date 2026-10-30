@@ -1,5 +1,8 @@
 import type { HexMapData, OffsetCoords } from "./hexMap";
 
+/** The dimensions of a map, all these helpers need of it. */
+type MapSize = Pick<HexMapData, "columns" | "rows">;
+
 type Point = { x: number; y: number };
 
 /**
@@ -59,7 +62,7 @@ export const hexAt = (layout: HexLayout, { x, y }: Point): OffsetCoords => {
 };
 
 /** Bring the given coordinates back within the map by wrapping them around east-west, or `null` beyond the poles. */
-export const wrapHex = (map: HexMapData, { col, row }: OffsetCoords): OffsetCoords | null =>
+export const wrapHex = (map: MapSize, { col, row }: OffsetCoords): OffsetCoords | null =>
   row >= 0 && row < map.rows ? { col: ((col % map.columns) + map.columns) % map.columns, row } : null;
 
 /**
@@ -70,11 +73,11 @@ export const wrapHex = (map: HexMapData, { col, row }: OffsetCoords): OffsetCoor
  * cover every row over [width / 2, 2 * period]: the view must start within [`minLeft`, `minLeft` + `period`)
  * and be at most `maxWidth` wide.
  */
-export const wrapBounds = (layout: HexLayout, map: HexMapData) => {
+export const wrapBounds = (layout: HexLayout, map: MapSize) => {
   const period = layout.width * map.columns;
   return { period, minLeft: layout.width / 2, maxWidth: period - layout.width / 2 };
 };
 
 /** Height of the map, from the top corners of its first row to the bottom corners of its last one. */
-export const mapHeight = (layout: HexLayout, map: HexMapData): number =>
+export const mapHeight = (layout: HexLayout, map: MapSize): number =>
   layout.rowHeight * (map.rows - 1) + 2 * layout.size;

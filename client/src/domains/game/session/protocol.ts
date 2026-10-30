@@ -145,7 +145,7 @@ export type WorldSnapshotData = {
   meta: ProjectionMeta;
   columns: number;
   rows: number;
-  /** `TerrainKind` values, for the whole map: terrain never changes, so it is never in a delta. */
+  /** `TerrainKind` values, `Unknown` wherever the viewer has never explored. */
   terrain: Uint8Array;
   /** In meters, zeroed on tiles the viewer has never explored. */
   elevations: Int16Array;
@@ -164,7 +164,10 @@ export type WorldSnapshotData = {
  */
 export type WorldDeltaData = {
   meta: ProjectionMeta;
+  /** Row-major indices of the tiles that changed, in ascending order. */
   tileIndices: Uint32Array;
+  /** `TerrainKind` values of those tiles: a tile explored this turn stops being `Unknown`. */
+  terrain: Uint8Array;
   elevations: Int16Array;
   visibility: Uint8Array;
   tileOwner: Uint16Array;

@@ -11,6 +11,20 @@ export const TerrainKind = {
 } as const;
 export type TerrainKind = (typeof TerrainKind)[keyof typeof TerrainKind];
 
+/**
+ * What the WASM bridge sends for a tile the viewing nation has never explored.
+ *
+ * Not a terrain of the `procgen` crate: the bridge substitutes it so that the shape of the planet
+ * does not travel ahead of its discovery.
+ */
+export const UNKNOWN_TERRAIN = 255;
+
+/** A terrain as it reaches the client: a real one, or unknown while the tile is unexplored. */
+export type TileTerrain = TerrainKind | typeof UNKNOWN_TERRAIN;
+
+/** Whether anything is known of this tile's terrain, narrowing it to a drawable one. */
+export const isExplored = (terrain: number): terrain is TerrainKind => terrain !== UNKNOWN_TERRAIN;
+
 export const TERRAIN_NAMES: Record<TerrainKind, string> = {
   [TerrainKind.DeepWater]: "Deep water",
   [TerrainKind.ShallowWater]: "Shallow water",

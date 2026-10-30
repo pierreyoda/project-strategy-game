@@ -121,6 +121,10 @@ impl GameSession {
             });
         }
         self.apply_command(&command, issuer)?;
+        // the player is looking at the result right now, so their own sighting is redone at once
+        // rather than at the turn's `Fog` phase: a scout that steps forward reveals what it sees.
+        // The AI's own fog waits for that phase, since nothing is watching it move.
+        self.recompute_fog_of(issuer);
         self.command_log.push(LoggedCommand {
             turn: self.world.turn(),
             nation: issuer,
@@ -317,48 +321,53 @@ impl GameSession {
         }
     }
 
-    /// Redo every nation's sighting pass, dirtying only the tiles whose visibility actually moved.
+    /// Redo every nation's sighting pass.
     fn recompute_all_fog(&mut self) {
         let nations: Vec<NationId> = self.world.nations().ids().collect();
         for nation in nations {
-            // read what this nation watches before touching its fog record
-            let mut watched: Vec<u32> = Vec::new();
-            for (_, unit) in self.world.units().iter() {
-                if unit.owner() != nation {
-                    continue;
-                }
-                let sight = self
-                    .world
-                    .unit_template(unit.template())
-                    .map_or(1, |template| template.sight());
-                watched.extend(self.world.tiles_within(unit.position(), sight as u32));
-            }
-            for (_, settlement) in self.world.settlements().iter() {
-                if settlement.owner() != nation {
-                    continue;
-                }
-                watched.extend(
-                    self.world
-                        .tiles_within(settlement.position(), SETTLEMENT_SIGHT),
-                );
-            }
+            self.recompute_fog_of(nation);
+        }
+    }
 
-            let mut world = WorldMut::new(&mut self.world, self.journal.pending_mut());
-            let changed: Vec<usize> = {
-                let Some(fog) = world.fog_mut(nation) else {
-                    continue;
-                };
-                fog.begin_recompute();
-                for index in watched {
-                    fog.reveal(index as usize);
-                }
-                fog.end_recompute().collect()
-            };
-            // only the tiles whose visibility moved: re-dirtying a whole field of view every turn
-            // would make the delta the size of the map in all but name
-            for index in changed {
-                world.mark_tile_index(index as u32);
+    /// Redo one nation's sighting pass, dirtying only the tiles whose visibility actually moved.
+    fn recompute_fog_of(&mut self, nation: NationId) {
+        // read what this nation watches before touching its fog record
+        let mut watched: Vec<u32> = Vec::new();
+        for (_, unit) in self.world.units().iter() {
+            if unit.owner() != nation {
+                continue;
             }
+            let sight = self
+                .world
+                .unit_template(unit.template())
+                .map_or(1, |template| template.sight());
+            watched.extend(self.world.tiles_within(unit.position(), sight as u32));
+        }
+        for (_, settlement) in self.world.settlements().iter() {
+            if settlement.owner() != nation {
+                continue;
+            }
+            watched.extend(
+                self.world
+                    .tiles_within(settlement.position(), SETTLEMENT_SIGHT),
+            );
+        }
+
+        let mut world = WorldMut::new(&mut self.world, self.journal.pending_mut());
+        let changed: Vec<usize> = {
+            let Some(fog) = world.fog_mut(nation) else {
+                return;
+            };
+            fog.begin_recompute();
+            for index in watched {
+                fog.reveal(index as usize);
+            }
+            fog.end_recompute().collect()
+        };
+        // only the tiles whose visibility moved: re-dirtying a whole field of view every turn
+        // would make the delta the size of the map in all but name
+        for index in changed {
+            world.mark_tile_index(index as u32);
         }
     }
 }
@@ -620,6 +629,37 @@ mod tests {
             |event| matches!(event, GameEvent::CommandRejected { nation, .. } if nation == second),
         );
         assert!(rejected, "an illegal AI order must surface as a rejection");
+    }
+
+    #[test]
+    fn test_moving_reveals_the_ground_the_unit_now_watches() {
+        let (mut session, first, _, own, _) = two_nation_session();
+        let explored = |session: &GameSession| {
+            session
+                .snapshot(first)
+                .visibility
+                .iter()
+                .filter(|&&seen| seen != TileVisibility::Unexplored as u8)
+                .count()
+        };
+        let before = explored(&session);
+        let version = session.version();
+
+        session
+            .submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(2, 1)],
+            })
+            .expect("a legal move");
+
+        // the player is watching: a scout that steps forward reveals what it sees, without waiting
+        // for the turn to be resolved
+        assert!(explored(&session) > before);
+        let Projection::Delta(delta) = session.project(first, version) else {
+            panic!("a step must not cost a full snapshot");
+        };
+        // the tile left, the tile reached, and everything whose visibility moved with them
+        assert!(delta.tile_indices.len() > 2);
     }
 
     #[test]

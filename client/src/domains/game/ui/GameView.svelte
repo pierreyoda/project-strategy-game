@@ -4,18 +4,48 @@
   import { onMount } from "svelte";
 
   import HexMapRenderer from "../../map/components/HexMapRenderer.svelte";
-  import { createHexLayout, mapHeight, wrapBounds } from "../../map/hexLayout";
+  import { createHexLayout, hexCenter, mapHeight, wrapBounds } from "../../map/hexLayout";
   import type { HexMapData, OffsetCoords } from "../../map/hexMap";
   import type { PixiContext } from "../../../shared/pixi";
+  import type { WorldState } from "../state/worldState";
+  import WorldOverlayRenderer from "./WorldOverlayRenderer.svelte";
 
   type GameViewProps = {
     map: HexMapData;
+    /**
+     * The session's world, drawn over the map: fog, borders, units and settlements. Left out when
+     * there is no session to show, as in the planet generator's test bench.
+     */
+    world?: WorldState | null;
+    /**
+     * Row-major indices of the tiles a projection's delta changed, repainted on their own. A new
+     * `map` or `world` repaints everything instead.
+     */
+    dirtyTiles?: Uint32Array | null;
     /** Draws the flat colors of the terrains only, without the textures of their tiles. */
     flatColors?: boolean;
     /** Called when the pointer moves to another tile, with `null` once it leaves the map. */
     onTileHover?: (tile: OffsetCoords | null) => void;
+    /** Called when a tile is clicked. */
+    onTileClick?: (tile: OffsetCoords) => void;
+    /** Row-major index of the tile whose unit is selected, outlined over the map. */
+    selectedTile?: number | null;
+    /**
+     * Row-major index of a tile to frame the camera on, whenever it changes. A new game starts with
+     * almost nothing explored, so the whole map is not a useful first view.
+     */
+    focusTile?: number | null;
   };
-  const { map, flatColors = false, onTileHover }: GameViewProps = $props();
+  const {
+    map,
+    world = null,
+    dirtyTiles = null,
+    flatColors = false,
+    onTileHover,
+    onTileClick,
+    selectedTile = null,
+    focusTile = null,
+  }: GameViewProps = $props();
 
   /** A hex is 64 world units tall. */
   const layout = createHexLayout(32);
@@ -56,6 +86,10 @@
           viewport.resize(width, height);
           screenWidth = width;
         });
+        // the layers draw in `zIndex` order rather than in the order they were added: a renderer
+        // that rebuilds its layer - as the map does once its textures load - would otherwise land
+        // back on top of everything drawn over it
+        viewport.sortableChildren = true;
         camera = viewport;
         pixi = { app, world: viewport };
       });
@@ -97,6 +131,17 @@
     };
   });
 
+  // declared after the effect framing the whole map, so that it has the last word on a new game
+  $effect(() => {
+    const tile = focusTile;
+    if (!camera || tile === null) {
+      return;
+    }
+    const { x, y } = hexCenter(layout, { col: tile % map.columns, row: Math.floor(tile / map.columns) });
+    // hexes at their texture's own scale, close enough to tell what is on them
+    camera.setZoom(1).moveCenter(x, y);
+  });
+
   // zoomed out, the camera shows the whole height of the map at most
   $effect(() => {
     if (!camera) {
@@ -114,6 +159,9 @@
 <div bind:this={host} class="size-full overflow-hidden">
   <canvas bind:this={canvas} class="block"></canvas>
   {#if pixi}
-    <HexMapRenderer {pixi} {map} {layout} {flatColors} {onTileHover} />
+    <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {onTileHover} {onTileClick} />
+    {#if world}
+      <WorldOverlayRenderer {pixi} {world} {layout} {dirtyTiles} {selectedTile} />
+    {/if}
   {/if}
 </div>

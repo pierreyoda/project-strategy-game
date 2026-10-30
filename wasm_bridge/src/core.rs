@@ -21,9 +21,11 @@ use project_x_core::{
     },
     hex_map::shape::RectangularHexMapShape,
     simulation::{
+        fog::TileVisibility,
         ids::{EntityIndex, NationId, SimulationID},
         military::{Unit, UnitTemplate},
         nations::Nation,
+        resources::{Resource, ResourceDataStore},
     },
 };
 use project_x_procgen::map::{
@@ -34,6 +36,13 @@ use crate::wire::{CommandWire, EventWire, MetaWire, NewGameSettings, RejectionWi
 
 /// The scaffold's starting unit. TODO: templates come from scripts.
 const SCOUT_TEMPLATE: &str = "scout";
+
+/// Terrain of a tile the viewer has never explored.
+///
+/// Terrain is classified here rather than in `core`, so it is also filtered here: handing the
+/// client the terrain of the whole map and covering it with fog on the other side would leak the
+/// shape of the planet to anyone who opens the devtools.
+const UNKNOWN_TERRAIN: u8 = 255;
 
 /// One playthrough, driven from the client's worker.
 #[wasm_bindgen]
@@ -162,7 +171,7 @@ impl GameSession {
     pub fn snapshot(&self, viewer: u16) -> WorldSnapshotView {
         WorldSnapshotView::build(
             self.inner.snapshot(NationId::from_index(viewer as usize)),
-            self.terrain.clone(),
+            &self.terrain,
         )
     }
 
@@ -174,10 +183,10 @@ impl GameSession {
         match self.inner.project(viewer, since.max(0.0) as u64) {
             Projection::Delta(delta) => WorldProjectionView {
                 full: None,
-                delta: Some(WorldDeltaView::build(delta)),
+                delta: Some(WorldDeltaView::build(delta, &self.terrain)),
             },
             Projection::Full(snapshot) => WorldProjectionView {
-                full: Some(WorldSnapshotView::build(snapshot, self.terrain.clone())),
+                full: Some(WorldSnapshotView::build(snapshot, &self.terrain)),
                 delta: None,
             },
         }
@@ -356,12 +365,18 @@ impl WorldSnapshotView {
 }
 
 impl WorldSnapshotView {
-    fn build(snapshot: WorldSnapshot, terrain: Vec<u8>) -> Self {
+    fn build(snapshot: WorldSnapshot, terrain: &[u8]) -> Self {
+        let visible_terrain = snapshot
+            .visibility
+            .iter()
+            .zip(terrain.iter())
+            .map(|(&visibility, &kind)| hidden_unless_explored(visibility, kind))
+            .collect();
         Self {
             meta: meta_json(&MetaWire::from(&snapshot.meta)),
             columns: snapshot.columns,
             rows: snapshot.rows,
-            terrain,
+            terrain: visible_terrain,
             inner: snapshot,
         }
     }
@@ -371,6 +386,7 @@ impl WorldSnapshotView {
 #[wasm_bindgen]
 pub struct WorldDeltaView {
     meta: String,
+    terrain: Vec<u8>,
     inner: WorldDelta,
 }
 
@@ -385,6 +401,15 @@ impl WorldDeltaView {
     #[wasm_bindgen(getter, js_name = tileIndices)]
     pub fn tile_indices(&self) -> Vec<u32> {
         self.inner.tile_indices.clone()
+    }
+
+    /// `TerrainKind` discriminants of those tiles.
+    ///
+    /// Terrain never changes, but what the viewer is allowed to know of it does: a tile explored
+    /// this turn is where its terrain stops being `UNKNOWN_TERRAIN`.
+    #[wasm_bindgen(getter)]
+    pub fn terrain(&self) -> Vec<u8> {
+        self.terrain.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -455,9 +480,19 @@ impl WorldDeltaView {
 }
 
 impl WorldDeltaView {
-    fn build(delta: WorldDelta) -> Self {
+    fn build(delta: WorldDelta, terrain: &[u8]) -> Self {
+        let changed_terrain = delta
+            .tile_indices
+            .iter()
+            .zip(delta.visibility.iter())
+            .map(|(&index, &visibility)| {
+                let kind = terrain.get(index as usize).copied().unwrap_or(UNKNOWN_TERRAIN);
+                hidden_unless_explored(visibility, kind)
+            })
+            .collect();
         Self {
             meta: meta_json(&MetaWire::from(&delta.meta)),
+            terrain: changed_terrain,
             inner: delta,
         }
     }
@@ -512,10 +547,24 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, terrain: &[u8]) {
         .collect();
 
     for index in 0..nations as usize {
-        let nation = world.register_nation(Nation::new(
+        let mut nation = Nation::new(
             SimulationID::new_abstract_id(&format!("nation_{index}")),
             format!("Nation {}", index + 1),
-        ));
+        );
+        // something for the economy phase to tick and the toolbar to show, until a scenario says
+        // what a nation actually starts with
+        let stockpile = nation.resources_mut();
+        for (resource, quantity, income) in [
+            (Resource::Credits, 250, 12),
+            (Resource::Water, 120, 4),
+            (Resource::Food, 180, 6),
+            (Resource::Electricity, 60, 3),
+            (Resource::Metals, 90, 2),
+        ] {
+            stockpile.replenish(resource, quantity);
+            stockpile.set_income(resource, income);
+        }
+        let nation = world.register_nation(nation);
         // spread the starts evenly through the habitable tiles, so nobody starts in anyone's lap
         if habitable.is_empty() {
             continue;
@@ -532,6 +581,15 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, terrain: &[u8]) {
     }
 }
 
+/// The terrain of a tile, or `UNKNOWN_TERRAIN` while the viewer has never explored it.
+fn hidden_unless_explored(visibility: u8, kind: u8) -> u8 {
+    if visibility == TileVisibility::Unexplored as u8 {
+        UNKNOWN_TERRAIN
+    } else {
+        kind
+    }
+}
+
 fn meta_json(meta: &MetaWire) -> String {
     // a `MetaWire` has no map and no non-string keys: it cannot fail to serialize
     serde_json::to_string(meta).unwrap_or_else(|_| "{}".to_string())
@@ -539,4 +597,85 @@ fn meta_json(meta: &MetaWire) -> String {
 
 fn to_js_error(error: serde_json::Error) -> JsError {
     JsError::new(&error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GameSession, UNKNOWN_TERRAIN};
+
+    /// A map small enough to assert over, big enough to have land and unexplored corners.
+    fn start_game() -> GameSession {
+        GameSession::new_game(r#"{"seed":7,"columns":24,"rows":16,"nations":2}"#)
+            .expect("the settings are valid")
+    }
+
+    fn resolve_turn(session: &mut GameSession) {
+        session.begin_turn();
+        for _ in 0..256 {
+            if session.step().done() {
+                return;
+            }
+        }
+        panic!("the turn never finished");
+    }
+
+    #[test]
+    fn test_a_snapshot_hides_the_terrain_of_what_was_never_explored() {
+        let session = start_game();
+        let snapshot = session.snapshot(0);
+        let (terrain, visibility) = (snapshot.terrain(), snapshot.visibility());
+        assert_eq!(terrain.len(), visibility.len());
+
+        // the scout sees its surroundings, and nothing else of the planet has travelled
+        assert!(terrain.iter().any(|&kind| kind != UNKNOWN_TERRAIN));
+        assert!(terrain.iter().any(|&kind| kind == UNKNOWN_TERRAIN));
+        for (index, (&kind, &seen)) in terrain.iter().zip(visibility.iter()).enumerate() {
+            assert_eq!(kind == UNKNOWN_TERRAIN, seen == 0, "tile {index}");
+        }
+        // and neither has its elevation
+        for (index, (&elevation, &seen)) in
+            snapshot.elevations().iter().zip(visibility.iter()).enumerate()
+        {
+            if seen == 0 {
+                assert_eq!(elevation, 0, "tile {index}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_resolved_turn_is_caught_up_with_a_delta() {
+        let mut session = start_game();
+        let since = session.version();
+        resolve_turn(&mut session);
+        assert!(session.version() > since);
+
+        let mut projection = session.project(0, since);
+        assert!(!projection.is_full(), "one turn must not cost a full snapshot");
+        let delta = projection.take_delta().expect("a delta");
+
+        // the tile arrays are parallel to the indices, and sorted so the renderer can paint a row once
+        let indices = delta.tile_indices();
+        assert_eq!(delta.terrain().len(), indices.len());
+        assert_eq!(delta.visibility().len(), indices.len());
+        assert_eq!(delta.elevations().len(), indices.len());
+        assert!(indices.windows(2).all(|pair| pair[0] < pair[1]));
+
+        for (index, (&kind, &seen)) in delta
+            .terrain()
+            .iter()
+            .zip(delta.visibility().iter())
+            .enumerate()
+        {
+            assert_eq!(kind == UNKNOWN_TERRAIN, seen == 0, "entry {index}");
+        }
+    }
+
+    #[test]
+    fn test_a_viewer_is_only_shown_its_own_stockpiles() {
+        let session = start_game();
+        let meta = session.snapshot(0).meta();
+        // the viewer's nation carries its resources, the other one's are not public knowledge
+        assert!(meta.contains(r#""id":0"#) && meta.contains(r#""resource":"credits""#));
+        assert!(meta.contains(r#""id":1,"name":"Nation 2","resources":[]"#), "{meta}");
+    }
 }

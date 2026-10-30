@@ -72,6 +72,7 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
   const { delta } = projection;
   return [
     delta.tileIndices.buffer,
+    delta.terrain.buffer,
     delta.elevations.buffer,
     delta.visibility.buffer,
     delta.tileOwner.buffer,
@@ -115,6 +116,7 @@ const readSnapshot = (view: {
 const readDelta = (view: {
   meta: string;
   tileIndices: Uint32Array;
+  terrain: Uint8Array;
   elevations: Int16Array;
   visibility: Uint8Array;
   tileOwner: Uint16Array;
@@ -131,6 +133,7 @@ const readDelta = (view: {
 }): WorldDeltaData => ({
   meta: parseMeta(view.meta),
   tileIndices: view.tileIndices,
+  terrain: view.terrain,
   elevations: view.elevations,
   visibility: view.visibility,
   tileOwner: view.tileOwner,
@@ -161,7 +164,7 @@ const resolveTurn = async (id: number) => {
   cancelRequested = false;
   current.beginTurn();
 
-  for (; ;) {
+  for (;;) {
     const step = current.step();
     let done: boolean;
     let idle: boolean;

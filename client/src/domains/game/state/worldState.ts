@@ -96,6 +96,7 @@ const patch = (state: WorldState, delta: WorldDeltaData): WorldState => {
   // the tile arrays of a delta are parallel to its indices, not to the map
   for (let index = 0; index < delta.tileIndices.length; index++) {
     const tile = delta.tileIndices[index];
+    state.terrain[tile] = delta.terrain[index];
     state.elevations[tile] = delta.elevations[index];
     state.visibility[tile] = delta.visibility[index];
     state.tileOwner[tile] = delta.tileOwner[index];
