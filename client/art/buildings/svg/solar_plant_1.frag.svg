@@ -1,0 +1,65 @@
+<g id="b-solar_plant-1">
+<ellipse cx="515" cy="760" rx="330" ry="120" fill="var(--st-deep)" opacity="0.24"></ellipse>
+<ellipse cx="665" cy="850" rx="150" ry="56" fill="var(--st-deep)" opacity="0.16"></ellipse>
+<path d="M685 926 C 740 950 860 966 990 970" stroke="var(--st-deep)" stroke-width="9" fill="none" opacity="0.28" stroke-dasharray="26 18"></path>
+<path d="M490.4 546 L350.4 620.2 L447.8 671.8 L587.8 597.6 Z" fill="#000" opacity="0.2"></path>
+<path d="M559.2 582.9 L427.2 652.8" stroke="var(--st-dark)" stroke-width="4" opacity="0.7"></path>
+<path d="M493.2 617.8 L493.2 600.2" stroke="var(--st-dark)" stroke-width="7"></path>
+<path d="M428.8 583.7 L428.8 577.3" stroke="var(--st-dark)" stroke-width="6"></path>
+<path d="M485 535.3 L345 609.5 L437 642.3 L577 568.1 Z" fill="var(--st-dark)" opacity="0.9"></path>
+<path d="M485 535.3 L345 609.5 L437 642.3 L577 568.1 Z" fill="var(--accent)" opacity="0.32"></path>
+<path d="M485 535.3 L345 609.5 L437 642.3 L577 568.1 Z" fill="none" stroke="var(--st-lit)" stroke-width="5"></path>
+<path d="M438.3 560 L530.3 592.8" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M391.7 584.8 L483.7 617.5" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M531 551.7 L391 625.9" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M577 568.1 L437 642.3" stroke="var(--st-hi)" stroke-width="3" opacity="0.5"></path>
+<path d="M320.4 636.1 L180.4 710.3 L277.8 761.9 L417.8 687.7 Z" fill="#000" opacity="0.2"></path>
+<path d="M389.2 673 L257.2 742.9" stroke="var(--st-dark)" stroke-width="4" opacity="0.7"></path>
+<path d="M323.2 707.9 L323.2 690.3" stroke="var(--st-dark)" stroke-width="7"></path>
+<path d="M258.8 673.8 L258.8 667.4" stroke="var(--st-dark)" stroke-width="6"></path>
+<path d="M315 625.4 L175 699.6 L267 732.4 L407 658.2 Z" fill="var(--st-dark)" opacity="0.9"></path>
+<path d="M315 625.4 L175 699.6 L267 732.4 L407 658.2 Z" fill="var(--accent)" opacity="0.32"></path>
+<path d="M315 625.4 L175 699.6 L267 732.4 L407 658.2 Z" fill="none" stroke="var(--st-lit)" stroke-width="5"></path>
+<path d="M268.3 650.1 L360.3 682.9" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M221.7 674.9 L313.7 707.6" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M361 641.8 L221 716" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M407 658.2 L267 732.4" stroke="var(--st-hi)" stroke-width="3" opacity="0.5"></path>
+<path d="M620.4 614.9 L480.4 689.1 L577.8 740.7 L717.8 666.5 Z" fill="#000" opacity="0.2"></path>
+<path d="M689.2 651.8 L557.2 721.7" stroke="var(--st-dark)" stroke-width="4" opacity="0.7"></path>
+<path d="M623.2 686.7 L623.2 669.1" stroke="var(--st-dark)" stroke-width="7"></path>
+<path d="M558.8 652.6 L558.8 646.2" stroke="var(--st-dark)" stroke-width="6"></path>
+<path d="M615 604.2 L475 678.4 L567 711.2 L707 637 Z" fill="var(--st-dark)" opacity="0.9"></path>
+<path d="M615 604.2 L475 678.4 L567 711.2 L707 637 Z" fill="var(--accent)" opacity="0.32"></path>
+<path d="M615 604.2 L475 678.4 L567 711.2 L707 637 Z" fill="none" stroke="var(--st-lit)" stroke-width="5"></path>
+<path d="M568.3 628.9 L660.3 661.7" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M521.7 653.7 L613.7 686.4" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M661 620.6 L521 694.8" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M707 637 L567 711.2" stroke="var(--st-hi)" stroke-width="3" opacity="0.5"></path>
+<path d="M450.4 705 L310.4 779.2 L407.8 830.8 L547.8 756.6 Z" fill="#000" opacity="0.2"></path>
+<path d="M519.2 741.9 L387.2 811.8" stroke="var(--st-dark)" stroke-width="4" opacity="0.7"></path>
+<path d="M453.2 776.8 L453.2 759.2" stroke="var(--st-dark)" stroke-width="7"></path>
+<path d="M388.8 742.7 L388.8 736.3" stroke="var(--st-dark)" stroke-width="6"></path>
+<path d="M445 694.3 L305 768.5 L397 801.3 L537 727.1 Z" fill="var(--st-dark)" opacity="0.9"></path>
+<path d="M445 694.3 L305 768.5 L397 801.3 L537 727.1 Z" fill="var(--accent)" opacity="0.32"></path>
+<path d="M445 694.3 L305 768.5 L397 801.3 L537 727.1 Z" fill="none" stroke="var(--st-lit)" stroke-width="5"></path>
+<path d="M398.3 719 L490.3 751.8" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M351.7 743.8 L443.7 776.5" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M491 710.7 L351 784.9" stroke="var(--st-deep)" stroke-width="3" opacity="0.45"></path>
+<path d="M537 727.1 L397 801.3" stroke="var(--st-hi)" stroke-width="3" opacity="0.5"></path>
+<path d="M605 772.5 L691 818.1" stroke="var(--st-deep)" stroke-width="5" opacity="0.4" stroke-dasharray="10 10"></path>
+<path d="M731 726.9 L801 764 L721 806.4 L651 769.3 Z" fill="var(--st-hi)"></path>
+<path d="M651 769.3 L721 806.4 L721 876.4 L651 839.3 Z" fill="var(--st-lit)"></path>
+<path d="M721 806.4 L801 764 L801 834 L721 876.4 Z" fill="var(--st-mid)"></path>
+<path d="M651 804.3 L721 841.4" stroke="var(--st-deep)" stroke-width="3" opacity="0.24"></path>
+<path d="M660.8 800.5 L702.8 822.7 L702.8 838.7 L660.8 816.5 Z" fill="var(--accent)"></path>
+<path d="M745 819.7 L785 798.5 L785 814.5 L745 835.7 Z" fill="var(--accent)" opacity="0.4"></path>
+<path d="M631 844.6 L631 470" stroke="var(--st-mid)" stroke-width="8" stroke-linecap="round"></path>
+<path d="M591 536 L671 536" stroke="var(--st-mid)" stroke-width="7" stroke-linecap="round"></path>
+<path d="M631 560 L581 800" stroke="var(--st-dark)" stroke-width="3" opacity="0.45"></path>
+<path d="M631 560 L687 800" stroke="var(--st-dark)" stroke-width="3" opacity="0.45"></path>
+<path d="M635 476 L703 504 L635 532 Z" fill="var(--nation)"></path>
+<path d="M635 504 L703 504" stroke="#000" stroke-width="3" opacity="0.18"></path>
+<circle cx="631" cy="462" r="26.4" fill="var(--accent)" opacity="0.22"></circle>
+<circle cx="631" cy="462" r="12" fill="var(--accent)"></circle>
+<circle cx="430" cy="940" r="6" fill="var(--accent)" opacity="0.8"></circle>
+<circle cx="700" cy="950" r="6" fill="var(--accent)" opacity="0.8"></circle></g>
