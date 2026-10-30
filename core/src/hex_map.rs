@@ -5,6 +5,7 @@ use self::{coordinates::CubeCoords, tile::HexMapTile};
 pub mod coordinates;
 pub mod layers;
 pub mod shape;
+pub mod terrain;
 pub mod tile;
 
 pub type HexMapStorage = HashMap<CubeCoords, HexMapTile>;

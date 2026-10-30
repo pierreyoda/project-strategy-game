@@ -4,16 +4,26 @@
 //!
 //! As in the dynamic layer, deposits are referenced by ID: they live in the `World`'s stores.
 
-use crate::simulation::ids::DepositId;
+use crate::{hex_map::terrain::TerrainKind, simulation::ids::DepositId};
 
 #[derive(Debug, Default)]
 pub struct HexMapNaturalTileData {
+    /// What the ground is, `Flat` until the world's setup paints it (see `World::paint_terrain`).
+    terrain: TerrainKind,
     deposits: Vec<DepositId>,
 }
 
 impl HexMapNaturalTileData {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn terrain(&self) -> TerrainKind {
+        self.terrain
+    }
+
+    pub fn set_terrain(&mut self, terrain: TerrainKind) {
+        self.terrain = terrain;
     }
 
     pub fn deposits(&self) -> &[DepositId] {

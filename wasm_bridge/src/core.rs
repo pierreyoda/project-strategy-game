@@ -111,6 +111,8 @@ impl GameSession {
         .generate(&surface);
 
         let mut world = World::new(shape, map);
+        // the simulation reads the ground for its rules; the client gets the same kinds from `terrain`
+        world.paint_terrain(surface.terrain());
         set_up_scaffold_world(&mut world, settings.nations, &nations);
 
         let local_player = NationId::from_index(0);
@@ -825,6 +827,26 @@ mod tests {
             .count();
         assert!(owned > 2, "{owned} owned tiles");
         assert!(owned < world.tiles_count() / 2, "{owned} owned tiles");
+    }
+
+    #[test]
+    fn test_the_world_knows_the_terrain_of_its_tiles() {
+        let session = start_game();
+        let world = session.inner.world();
+        // every tile carries the kind the client is shown, so the rules and the map agree
+        for (index, coords) in world.shape().coords().enumerate() {
+            let kind = world.tile(coords).expect("on the map").natural().terrain();
+            assert_eq!(kind as u8, session.terrain[index], "tile {index}");
+        }
+        assert!(
+            world.shape().coords().any(|coords| world
+                .tile(coords)
+                .unwrap()
+                .natural()
+                .terrain()
+                .is_water()),
+            "a planet with 70% ocean has water tiles"
+        );
     }
 
     #[test]
