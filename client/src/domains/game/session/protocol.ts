@@ -238,6 +238,18 @@ export type WorldDeltaData = {
 };
 
 /**
+ * The tiles a unit can end its turn on, like `ReachableView` in the `wasm_bridge` crate: three
+ * parallel arrays, `tiles` ascending and the unit's own tile among them, `parents` naming the tile
+ * before each one on its cheapest path (the origin names itself). Built for the viewer, so it never
+ * mentions a tile the viewer has not explored.
+ */
+export type ReachableData = {
+  tiles: Uint32Array;
+  costs: Uint8Array;
+  parents: Uint32Array;
+};
+
+/**
  * Either a catch-up or a whole new snapshot.
  *
  * Which one it is is the simulation's call, not the client's: there is one rule for it, in `core`.
@@ -251,6 +263,8 @@ export type GameSessionRequest =
   | { type: "endTurn"; id: number }
   | { type: "snapshot"; id: number; viewer: number }
   | { type: "project"; id: number; viewer: number; since: number }
+  /** Where the viewer's unit can get to this turn. */
+  | { type: "reachable"; id: number; viewer: number; unit: number }
   /** Stop the turn being resolved, between two steps. Never by terminating the worker. */
   | { type: "cancelTurn" };
 
@@ -264,4 +278,6 @@ export type GameSessionResponse =
   | { type: "turnComplete"; id: number; turn: number; version: number }
   | { type: "turnCancelled"; id: number }
   | { type: "projection"; id: number; projection: WorldProjection }
+  /** `null` for a unit the viewer does not own. */
+  | { type: "reachable"; id: number; reach: ReachableData | null }
   | { type: "error"; id: number | null; message: string };

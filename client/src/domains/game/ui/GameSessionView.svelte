@@ -101,7 +101,13 @@
         entities={game.entities}
         focusTile={game.focusTile}
         selectedTile={game.selected?.tile ?? null}
-        onTileHover={(tile) => (hoveredTile = tile)}
+        reach={game.reach}
+        previewPath={game.previewPath}
+        viewer={game.viewer}
+        onTileHover={(tile) => {
+          hoveredTile = tile;
+          game.hoverTile(tile);
+        }}
         onTileClick={(tile) => void game.clickTile(tile)}
       />
     {:else}
@@ -122,7 +128,7 @@
       {#if game.error}
         <span class="text-danger">{game.error}</span>
       {:else if game.selected}
-        <span class="text-fg-muted">Unit {game.selected.id} selected · click a neighbouring tile to move it</span>
+        <span class="text-fg-muted">Unit {game.selected.id} selected · click a highlighted tile to move it</span>
       {:else if hovered}
         <span class="text-fg-muted tabular-nums">
           ({hovered.coords.col}, {hovered.coords.row}) · {hovered.terrain} · {hovered.elevation} m ·

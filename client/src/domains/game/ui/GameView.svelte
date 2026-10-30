@@ -11,6 +11,7 @@
   import type { HexMapData, OffsetCoords } from "../../map/hexMap";
   import type { PlanetNations } from "../../map/procgen/planetGenerator";
   import type { PixiContext } from "../../../shared/pixi";
+  import type { ReachableData } from "../session/protocol";
   import type { WorldState } from "../state/worldState";
   import WorldOverlayRenderer from "./WorldOverlayRenderer.svelte";
 
@@ -44,6 +45,12 @@
     onTileClick?: (tile: OffsetCoords) => void;
     /** Row-major index of the tile whose unit is selected, outlined over the map. */
     selectedTile?: number | null;
+    /** Where the selected unit can get to, as the simulation answered; tinted over the map. */
+    reach?: ReachableData | null;
+    /** The steps to the hovered tile, previewed from the selected tile. */
+    previewPath?: readonly number[] | null;
+    /** The nation being played, whose colour the reach takes. */
+    viewer?: number | null;
     /**
      * Row-major index of a tile to frame the camera on, whenever it changes. A new game starts with
      * almost nothing explored, so the whole map is not a useful first view.
@@ -60,6 +67,9 @@
     onTileHover,
     onTileClick,
     selectedTile = null,
+    reach = null,
+    previewPath = null,
+    viewer = null,
     focusTile = null,
   }: GameViewProps = $props();
 
@@ -178,7 +188,7 @@
     <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {onTileHover} {onTileClick} />
     <MapEntityRenderer {pixi} {map} {layout} {entities} />
     {#if world}
-      <WorldOverlayRenderer {pixi} {world} {layout} {dirtyTiles} {selectedTile} />
+      <WorldOverlayRenderer {pixi} {world} {layout} {dirtyTiles} {selectedTile} {reach} {previewPath} {viewer} />
     {/if}
     {#if nations}
       <NationsOverlayRenderer {pixi} {map} {nations} {layout} />

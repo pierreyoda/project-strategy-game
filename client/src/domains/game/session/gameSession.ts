@@ -5,6 +5,7 @@ import type {
   GameSessionRequest,
   GameSessionResponse,
   NewGameSettings,
+  ReachableData,
   TurnPhase,
   WorldProjection,
 } from "./protocol";
@@ -36,6 +37,8 @@ export type GameSessionHandle = {
   snapshot: (viewer: number) => Promise<WorldProjection>;
   /** What the viewer needs to catch up with `since`: a delta, or a whole new snapshot. */
   project: (viewer: number, since: number) => Promise<WorldProjection>;
+  /** Where the viewer's unit can get to this turn, `null` for a unit that is not the viewer's. */
+  reachable: (viewer: number, unit: number) => Promise<ReachableData | null>;
   /** Listen to progress, events and errors. Returns the unsubscriber. */
   subscribe: (listener: GameSessionListener) => () => void;
   /** Release the worker. The session is gone: this is not how a turn is cancelled. */
@@ -151,6 +154,10 @@ export const createGameSession = (): GameSessionHandle => {
     project: async (viewer, since) => {
       const response = await request((id) => ({ type: "project", id, viewer, since }));
       return response.type === "projection" ? response.projection : unexpected(response);
+    },
+    reachable: async (viewer, unit) => {
+      const response = await request((id) => ({ type: "reachable", id, viewer, unit }));
+      return response.type === "reachable" ? response.reach : unexpected(response);
     },
     subscribe: (listener) => {
       listeners.add(listener);

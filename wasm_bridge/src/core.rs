@@ -27,8 +27,9 @@ use project_x_core::{
     simulation::{
         buildings::BuildingTemplate,
         fog::TileVisibility,
-        ids::{EntityIndex, NationId, SimulationID},
+        ids::{EntityIndex, NationId, SimulationID, UnitId},
         military::{Unit, UnitTemplate},
+        movement::{self, Reachable},
         nations::Nation,
         resources::{Resource, ResourceDataStore},
         settlements::Settlement,
@@ -185,6 +186,17 @@ impl GameSession {
             .map(EventWire::from)
             .collect();
         serde_json::to_string(&events).map_err(to_js_error)
+    }
+
+    /// Where `viewer`'s `unit` can get to this turn, by the rules an order is judged by, or
+    /// `undefined` for a unit the viewer does not own. See `simulation::movement::reachable`.
+    pub fn reachable(&self, viewer: u16, unit: u32) -> Option<ReachableView> {
+        movement::reachable(
+            self.inner.world(),
+            NationId::from_index(viewer as usize),
+            UnitId::from_index(unit as usize),
+        )
+        .map(|inner| ReachableView { inner })
     }
 
     /// Everything the viewer can see, from scratch.
@@ -448,6 +460,33 @@ impl WorldSnapshotView {
             terrain: visible_terrain,
             inner: snapshot,
         }
+    }
+}
+
+/// The tiles a unit can end its turn on: three parallel arrays, see `movement::Reachable`.
+#[wasm_bindgen]
+pub struct ReachableView {
+    inner: Reachable,
+}
+
+#[wasm_bindgen]
+impl ReachableView {
+    /// Row-major indices, ascending, the unit's own tile included.
+    #[wasm_bindgen(getter)]
+    pub fn tiles(&self) -> Vec<u32> {
+        self.inner.tiles.clone()
+    }
+
+    /// Points spent to reach each tile.
+    #[wasm_bindgen(getter)]
+    pub fn costs(&self) -> Vec<u8> {
+        self.inner.costs.clone()
+    }
+
+    /// The tile before each one on its cheapest path; the origin names itself.
+    #[wasm_bindgen(getter)]
+    pub fn parents(&self) -> Vec<u32> {
+        self.inner.parents.clone()
     }
 }
 
@@ -910,6 +949,20 @@ mod tests {
                 u64::from(points),
                 templates[*kind as usize]["movement"].as_u64().unwrap()
             );
+        }
+    }
+
+    #[test]
+    fn test_reachability_is_answered_for_the_viewers_own_units_only() {
+        let session = start_game();
+        let snapshot = session.snapshot(0);
+        for (unit, tile) in snapshot.unit_ids().into_iter().zip(snapshot.unit_tiles()) {
+            let reach = session.reachable(0, unit).expect("the viewer's own unit");
+            assert!(reach.tiles().contains(&tile), "its own tile is in");
+            assert_eq!(reach.tiles().len(), reach.costs().len());
+            assert_eq!(reach.tiles().len(), reach.parents().len());
+            // and the other nation gets nothing about it
+            assert!(session.reachable(1, unit).is_none());
         }
     }
 
