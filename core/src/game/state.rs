@@ -16,6 +16,7 @@ use crate::{
         HexMap,
         coordinates::{CubeCoords, OffsetCoords},
         shape::RectangularHexMapShape,
+        terrain::TerrainKind,
         tile::HexMapTile,
     },
     simulation::{
@@ -231,6 +232,23 @@ impl World {
 
     pub fn fog_of(&self, nation: NationId) -> Option<&NationFog> {
         self.fog.of(nation)
+    }
+
+    /// Write the terrain of every tile, row-major like the projection's buffers, as `procgen`
+    /// classified it. Done when the world is set up, before anything has a version to catch up from,
+    /// so this does not go through the mutation gate. Panics on a slice of the wrong length: a map
+    /// and its classification come from the same generator, and a mismatch is a bug, not an input.
+    pub fn paint_terrain(&mut self, kinds: &[TerrainKind]) {
+        assert_eq!(
+            kinds.len(),
+            self.tiles_count(),
+            "one terrain kind per tile, in row-major order"
+        );
+        for (coords, &kind) in self.shape.coords().zip(kinds) {
+            if let Some(tile) = self.map.tile_mut(&coords) {
+                tile.natural_mut().set_terrain(kind);
+            }
+        }
     }
 
     /// Register a script-defined unit template. Definitions are set up before the game starts, so

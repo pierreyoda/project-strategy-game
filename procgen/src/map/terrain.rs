@@ -27,21 +27,7 @@ pub(crate) fn elevation_band_bounds(
     TERRAIN_GRADIENT_BOUNDS.map(|bound| (sea_level + bound).mul_add(scale, bias))
 }
 
-/// Terrain of a tile.
-///
-/// The discriminants are part of the WASM bridge's API, mirrored by the client's `TerrainKind`.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum TerrainKind {
-    DeepWater = 0,
-    ShallowWater = 1,
-    Flat = 2,
-    Hills = 3,
-    Mountains = 4,
-    Ice = 5,
-    /// Ice at the elevations of hills and mountains.
-    RoughIce = 6,
-}
+pub use project_x_core::hex_map::terrain::TerrainKind;
 
 /// Classifies the tiles of a map generated with the given settings, from their elevation
 /// and their latitude.
