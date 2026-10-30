@@ -1,3 +1,4 @@
+import type { MapEntity } from "../../map/entities";
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
 import { MAX_SEED } from "../../map/procgen/planetGenerator";
 import { RESOURCES, type Resource, type ResourceStock } from "../resources";
@@ -10,6 +11,7 @@ import type {
   TurnPhase,
   WorldProjection,
 } from "../session/protocol";
+import { mapEntitiesOf } from "./mapEntities";
 import { type WorldState, applyProjection, toHexMapData } from "./worldState";
 
 /** How many entries of the turn log are kept. */
@@ -44,6 +46,13 @@ export type ActiveGame = {
   readonly map: HexMapData | null;
   /** Row-major indices of the tiles the last projection changed, `null` to repaint everything. */
   readonly dirtyTiles: Uint32Array | null;
+  /**
+   * The settlements the map renderer draws, rebuilt whole on every projection.
+   *
+   * Not derived from `world`: a delta patches its buffers in place, so nothing watching its
+   * identity would ever re-run.
+   */
+  readonly entities: readonly MapEntity[];
   /** The nation being played, whose eyes everything is seen through. */
   readonly viewer: number;
   readonly turn: number;
@@ -87,6 +96,7 @@ export const createActiveGame = (): ActiveGame => {
   let meta = $state.raw<ProjectionMeta | null>(null);
   let map = $state.raw<HexMapData | null>(null);
   let dirtyTiles = $state.raw<Uint32Array | null>(null);
+  let entities = $state.raw<readonly MapEntity[]>([]);
   let viewer = $state(0);
 
   let phase = $state<TurnPhase | null>(null);
@@ -126,6 +136,8 @@ export const createActiveGame = (): ActiveGame => {
     // a new object on every projection, unlike the world it belongs to
     meta = applied.state.meta;
     dirtyTiles = applied.dirtyTiles;
+    // settlements are sparse: rebuilding the list costs less than tracking which ones moved
+    entities = mapEntitiesOf(applied.state);
   };
 
   /** Catch up with everything that changed since the projection currently drawn. */
@@ -154,6 +166,7 @@ export const createActiveGame = (): ActiveGame => {
     meta = null;
     map = null;
     dirtyTiles = null;
+    entities = [];
     selectedUnit = null;
     focusTile = null;
     try {
@@ -176,6 +189,9 @@ export const createActiveGame = (): ActiveGame => {
     },
     get dirtyTiles() {
       return dirtyTiles;
+    },
+    get entities() {
+      return entities;
     },
     get viewer() {
       return viewer;

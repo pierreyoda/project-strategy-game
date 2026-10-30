@@ -728,6 +728,28 @@ mod tests {
     }
 
     #[test]
+    fn test_a_nations_first_settlement_is_projected_as_its_capital() {
+        use crate::simulation::settlements::SettlementStage;
+
+        let (mut session, first, _, own, _) = two_nation_session();
+        session
+            .submit(GameCommand::FoundSettlement {
+                founder: own,
+                name: "Landfall".to_string(),
+            })
+            .expect("a legal founding");
+        resolve_turn(&mut session);
+
+        let snapshot = session.snapshot(first);
+        assert_eq!(snapshot.settlement_ids.len(), 1);
+        // its population is nil, but a nation's seat is a role rather than a size
+        assert_eq!(
+            snapshot.settlement_stages,
+            vec![SettlementStage::Capital as u8]
+        );
+    }
+
+    #[test]
     fn test_orders_are_only_taken_from_the_nation_being_played() {
         let (mut session, _, second, _, rival) = two_nation_session();
         session.set_controller(second, ControllerSlot::Human);

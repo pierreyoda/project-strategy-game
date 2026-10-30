@@ -18,6 +18,7 @@ use crate::{
         fog::TileVisibility,
         ids::{NationId, SettlementId, UnitId},
         resources::{Resource, ResourceData},
+        settlements::{Settlement, SettlementStage},
     },
 };
 
@@ -83,6 +84,8 @@ pub struct WorldSnapshot {
     pub settlement_ids: Vec<u32>,
     pub settlement_tiles: Vec<u32>,
     pub settlement_owners: Vec<u16>,
+    /// `SettlementStage` discriminants.
+    pub settlement_stages: Vec<u8>,
 }
 
 /// What changed for the viewer since a given version.
@@ -105,6 +108,8 @@ pub struct WorldDelta {
     pub settlement_ids: Vec<u32>,
     pub settlement_tiles: Vec<u32>,
     pub settlement_owners: Vec<u16>,
+    /// `SettlementStage` discriminants.
+    pub settlement_stages: Vec<u8>,
     pub settlements_removed: Vec<u32>,
 }
 
@@ -136,6 +141,7 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         settlement_ids: Vec::new(),
         settlement_tiles: Vec::new(),
         settlement_owners: Vec::new(),
+        settlement_stages: Vec::new(),
     };
 
     for (index, coords) in shape.coords().enumerate() {
@@ -180,6 +186,9 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         snapshot.settlement_ids.push(id.raw());
         snapshot.settlement_tiles.push(index);
         snapshot.settlement_owners.push(settlement.owner().raw());
+        snapshot
+            .settlement_stages
+            .push(stage_of(world, id, settlement) as u8);
     }
 
     snapshot
@@ -202,6 +211,7 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         settlement_ids: Vec::new(),
         settlement_tiles: Vec::new(),
         settlement_owners: Vec::new(),
+        settlement_stages: Vec::new(),
         settlements_removed: Vec::new(),
     };
 
@@ -280,6 +290,9 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
                     delta.settlement_ids.push(id.raw());
                     delta.settlement_tiles.push(index.unwrap_or_default());
                     delta.settlement_owners.push(settlement.owner().raw());
+                    delta
+                        .settlement_stages
+                        .push(stage_of(world, id, settlement) as u8);
                 } else {
                     delta.settlements_removed.push(id.raw());
                 }
@@ -296,6 +309,24 @@ pub fn delta_is_worth_it(world: &World, changes: &TurnChanges) -> bool {
     let tiles_count = world.tiles_count();
     tiles_count == 0
         || (changes.tiles_count() as f32) < (tiles_count as f32 * FULL_SNAPSHOT_DIRTY_RATIO)
+}
+
+/// How far this settlement has grown: its nation's seat, or whatever its people amount to.
+fn stage_of(world: &World, id: SettlementId, settlement: &Settlement) -> SettlementStage {
+    let is_capital = world
+        .nations()
+        .get(settlement.owner())
+        .is_some_and(|nation| nation.capital() == Some(id));
+    if is_capital {
+        return SettlementStage::Capital;
+    }
+    let people = settlement
+        .population()
+        .iter()
+        .filter_map(|&group| world.population_groups().get(group))
+        .map(|group| group.size())
+        .sum();
+    SettlementStage::for_population(people)
 }
 
 fn visibility_of(world: &World, viewer: NationId, index: usize) -> TileVisibility {

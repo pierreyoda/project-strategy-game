@@ -86,14 +86,13 @@
             context: tokenShape(drawn, layout, entity.token.side),
             position,
             tint: entity.tint,
-            alpha: entity.alpha,
           }),
         );
         if (!textures) {
           continue;
         }
         const { base, mark } = spriteTextures(textures, entity.sprite);
-        const parts = spriteCopy.addChild(new Container({ position, alpha: entity.alpha }));
+        const parts = spriteCopy.addChild(new Container({ position }));
         parts.addChild(entitySprite(layout, base));
         if (mark) {
           // drawn white, so that tinting it gives the owner's color rather than a blend of the two

@@ -26,7 +26,7 @@
     layer: Container;
     /** Fog and borders, one context per row, each drawn once per copy of the map. */
     rows: readonly GraphicsContext[];
-    /** Units and settlements: few enough to redraw whole, rather than tracked one by one. */
+    /** Units and the selection outline: few enough to redraw whole, rather than tracked one by one. */
     entities: GraphicsContext;
   };
 
@@ -64,14 +64,7 @@
         .stroke({ width: Math.max(layout.size * 0.1, 2), color: 0xffffff });
     }
 
-    for (const { tile, owner } of world.settlements.values()) {
-      const { x, y } = centerOf(tile);
-      const side = layout.size * 0.8;
-      context
-        .roundRect(x - side / 2, y - side / 2, side, side, side * 0.2)
-        .fill(nationColor(owner))
-        .stroke(outline);
-    }
+    // settlements are not drawn here: `MapEntityRenderer` has their sprites, one layer down
     for (const { tile, owner } of world.units.values()) {
       const { x, y } = centerOf(tile);
       context

@@ -362,6 +362,11 @@ impl WorldSnapshotView {
     pub fn settlement_owners(&self) -> Vec<u16> {
         self.inner.settlement_owners.clone()
     }
+
+    #[wasm_bindgen(getter, js_name = settlementStages)]
+    pub fn settlement_stages(&self) -> Vec<u8> {
+        self.inner.settlement_stages.clone()
+    }
 }
 
 impl WorldSnapshotView {
@@ -471,6 +476,11 @@ impl WorldDeltaView {
     #[wasm_bindgen(getter, js_name = settlementOwners)]
     pub fn settlement_owners(&self) -> Vec<u16> {
         self.inner.settlement_owners.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = settlementStages)]
+    pub fn settlement_stages(&self) -> Vec<u8> {
+        self.inner.settlement_stages.clone()
     }
 
     #[wasm_bindgen(getter, js_name = settlementsRemoved)]

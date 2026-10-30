@@ -98,6 +98,16 @@ export const TileFlags = {
   Deposit: 1 << 4,
 } as const;
 
+/** How far a settlement has grown, like `SettlementStage` in the `core` crate. */
+export const SettlementStage = {
+  Outpost: 0,
+  Colony: 1,
+  Town: 2,
+  City: 3,
+  Capital: 4,
+} as const;
+export type SettlementStage = (typeof SettlementStage)[keyof typeof SettlementStage];
+
 /** The "no nation" value of the owner buffers, like `projection::NO_NATION` in the `core` crate. */
 export const NO_NATION = 0xffff;
 
@@ -138,6 +148,8 @@ export type SettlementsBuffers = {
   ids: Uint32Array;
   tiles: Uint32Array;
   owners: Uint16Array;
+  /** `SettlementStage` values. */
+  stages: Uint8Array;
 };
 
 /** Everything the viewer can see, like `WorldSnapshot` in the `core` crate. */

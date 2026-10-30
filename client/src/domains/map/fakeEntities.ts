@@ -38,7 +38,6 @@ export const createFakeEntities = (map: HexMapData, density = 0.05): MapEntity[]
       sprite: SETTLEMENT_SPRITES[stage],
       token: SETTLEMENT_TOKENS[stage],
       tint: FAKE_TINTS[Math.floor(entityRandom(tile, 3) * FAKE_TINTS.length)],
-      alpha: 1,
     });
   }
   return entities;

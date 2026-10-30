@@ -99,6 +99,7 @@ const readSnapshot = (view: {
   settlementIds: Uint32Array;
   settlementTiles: Uint32Array;
   settlementOwners: Uint16Array;
+  settlementStages: Uint8Array;
 }): WorldSnapshotData => ({
   // every getter copies out of the WASM memory: read each one exactly once
   meta: parseMeta(view.meta),
@@ -110,7 +111,12 @@ const readSnapshot = (view: {
   tileOwner: view.tileOwner,
   tileFlags: view.tileFlags,
   units: { ids: view.unitIds, tiles: view.unitTiles, owners: view.unitOwners, health: view.unitHealth },
-  settlements: { ids: view.settlementIds, tiles: view.settlementTiles, owners: view.settlementOwners },
+  settlements: {
+    ids: view.settlementIds,
+    tiles: view.settlementTiles,
+    owners: view.settlementOwners,
+    stages: view.settlementStages,
+  },
 });
 
 const readDelta = (view: {
@@ -129,6 +135,7 @@ const readDelta = (view: {
   settlementIds: Uint32Array;
   settlementTiles: Uint32Array;
   settlementOwners: Uint16Array;
+  settlementStages: Uint8Array;
   settlementsRemoved: Uint32Array;
 }): WorldDeltaData => ({
   meta: parseMeta(view.meta),
@@ -140,7 +147,12 @@ const readDelta = (view: {
   tileFlags: view.tileFlags,
   units: { ids: view.unitIds, tiles: view.unitTiles, owners: view.unitOwners, health: view.unitHealth },
   unitsRemoved: view.unitsRemoved,
-  settlements: { ids: view.settlementIds, tiles: view.settlementTiles, owners: view.settlementOwners },
+  settlements: {
+    ids: view.settlementIds,
+    tiles: view.settlementTiles,
+    owners: view.settlementOwners,
+    stages: view.settlementStages,
+  },
   settlementsRemoved: view.settlementsRemoved,
 });
 

@@ -96,6 +96,7 @@
         map={game.map}
         world={game.world}
         dirtyTiles={game.dirtyTiles}
+        entities={game.entities}
         focusTile={game.focusTile}
         selectedTile={game.selected?.tile ?? null}
         onTileHover={(tile) => (hoveredTile = tile)}

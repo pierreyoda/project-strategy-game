@@ -1,5 +1,11 @@
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
-import type { ProjectionMeta, WorldDeltaData, WorldProjection, WorldSnapshotData } from "../session/protocol";
+import type {
+  ProjectionMeta,
+  SettlementStage,
+  WorldDeltaData,
+  WorldProjection,
+  WorldSnapshotData,
+} from "../session/protocol";
 
 export type UnitView = {
   id: number;
@@ -13,6 +19,8 @@ export type SettlementView = {
   id: number;
   tile: number;
   owner: number;
+  /** How far it has grown, which is what the map draws it as. The simulation's call, never ours. */
+  stage: SettlementStage;
 };
 
 /**
@@ -76,6 +84,7 @@ const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
       id,
       tile: snapshot.settlements.tiles[index],
       owner: snapshot.settlements.owners[index],
+      stage: snapshot.settlements.stages[index] as SettlementStage,
     });
   }
   return {
@@ -125,6 +134,7 @@ const patch = (state: WorldState, delta: WorldDeltaData): WorldState => {
       id,
       tile: delta.settlements.tiles[index],
       owner: delta.settlements.owners[index],
+      stage: delta.settlements.stages[index] as SettlementStage,
     });
   }
 

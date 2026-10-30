@@ -53,8 +53,6 @@ export type MapEntity = {
   token: EntityToken;
   /** Color of the sprite's mark and of the token, in the owner's colors. */
   tint: number;
-  /** Opacity, to dim what stands under the fog. */
-  alpha: number;
 };
 
 /** How far a settlement has grown, mirroring `SettlementStage` in the `core` crate. */
