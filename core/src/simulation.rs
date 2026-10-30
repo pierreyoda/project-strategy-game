@@ -9,6 +9,7 @@ pub mod ids;
 pub mod infrastructure;
 pub mod logistics;
 pub mod military;
+pub mod movement;
 pub mod nations;
 pub mod people;
 pub mod properties;

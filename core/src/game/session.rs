@@ -403,12 +403,14 @@ mod tests {
             HexMap, HexMapStorage,
             coordinates::{CubeCoords, OffsetCoords},
             shape::RectangularHexMapShape,
+            terrain::TerrainKind,
             tile::HexMapTile,
         },
         simulation::{
             fog::TileVisibility,
             ids::{NationId, SimulationID, UnitId},
             military::{Unit, UnitTemplate},
+            movement,
             nations::Nation,
         },
     };
@@ -474,6 +476,174 @@ mod tests {
         let own = world.place_unit(Unit::recruit(template.clone(), first, at(1, 1)));
         let rival = world.place_unit(Unit::recruit(template, second, at(8, 6)));
         (world, first, second, own, rival)
+    }
+
+    /// `two_nation_session` on the ground `terrain` paints by column and row, with `extra` scouts
+    /// of the first nation placed at the given columns and rows.
+    fn session_on(
+        terrain: impl Fn(i16, i16) -> TerrainKind,
+        extra: &[(i16, i16)],
+    ) -> (GameSession, NationId, NationId, UnitId, UnitId, Vec<UnitId>) {
+        let (mut world, first, second, own, rival) = two_nation_world();
+        let kinds: Vec<TerrainKind> = world
+            .shape()
+            .coords()
+            .map(|coords| {
+                let offset = OffsetCoords::from(coords);
+                terrain(offset.col(), offset.row())
+            })
+            .collect();
+        world.paint_terrain(&kinds);
+        let template = SimulationID::new_abstract_id(SCOUT);
+        let extras = extra
+            .iter()
+            .map(|&(col, row)| {
+                world.place_unit(Unit::recruit(template.clone(), first, at(col, row)))
+            })
+            .collect();
+        let mut session = GameSession::new(world, SEED, first);
+        fill_with_stub_ai(&mut session);
+        (session, first, second, own, rival, extras)
+    }
+
+    fn movement_left(session: &GameSession, unit: UnitId) -> u8 {
+        session.world().units().get(unit).unwrap().movement_left()
+    }
+
+    fn position(session: &GameSession, unit: UnitId) -> CubeCoords {
+        session.world().units().get(unit).unwrap().position()
+    }
+
+    #[test]
+    fn test_a_hill_costs_two_points_and_water_is_not_entered() {
+        let ground = |col: i16, row: i16| match (col, row) {
+            (2, 1) => TerrainKind::Hills,
+            (1, 2) => TerrainKind::ShallowWater,
+            _ => TerrainKind::Flat,
+        };
+        let (mut session, _, _, own, _, _) = session_on(ground, &[]);
+        assert_eq!(movement_left(&session, own), 2);
+
+        assert_eq!(
+            session.submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(1, 2)],
+            }),
+            Err(CommandRejection::IllegalMove {
+                reason: "the ground cannot be crossed",
+            })
+        );
+        session
+            .submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(2, 1)],
+            })
+            .expect("a hill is slow, not forbidden");
+        assert_eq!(position(&session, own), at(2, 1));
+        assert_eq!(movement_left(&session, own), 0, "the hill took both points");
+        assert_eq!(
+            session.submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(3, 1)],
+            }),
+            Err(CommandRejection::IllegalMove {
+                reason: "not enough movement points left",
+            })
+        );
+    }
+
+    #[test]
+    fn test_the_last_point_still_enters_a_hill() {
+        let ground = |col: i16, row: i16| match (col, row) {
+            (3, 1) => TerrainKind::Hills,
+            _ => TerrainKind::Flat,
+        };
+        let (mut session, _, _, own, _, _) = session_on(ground, &[]);
+        // one flat step leaves one point; the hill costs two, and takes the one
+        session
+            .submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(2, 1), at(3, 1)],
+            })
+            .expect("a unit is never stranded a point short of the tile it reached");
+        assert_eq!(position(&session, own), at(3, 1));
+        assert_eq!(movement_left(&session, own), 0);
+    }
+
+    #[test]
+    fn test_a_tile_holding_a_unit_is_not_entered_nor_crossed() {
+        let (mut session, _, _, own, _, extras) = session_on(|_, _| TerrainKind::Flat, &[(2, 1)]);
+        assert_eq!(extras.len(), 1);
+        assert_eq!(
+            session.submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(2, 1)],
+            }),
+            Err(CommandRejection::TileOccupied)
+        );
+        assert_eq!(
+            session.submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(2, 1), at(3, 1)],
+            }),
+            Err(CommandRejection::TileOccupied),
+            "no passing through a friend either: there is no stacking"
+        );
+        // and the whole order is refused: the unit has not budged
+        assert_eq!(position(&session, own), at(1, 1));
+        assert_eq!(movement_left(&session, own), 2);
+    }
+
+    #[test]
+    fn test_reachable_agrees_with_the_rules_and_hides_the_unknown() {
+        let ground = |col: i16, row: i16| match (col, row) {
+            (0, 1) => TerrainKind::DeepWater,
+            (2, 1) => TerrainKind::Hills,
+            _ => TerrainKind::Flat,
+        };
+        let (session, first, second, own, rival, _) = session_on(ground, &[(1, 2)]);
+        let world = session.world();
+        let index = |col, row| world.tile_index(at(col, row)).unwrap();
+        let reach = movement::reachable(world, first, own).expect("the viewer's own unit");
+
+        assert!(reach.tiles.contains(&index(1, 1)), "the origin is in");
+        assert_eq!(reach.path_to(index(1, 1)), Some(vec![]));
+        assert!(
+            reach.tiles.contains(&index(2, 1)),
+            "the hill, for both points"
+        );
+        assert_eq!(
+            reach.costs[reach.tiles.binary_search(&index(2, 1)).unwrap()],
+            2
+        );
+        assert!(!reach.tiles.contains(&index(0, 1)), "water");
+        assert!(!reach.tiles.contains(&index(1, 2)), "a friend's tile");
+        assert!(
+            !reach.tiles.contains(&index(3, 1)),
+            "two flat steps away, but never seen: the scout sees one tile"
+        );
+        // every tile offered is one the viewer knows, and every path offered is one the order accepts
+        let fog = world.fog_of(first).unwrap();
+        for &tile in &reach.tiles {
+            assert_ne!(fog.visibility(tile as usize), TileVisibility::Unexplored);
+            let path: Vec<CubeCoords> = reach
+                .path_to(tile)
+                .unwrap()
+                .into_iter()
+                .map(|step| world.tile_coords(step).unwrap())
+                .collect();
+            if !path.is_empty() {
+                let mut trial = session_on(ground, &[(1, 2)]).0;
+                trial
+                    .submit(GameCommand::MoveUnit { unit: own, path })
+                    .expect("the preview only offers what the rules accept");
+            }
+        }
+        assert!(
+            movement::reachable(world, second, own).is_none(),
+            "not the viewer's unit"
+        );
+        assert!(movement::reachable(world, first, rival).is_none());
     }
 
     /// Drive a whole turn the way the worker does, returning the phases it went through.
