@@ -138,6 +138,15 @@ export type ProjectionMeta = {
   nations: NationMeta[];
   /** What `BuildingsBuffers.kinds` index into: a building's type, as its template names it. */
   buildingTypes: string[];
+  /** What `UnitsBuffers.kinds` index into, like `UnitTemplateWire` in the `wasm_bridge` crate. */
+  unitTemplates: UnitTemplateMeta[];
+};
+
+export type UnitTemplateMeta = {
+  type: string;
+  /** Movement points per turn. */
+  movement: number;
+  sight: number;
 };
 
 /** The entities of a projection, as parallel arrays. */
@@ -146,7 +155,14 @@ export type UnitsBuffers = {
   tiles: Uint32Array;
   owners: Uint16Array;
   health: Uint16Array;
+  /** Indices into `ProjectionMeta.unitTemplates`, `UNKNOWN_UNIT_KIND` for a template nobody registered. */
+  kinds: Uint8Array;
+  /** Movement points left this turn. */
+  movementLeft: Uint8Array;
 };
+
+/** A unit whose template is unknown, like `projection::UNKNOWN_UNIT_KIND` in the `core` crate. */
+export const UNKNOWN_UNIT_KIND = 0xff;
 
 export type SettlementsBuffers = {
   ids: Uint32Array;

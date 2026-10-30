@@ -41,8 +41,13 @@ use project_x_procgen::{
 
 use crate::wire::{CommandWire, EventWire, MetaWire, NewGameSettings, RejectionWire};
 
-/// The scaffold's starting unit. TODO: templates come from scripts.
-const SCOUT_TEMPLATE: &str = "scout";
+/// The scaffold's starting roster, named after the client's counters: type, movement, sight.
+/// TODO: templates come from scripts.
+const UNIT_TEMPLATES: [(&str, u8, u8); 3] = [
+    ("infantry_division", 2, 2),
+    ("motorized_division", 4, 3),
+    ("light_tank_division", 3, 2),
+];
 /// The scaffold's buildings, named after the client's sprites. TODO: templates come from scripts.
 const BUILDING_TEMPLATES: [(&str, Resource, u16); 2] = [
     ("mine", Resource::Metals, 2),
@@ -370,6 +375,17 @@ impl WorldSnapshotView {
         self.inner.unit_health.clone()
     }
 
+    /// Indices into the meta's `unitTemplates`.
+    #[wasm_bindgen(getter, js_name = unitKinds)]
+    pub fn unit_kinds(&self) -> Vec<u8> {
+        self.inner.unit_kinds.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = unitMovementLeft)]
+    pub fn unit_movement_left(&self) -> Vec<u8> {
+        self.inner.unit_movement_left.clone()
+    }
+
     #[wasm_bindgen(getter, js_name = settlementIds)]
     pub fn settlement_ids(&self) -> Vec<u32> {
         self.inner.settlement_ids.clone()
@@ -510,6 +526,17 @@ impl WorldDeltaView {
         self.inner.unit_health.clone()
     }
 
+    /// Indices into the meta's `unitTemplates`.
+    #[wasm_bindgen(getter, js_name = unitKinds)]
+    pub fn unit_kinds(&self) -> Vec<u8> {
+        self.inner.unit_kinds.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = unitMovementLeft)]
+    pub fn unit_movement_left(&self) -> Vec<u8> {
+        self.inner.unit_movement_left.clone()
+    }
+
     /// Units the client must drop: destroyed, or simply no longer in sight.
     #[wasm_bindgen(getter, js_name = unitsRemoved)]
     pub fn units_removed(&self) -> Vec<u32> {
@@ -623,17 +650,19 @@ impl WorldProjectionView {
     }
 }
 
-/// Nations, and one scout each on a habitable tile.
+/// Nations, a capital each, and one division of each kind around it.
 ///
 /// TODO: this is the scaffold standing in for a scenario. Nations, their rosters and their starting
 /// position all belong to scripts, and this function is what they will replace.
 fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedNations) {
-    world.register_unit_template(UnitTemplate::new(
-        SimulationID::new_abstract_id(SCOUT_TEMPLATE),
-        "scout".to_string(),
-        2,
-        2,
-    ));
+    for (name, movement, sight) in UNIT_TEMPLATES {
+        world.register_unit_template(UnitTemplate::new(
+            SimulationID::new_abstract_id(name),
+            name.to_string(),
+            movement,
+            sight,
+        ));
+    }
     for (name, produces, per_turn) in BUILDING_TEMPLATES {
         // priced so that a starting stockpile affords a couple, and the economy phase has something to add
         world.register_building_template(BuildingTemplate::new(
@@ -697,11 +726,20 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedN
                 tile.artificial_mut().set_owner(Some(nation));
             }
         }
-        world.place_unit(Unit::recruit(
-            SimulationID::new_abstract_id(SCOUT_TEMPLATE),
-            nation,
-            start.capital(),
-        ));
+        // one unit per tile: the capital, then its land neighbours, nearest first
+        let mut sites = vec![start.capital()];
+        sites.extend(world.shape().neighbors(start.capital()).filter(|&coords| {
+            world
+                .tile(coords)
+                .is_some_and(|tile| !tile.natural().terrain().is_water())
+        }));
+        for ((name, _, _), site) in UNIT_TEMPLATES.into_iter().zip(sites) {
+            world.place_unit(Unit::recruit(
+                SimulationID::new_abstract_id(name),
+                nation,
+                site,
+            ));
+        }
     }
 }
 
@@ -812,12 +850,23 @@ mod tests {
             let tile = world.tile(settlement.position()).expect("on the map");
             assert_eq!(tile.artificial().settlement(), Some(capital));
             assert_eq!(tile.artificial().owner(), Some(id));
+            // the roster: one of each division, one in the capital, none sharing a tile, all on land
+            let positions: Vec<_> = world
+                .units()
+                .iter()
+                .filter(|(_, unit)| unit.owner() == id)
+                .map(|(_, unit)| unit.position())
+                .collect();
+            assert_eq!(positions.len(), 3, "three divisions");
             assert!(
-                world.units().iter().any(|(_, unit)| {
-                    unit.owner() == id && unit.position() == settlement.position()
-                }),
-                "the starting unit stands in the capital"
+                positions.contains(&settlement.position()),
+                "one stands in the capital"
             );
+            for (index, position) in positions.iter().enumerate() {
+                assert!(!positions[..index].contains(position), "one unit per tile");
+                let tile = world.tile(*position).expect("on the map");
+                assert!(!tile.natural().terrain().is_water(), "a division on land");
+            }
         }
         // the territory around the capitals is owned, the open sea is not
         let owned = world
@@ -827,6 +876,41 @@ mod tests {
             .count();
         assert!(owned > 2, "{owned} owned tiles");
         assert!(owned < world.tiles_count() / 2, "{owned} owned tiles");
+    }
+
+    #[test]
+    fn test_a_new_games_snapshot_names_the_units_and_their_points() {
+        let session = start_game();
+        let snapshot = session.snapshot(0);
+        let meta: serde_json::Value = serde_json::from_str(&snapshot.meta()).unwrap();
+        let templates = meta["unitTemplates"]
+            .as_array()
+            .expect("unit templates in the meta");
+        let types: Vec<&str> = templates
+            .iter()
+            .map(|t| t["type"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            types,
+            [
+                "infantry_division",
+                "light_tank_division",
+                "motorized_division"
+            ]
+        );
+        // its own three, each a different kind, each with a fresh turn's points
+        let kinds = snapshot.unit_kinds();
+        let left = snapshot.unit_movement_left();
+        assert_eq!(kinds.len(), 3);
+        let mut sorted = kinds.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, [0, 1, 2]);
+        for (kind, points) in kinds.iter().zip(left) {
+            assert_eq!(
+                u64::from(points),
+                templates[*kind as usize]["movement"].as_u64().unwrap()
+            );
+        }
     }
 
     #[test]

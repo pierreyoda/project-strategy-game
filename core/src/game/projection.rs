@@ -18,6 +18,7 @@ use crate::{
         buildings::Building,
         fog::TileVisibility,
         ids::{BuildingId, NationId, SettlementId, SimulationID, UnitId},
+        military::Unit,
         resources::{Resource, ResourceData},
         settlements::{Settlement, SettlementStage},
     },
@@ -29,6 +30,17 @@ pub const NO_NATION: u16 = u16::MAX;
 
 /// The kind of a building whose template is not registered, which only a corrupt world produces.
 pub const UNKNOWN_BUILDING_KIND: u8 = u8::MAX;
+
+/// The kind of a unit whose template is not registered, likewise.
+pub const UNKNOWN_UNIT_KIND: u8 = u8::MAX;
+
+/// What a unit template tells the client: enough to name a unit and to show its figures.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnitTemplateMeta {
+    pub r#type: String,
+    pub movement: u8,
+    pub sight: u8,
+}
 
 /// Bits of the per-tile flags buffer.
 pub mod tile_flags {
@@ -70,6 +82,9 @@ pub struct SnapshotMeta {
     /// `building_kinds` buffers index into. Templates are script-defined, so the list is the game's
     /// rather than a hardcoded enum; it is small and never changes during a playthrough.
     pub building_types: Vec<String>,
+    /// The registered unit templates, in the fixed order the `unit_kinds` buffers index into. Same
+    /// reasoning as `building_types`.
+    pub unit_templates: Vec<UnitTemplateMeta>,
 }
 
 /// Everything the viewer can see, from scratch.
@@ -93,6 +108,10 @@ pub struct WorldSnapshot {
     pub unit_tiles: Vec<u32>,
     pub unit_owners: Vec<u16>,
     pub unit_health: Vec<u16>,
+    /// Indices into the meta's `unit_templates`, or `UNKNOWN_UNIT_KIND`.
+    pub unit_kinds: Vec<u8>,
+    /// Movement points left this turn.
+    pub unit_movement_left: Vec<u8>,
     pub settlement_ids: Vec<u32>,
     pub settlement_tiles: Vec<u32>,
     pub settlement_owners: Vec<u16>,
@@ -123,6 +142,10 @@ pub struct WorldDelta {
     pub unit_tiles: Vec<u32>,
     pub unit_owners: Vec<u16>,
     pub unit_health: Vec<u16>,
+    /// Indices into the meta's `unit_templates`, or `UNKNOWN_UNIT_KIND`.
+    pub unit_kinds: Vec<u8>,
+    /// Movement points left this turn.
+    pub unit_movement_left: Vec<u8>,
     /// Units the viewer must drop: destroyed, or simply no longer in sight.
     pub units_removed: Vec<u32>,
     pub settlement_ids: Vec<u32>,
@@ -167,6 +190,8 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         unit_tiles: Vec::new(),
         unit_owners: Vec::new(),
         unit_health: Vec::new(),
+        unit_kinds: Vec::new(),
+        unit_movement_left: Vec::new(),
         settlement_ids: Vec::new(),
         settlement_tiles: Vec::new(),
         settlement_owners: Vec::new(),
@@ -196,6 +221,7 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         snapshot.tile_flags[index] = flags_of(world, coords);
     }
 
+    let unit_kinds = unit_kinds(world);
     for (id, unit) in world.units().iter() {
         let Some(index) = world.tile_index(unit.position()) else {
             continue;
@@ -208,6 +234,8 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         snapshot.unit_tiles.push(index);
         snapshot.unit_owners.push(unit.owner().raw());
         snapshot.unit_health.push(unit.health_points());
+        snapshot.unit_kinds.push(unit_kind_of(&unit_kinds, unit));
+        snapshot.unit_movement_left.push(unit.movement_left());
     }
 
     for (id, settlement) in world.settlements().iter() {
@@ -259,6 +287,8 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         unit_tiles: Vec::new(),
         unit_owners: Vec::new(),
         unit_health: Vec::new(),
+        unit_kinds: Vec::new(),
+        unit_movement_left: Vec::new(),
         units_removed: Vec::new(),
         settlement_ids: Vec::new(),
         settlement_tiles: Vec::new(),
@@ -327,6 +357,7 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
     settlements.sort_unstable();
     buildings.sort_unstable();
 
+    let unit_kinds = unit_kinds(world);
     for id in units {
         match world.units().get(id) {
             Some(unit) => {
@@ -339,6 +370,8 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
                     delta.unit_tiles.push(index.unwrap_or_default());
                     delta.unit_owners.push(unit.owner().raw());
                     delta.unit_health.push(unit.health_points());
+                    delta.unit_kinds.push(unit_kind_of(&unit_kinds, unit));
+                    delta.unit_movement_left.push(unit.movement_left());
                 } else {
                     delta.units_removed.push(id.raw());
                 }
@@ -417,6 +450,22 @@ fn stage_of(world: &World, id: SettlementId, settlement: &Settlement) -> Settlem
         .map(|group| group.size())
         .sum();
     SettlementStage::for_population(people)
+}
+
+/// The rank of every unit template, which is its kind in the buffers (see `SnapshotMeta`).
+fn unit_kinds(world: &World) -> BTreeMap<&SimulationID, u8> {
+    world
+        .unit_templates()
+        .enumerate()
+        .map(|(rank, (id, _))| (id, rank as u8))
+        .collect()
+}
+
+fn unit_kind_of(kinds: &BTreeMap<&SimulationID, u8>, unit: &Unit) -> u8 {
+    kinds
+        .get(unit.template())
+        .copied()
+        .unwrap_or(UNKNOWN_UNIT_KIND)
 }
 
 /// The rank of every building template, which is its kind in the buffers (see `SnapshotMeta`).
@@ -507,6 +556,14 @@ fn meta(world: &World, viewer: NationId, version: StateVersion) -> SnapshotMeta 
         building_types: world
             .building_templates()
             .map(|(_, template)| template.r#type().to_string())
+            .collect(),
+        unit_templates: world
+            .unit_templates()
+            .map(|(_, template)| UnitTemplateMeta {
+                r#type: template.r#type().to_string(),
+                movement: template.movement(),
+                sight: template.sight(),
+            })
             .collect(),
     }
 }

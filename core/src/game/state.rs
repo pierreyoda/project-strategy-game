@@ -221,6 +221,11 @@ impl World {
         self.building_templates.get(id)
     }
 
+    /// Every registered unit template, in a fixed order: the projection numbers them by it.
+    pub fn unit_templates(&self) -> impl Iterator<Item = (&SimulationID, &UnitTemplate)> {
+        self.unit_templates.iter()
+    }
+
     /// Every registered building template, in a fixed order: the projection numbers them by it.
     pub fn building_templates(&self) -> impl Iterator<Item = (&SimulationID, &BuildingTemplate)> {
         self.building_templates.iter()
