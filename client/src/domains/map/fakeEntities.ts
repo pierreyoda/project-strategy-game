@@ -4,8 +4,11 @@ import {
   type MapEntity,
   SETTLEMENT_SPRITES,
   SETTLEMENT_TOKENS,
+  STRENGTH_STEPS,
   SettlementStage,
+  UNIT_TYPES,
   buildingDrawing,
+  unitDrawing,
 } from "./entities";
 import type { HexMapData } from "./hexMap";
 import { TerrainKind } from "./terrain";
@@ -34,23 +37,35 @@ const entityRandom = (tile: number, salt: number): number => {
 
 /**
  * Scatter settlements of every stage over the habitable tiles of a map, `density` of them taking one,
- * and as many buildings of every type and level on their own tiles.
+ * as many buildings of every type and level on their own tiles, and half as many units, at every
+ * strength, some of them spent.
  */
 export const createFakeEntities = (map: HexMapData, density = 0.05): MapEntity[] => {
   const entities: MapEntity[] = [];
   for (let tile = 0; tile < map.rows * map.columns; tile++) {
     const roll = entityRandom(tile, 1);
-    if (!SETTLEABLE.includes(map.terrain[tile]) || roll >= 2 * density) {
+    if (!SETTLEABLE.includes(map.terrain[tile]) || roll >= 2.5 * density) {
       continue;
     }
     const tint = FAKE_TINTS[Math.floor(entityRandom(tile, 3) * FAKE_TINTS.length)];
     if (roll < density) {
       const stage = STAGES[Math.floor(entityRandom(tile, 2) * STAGES.length)];
       entities.push({ id: tile, tile, sprite: SETTLEMENT_SPRITES[stage], token: SETTLEMENT_TOKENS[stage], tint });
-    } else {
+    } else if (roll < 2 * density) {
       const type = BUILDING_TYPES[Math.floor(entityRandom(tile, 4) * BUILDING_TYPES.length)];
       const level = BUILDING_LEVELS[Math.floor(entityRandom(tile, 5) * BUILDING_LEVELS.length)];
       entities.push({ id: tile, tile, ...buildingDrawing(type, level)!, tint });
+    } else {
+      const type = UNIT_TYPES[Math.floor(entityRandom(tile, 6) * UNIT_TYPES.length)];
+      const held = 1 + Math.floor(entityRandom(tile, 7) * STRENGTH_STEPS);
+      entities.push({
+        id: tile,
+        tile,
+        ...unitDrawing(type)!,
+        tint,
+        strength: { held, steps: STRENGTH_STEPS },
+        spent: entityRandom(tile, 8) < 0.3,
+      });
     }
   }
   return entities;

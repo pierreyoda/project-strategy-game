@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 1280" width="1110" height="1280">
+<path d="M285 441 L885 441 L885 827 L845 867 L245 867 L245 481 Z" fill="#000" opacity="0.3"/>
+<path d="M275 427 L875 427 L875 813 L835 853 L235 853 L235 467 Z" fill="#ffffff"/>
+<path d="M491 379 L633 379 L633 423 L619 437 L477 437 L477 393 Z" fill="#090e14" opacity="0.9"/>
+<path d="M491 379 L633 379 L633 423 L619 437 L477 437 L477 393 Z" fill="none" stroke="#405670" stroke-width="2"/>
+<path d="M491 381 L631 381" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.1"/>
+<g>
+<path d="M275 427 L875 427 L875 813 L835 853 L235 853 L235 467 Z" fill="#4f9ddb"/>
+</g>
+<path d="M279 449 L853 449 L853 809 L831 831 L257 831 L257 471 Z" fill="none" stroke="#ffffff" stroke-width="7"/>
+<path d="M335 502 L775 758 M335 758 L775 502 M555 488 L555 772" stroke="#ffffff" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M275 430 L872 430" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+<path d="M507 393 L547 419 M507 419 L547 393 M555 393 L595 419 M555 419 L595 393" stroke="#4f9ddb" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
