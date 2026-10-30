@@ -416,6 +416,7 @@ mod tests {
 
     const SEED: GameSeed = 20_260_129;
     const SCOUT: &str = "scout";
+    const MINE: &str = "mine";
 
     fn scout_template() -> UnitTemplate {
         UnitTemplate::new(
@@ -430,6 +431,17 @@ mod tests {
         OffsetCoords::new(col, row).into()
     }
 
+    /// A free building, so that a test can construct one without a stockpile to budget for.
+    fn mine_template() -> crate::simulation::buildings::BuildingTemplate {
+        crate::simulation::buildings::BuildingTemplate::new(
+            SimulationID::new_abstract_id(MINE),
+            "mine".to_string(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        )
+    }
+
     /// Two nations, one scout each, far enough apart not to see one another.
     fn two_nation_session() -> (GameSession, NationId, NationId, UnitId, UnitId) {
         let shape = RectangularHexMapShape::new(10, 8);
@@ -439,6 +451,7 @@ mod tests {
         }
         let mut world = World::new(shape, HexMap::from_tiles(tiles));
         world.register_unit_template(scout_template());
+        world.register_building_template(mine_template());
 
         let first = world.register_nation(Nation::new(
             SimulationID::new_abstract_id("first"),
@@ -747,6 +760,51 @@ mod tests {
             snapshot.settlement_stages,
             vec![SettlementStage::Capital as u8]
         );
+    }
+
+    #[test]
+    fn test_a_constructed_building_is_projected_with_its_kind_and_level() {
+        use crate::simulation::ids::{EntityIndex, SettlementId};
+
+        let (mut session, first, second, own, _) = two_nation_session();
+        session
+            .submit(GameCommand::FoundSettlement {
+                founder: own,
+                name: "Landfall".to_string(),
+            })
+            .expect("a legal founding");
+        let settlement = SettlementId::from_index(
+            session.snapshot(first).settlement_ids[0] as usize,
+        );
+        let version = session.version();
+
+        session
+            .submit(GameCommand::ConstructBuilding {
+                settlement,
+                template: SimulationID::new_abstract_id(MINE),
+            })
+            .expect("a legal construction");
+
+        let snapshot = session.snapshot(first);
+        let tile = session.world().tile_index(at(1, 1)).unwrap();
+        assert_eq!(snapshot.building_ids.len(), 1);
+        assert_eq!(snapshot.building_tiles, vec![tile]);
+        assert_eq!(snapshot.building_owners, vec![first.raw()]);
+        // its kind names a type of the meta, which is how the client tells a mine from a plant
+        assert_eq!(snapshot.meta.building_types, vec!["mine".to_string()]);
+        assert_eq!(snapshot.building_kinds, vec![0]);
+        assert_eq!(snapshot.building_levels, vec![1]);
+
+        // the order applied at once, so a client one version behind gets it as a delta
+        let Projection::Delta(delta) = session.project(first, version) else {
+            panic!("a construction must not cost a full snapshot");
+        };
+        assert_eq!(delta.building_ids, snapshot.building_ids);
+        assert_eq!(delta.building_kinds, vec![0]);
+        assert!(delta.buildings_removed.is_empty());
+
+        // and a nation that never saw the tile knows nothing of it
+        assert!(session.snapshot(second).building_ids.is_empty());
     }
 
     #[test]

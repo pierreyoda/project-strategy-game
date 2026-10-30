@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeSet, VecDeque};
 
-use crate::simulation::ids::{EntityRef, NationId, SettlementId, UnitId};
+use crate::simulation::ids::{BuildingId, EntityRef, NationId, SettlementId, UnitId};
 
 /// Monotonic version of the world, bumped by every committed batch of mutations.
 ///
@@ -34,6 +34,7 @@ pub struct TurnChanges {
     tiles: BTreeSet<u32>,
     nations: BTreeSet<NationId>,
     settlements: BTreeSet<SettlementId>,
+    buildings: BTreeSet<BuildingId>,
     units: BTreeSet<UnitId>,
     removed: BTreeSet<EntityRef>,
 }
@@ -51,6 +52,7 @@ impl TurnChanges {
         self.tiles.is_empty()
             && self.nations.is_empty()
             && self.settlements.is_empty()
+            && self.buildings.is_empty()
             && self.units.is_empty()
             && self.removed.is_empty()
     }
@@ -69,6 +71,10 @@ impl TurnChanges {
 
     pub fn settlements(&self) -> impl Iterator<Item = SettlementId> + '_ {
         self.settlements.iter().copied()
+    }
+
+    pub fn buildings(&self) -> impl Iterator<Item = BuildingId> + '_ {
+        self.buildings.iter().copied()
     }
 
     pub fn units(&self) -> impl Iterator<Item = UnitId> + '_ {
@@ -91,6 +97,10 @@ impl TurnChanges {
         self.settlements.insert(id);
     }
 
+    pub fn mark_building(&mut self, id: BuildingId) {
+        self.buildings.insert(id);
+    }
+
     pub fn mark_unit(&mut self, id: UnitId) {
         self.units.insert(id);
     }
@@ -104,6 +114,7 @@ impl TurnChanges {
         self.tiles.extend(other.tiles.iter().copied());
         self.nations.extend(other.nations.iter().copied());
         self.settlements.extend(other.settlements.iter().copied());
+        self.buildings.extend(other.buildings.iter().copied());
         self.units.extend(other.units.iter().copied());
         self.removed.extend(other.removed.iter().copied());
         self.version = self.version.max(other.version);

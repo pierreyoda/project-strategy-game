@@ -199,6 +199,8 @@ pub struct MetaWire {
     pub viewer: u16,
     pub active_nation: u16,
     pub nations: Vec<NationWire>,
+    /// What the `buildingKinds` buffers index into: a building's `type`, as its template names it.
+    pub building_types: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -226,6 +228,7 @@ impl From<&SnapshotMeta> for MetaWire {
             viewer: value.viewer,
             active_nation: value.active_nation,
             nations: value.nations.iter().map(NationWire::from).collect(),
+            building_types: value.building_types.clone(),
         }
     }
 }

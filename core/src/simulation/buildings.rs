@@ -74,6 +74,8 @@ pub struct Building {
     settlement: SettlementId,
     position: CubeCoords,
     health_points: u16,
+    /// How far it has been upgraded, from 1. What the map draws it as, so the simulation's call.
+    level: u8,
 }
 
 impl Building {
@@ -89,6 +91,7 @@ impl Building {
             settlement,
             position,
             health_points: u16::MAX,
+            level: 1,
         }
     }
 
@@ -110,5 +113,9 @@ impl Building {
 
     pub fn health_points(&self) -> u16 {
         self.health_points
+    }
+
+    pub fn level(&self) -> u8 {
+        self.level
     }
 }

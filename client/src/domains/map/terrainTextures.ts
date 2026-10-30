@@ -4,7 +4,7 @@ import { initializeAssets } from "./assets";
 import type { TerrainKind } from "./terrain";
 import { TERRAIN_TILES, TERRAIN_TILE_SETS } from "./tileset";
 
-export type TerrainTextures = Record<TerrainKind, { base: Texture[]; decorated: Texture[] }>;
+export type TerrainTextures = Record<TerrainKind, { base: readonly Texture[]; decorated: readonly Texture[] }>;
 
 /** Load the textures of the terrains' tiles, from the sprite sheets of their tile sets. */
 export const loadTerrainTextures = async (): Promise<TerrainTextures> => {

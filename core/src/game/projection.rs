@@ -16,14 +16,19 @@ use crate::{
     },
     simulation::{
         fog::TileVisibility,
-        ids::{NationId, SettlementId, UnitId},
+        buildings::Building,
+        ids::{BuildingId, NationId, SettlementId, SimulationID, UnitId},
         resources::{Resource, ResourceData},
         settlements::{Settlement, SettlementStage},
     },
 };
+use std::collections::BTreeMap;
 
 /// The "no nation" value of the owner buffers: the sentinel `NationId` reserves (see `EntityIndex`).
 pub const NO_NATION: u16 = u16::MAX;
+
+/// The kind of a building whose template is not registered, which only a corrupt world produces.
+pub const UNKNOWN_BUILDING_KIND: u8 = u8::MAX;
 
 /// Bits of the per-tile flags buffer.
 pub mod tile_flags {
@@ -61,6 +66,10 @@ pub struct SnapshotMeta {
     pub viewer: u16,
     pub active_nation: u16,
     pub nations: Vec<NationMeta>,
+    /// Types of the registered building templates (`BuildingTemplate::type`), in the fixed order the
+    /// `building_kinds` buffers index into. Templates are script-defined, so the list is the game's
+    /// rather than a hardcoded enum; it is small and never changes during a playthrough.
+    pub building_types: Vec<String>,
 }
 
 /// Everything the viewer can see, from scratch.
@@ -86,6 +95,13 @@ pub struct WorldSnapshot {
     pub settlement_owners: Vec<u16>,
     /// `SettlementStage` discriminants.
     pub settlement_stages: Vec<u8>,
+    pub building_ids: Vec<u32>,
+    pub building_tiles: Vec<u32>,
+    pub building_owners: Vec<u16>,
+    /// Indices into the meta's `building_types`, or `UNKNOWN_BUILDING_KIND`.
+    pub building_kinds: Vec<u8>,
+    /// `Building::level`, from 1.
+    pub building_levels: Vec<u8>,
 }
 
 /// What changed for the viewer since a given version.
@@ -111,6 +127,14 @@ pub struct WorldDelta {
     /// `SettlementStage` discriminants.
     pub settlement_stages: Vec<u8>,
     pub settlements_removed: Vec<u32>,
+    pub building_ids: Vec<u32>,
+    pub building_tiles: Vec<u32>,
+    pub building_owners: Vec<u16>,
+    /// Indices into the meta's `building_types`, or `UNKNOWN_BUILDING_KIND`.
+    pub building_kinds: Vec<u8>,
+    /// `Building::level`, from 1.
+    pub building_levels: Vec<u8>,
+    pub buildings_removed: Vec<u32>,
 }
 
 /// Either a catch-up, or an order to start over.
@@ -142,6 +166,11 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         settlement_tiles: Vec::new(),
         settlement_owners: Vec::new(),
         settlement_stages: Vec::new(),
+        building_ids: Vec::new(),
+        building_tiles: Vec::new(),
+        building_owners: Vec::new(),
+        building_kinds: Vec::new(),
+        building_levels: Vec::new(),
     };
 
     for (index, coords) in shape.coords().enumerate() {
@@ -191,6 +220,22 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
             .push(stage_of(world, id, settlement) as u8);
     }
 
+    let kinds = building_kinds(world);
+    for (id, building) in world.buildings().iter() {
+        let Some(index) = world.tile_index(building.position()) else {
+            continue;
+        };
+        // like a settlement: once seen, it stays on the map
+        if visibility_of(world, viewer, index as usize) == TileVisibility::Unexplored {
+            continue;
+        }
+        snapshot.building_ids.push(id.raw());
+        snapshot.building_tiles.push(index);
+        snapshot.building_owners.push(building.owner().raw());
+        snapshot.building_kinds.push(kind_of(&kinds, building));
+        snapshot.building_levels.push(building.level());
+    }
+
     snapshot
 }
 
@@ -213,6 +258,12 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         settlement_owners: Vec::new(),
         settlement_stages: Vec::new(),
         settlements_removed: Vec::new(),
+        building_ids: Vec::new(),
+        building_tiles: Vec::new(),
+        building_owners: Vec::new(),
+        building_kinds: Vec::new(),
+        building_levels: Vec::new(),
+        buildings_removed: Vec::new(),
     };
 
     let dirty_tiles: Vec<TileIndex> = changes.tiles().collect();
@@ -243,6 +294,7 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
     // unit that did not budge while the viewer lost sight of it still has to leave the client's map.
     let mut units: Vec<UnitId> = changes.units().collect();
     let mut settlements: Vec<SettlementId> = changes.settlements().collect();
+    let mut buildings: Vec<BuildingId> = changes.buildings().collect();
     for &index in &dirty_tiles {
         for (id, unit) in world.units().iter() {
             if world.tile_index(unit.position()) == Some(index) && !units.contains(&id) {
@@ -255,9 +307,15 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
                 settlements.push(id);
             }
         }
+        for (id, building) in world.buildings().iter() {
+            if world.tile_index(building.position()) == Some(index) && !buildings.contains(&id) {
+                buildings.push(id);
+            }
+        }
     }
     units.sort_unstable();
     settlements.sort_unstable();
+    buildings.sort_unstable();
 
     for id in units {
         match world.units().get(id) {
@@ -301,6 +359,28 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         }
     }
 
+    let kinds = building_kinds(world);
+    for id in buildings {
+        match world.buildings().get(id) {
+            Some(building) => {
+                let index = world.tile_index(building.position());
+                let known = index.is_some_and(|index| {
+                    visibility_of(world, viewer, index as usize) != TileVisibility::Unexplored
+                });
+                if known {
+                    delta.building_ids.push(id.raw());
+                    delta.building_tiles.push(index.unwrap_or_default());
+                    delta.building_owners.push(building.owner().raw());
+                    delta.building_kinds.push(kind_of(&kinds, building));
+                    delta.building_levels.push(building.level());
+                } else {
+                    delta.buildings_removed.push(id.raw());
+                }
+            }
+            None => delta.buildings_removed.push(id.raw()),
+        }
+    }
+
     delta
 }
 
@@ -327,6 +407,22 @@ fn stage_of(world: &World, id: SettlementId, settlement: &Settlement) -> Settlem
         .map(|group| group.size())
         .sum();
     SettlementStage::for_population(people)
+}
+
+/// The rank of every building template, which is its kind in the buffers (see `SnapshotMeta`).
+fn building_kinds(world: &World) -> BTreeMap<&SimulationID, u8> {
+    world
+        .building_templates()
+        .enumerate()
+        .map(|(rank, (id, _))| (id, rank as u8))
+        .collect()
+}
+
+fn kind_of(kinds: &BTreeMap<&SimulationID, u8>, building: &Building) -> u8 {
+    kinds
+        .get(building.template())
+        .copied()
+        .unwrap_or(UNKNOWN_BUILDING_KIND)
 }
 
 fn visibility_of(world: &World, viewer: NationId, index: usize) -> TileVisibility {
@@ -382,6 +478,10 @@ fn meta(world: &World, viewer: NationId, version: StateVersion) -> SnapshotMeta 
                     Vec::new()
                 },
             })
+            .collect(),
+        building_types: world
+            .building_templates()
+            .map(|(_, template)| template.r#type().to_string())
             .collect(),
     }
 }

@@ -1,10 +1,18 @@
-import { type MapEntity, SETTLEMENT_SPRITES, SETTLEMENT_TOKENS, SettlementStage } from "./entities";
+import {
+  BUILDING_LEVELS,
+  BUILDING_TYPES,
+  type MapEntity,
+  SETTLEMENT_SPRITES,
+  SETTLEMENT_TOKENS,
+  SettlementStage,
+  buildingDrawing,
+} from "./entities";
 import type { HexMapData } from "./hexMap";
 import { TerrainKind } from "./terrain";
 
 /**
- * Deterministic stand-in for a session's settlements, to work on the entity rendering without a
- * running simulation, the way `createFakeHexMap` stands in for a generated planet.
+ * Deterministic stand-in for a session's settlements and buildings, to work on the entity rendering
+ * without a running simulation, the way `createFakeHexMap` stands in for a generated planet.
  *
  * The colors are its own rather than the `game` domain's: the map draws what it is handed, and a
  * test bench of the map has no nations to ask.
@@ -24,21 +32,26 @@ const entityRandom = (tile: number, salt: number): number => {
   return ((hash ^ (hash >>> 16)) >>> 0) / 2 ** 32;
 };
 
-/** Scatter settlements of every stage over the habitable tiles of a map, `density` of them taking one. */
+/**
+ * Scatter settlements of every stage over the habitable tiles of a map, `density` of them taking one,
+ * and as many buildings of every type and level on their own tiles.
+ */
 export const createFakeEntities = (map: HexMapData, density = 0.05): MapEntity[] => {
   const entities: MapEntity[] = [];
   for (let tile = 0; tile < map.rows * map.columns; tile++) {
-    if (!SETTLEABLE.includes(map.terrain[tile]) || entityRandom(tile, 1) >= density) {
+    const roll = entityRandom(tile, 1);
+    if (!SETTLEABLE.includes(map.terrain[tile]) || roll >= 2 * density) {
       continue;
     }
-    const stage = STAGES[Math.floor(entityRandom(tile, 2) * STAGES.length)];
-    entities.push({
-      id: tile,
-      tile,
-      sprite: SETTLEMENT_SPRITES[stage],
-      token: SETTLEMENT_TOKENS[stage],
-      tint: FAKE_TINTS[Math.floor(entityRandom(tile, 3) * FAKE_TINTS.length)],
-    });
+    const tint = FAKE_TINTS[Math.floor(entityRandom(tile, 3) * FAKE_TINTS.length)];
+    if (roll < density) {
+      const stage = STAGES[Math.floor(entityRandom(tile, 2) * STAGES.length)];
+      entities.push({ id: tile, tile, sprite: SETTLEMENT_SPRITES[stage], token: SETTLEMENT_TOKENS[stage], tint });
+    } else {
+      const type = BUILDING_TYPES[Math.floor(entityRandom(tile, 4) * BUILDING_TYPES.length)];
+      const level = BUILDING_LEVELS[Math.floor(entityRandom(tile, 5) * BUILDING_LEVELS.length)];
+      entities.push({ id: tile, tile, ...buildingDrawing(type, level)!, tint });
+    }
   }
   return entities;
 };

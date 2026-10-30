@@ -1,4 +1,5 @@
 import type {
+  BuildingsBuffers,
   GameEvent,
   GameSessionRequest,
   GameSessionResponse,
@@ -49,7 +50,7 @@ const parseMeta = (json: string): ProjectionMeta => JSON.parse(json) as Projecti
 
 /** Every buffer of a projection, so that they are moved to the main thread rather than copied. */
 const buffersOf = (projection: WorldProjection): Transferable[] => {
-  const entities = (units: UnitsBuffers, settlements: SettlementsBuffers) => [
+  const entities = (units: UnitsBuffers, settlements: SettlementsBuffers, buildings: BuildingsBuffers) => [
     units.ids.buffer,
     units.tiles.buffer,
     units.owners.buffer,
@@ -57,6 +58,12 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     settlements.ids.buffer,
     settlements.tiles.buffer,
     settlements.owners.buffer,
+    settlements.stages.buffer,
+    buildings.ids.buffer,
+    buildings.tiles.buffer,
+    buildings.owners.buffer,
+    buildings.kinds.buffer,
+    buildings.levels.buffer,
   ];
   if (projection.kind === "full") {
     const { snapshot } = projection;
@@ -66,7 +73,7 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
       snapshot.visibility.buffer,
       snapshot.tileOwner.buffer,
       snapshot.tileFlags.buffer,
-      ...entities(snapshot.units, snapshot.settlements),
+      ...entities(snapshot.units, snapshot.settlements, snapshot.buildings),
     ];
   }
   const { delta } = projection;
@@ -79,7 +86,8 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     delta.tileFlags.buffer,
     delta.unitsRemoved.buffer,
     delta.settlementsRemoved.buffer,
-    ...entities(delta.units, delta.settlements),
+    delta.buildingsRemoved.buffer,
+    ...entities(delta.units, delta.settlements, delta.buildings),
   ];
 };
 
@@ -100,6 +108,11 @@ const readSnapshot = (view: {
   settlementTiles: Uint32Array;
   settlementOwners: Uint16Array;
   settlementStages: Uint8Array;
+  buildingIds: Uint32Array;
+  buildingTiles: Uint32Array;
+  buildingOwners: Uint16Array;
+  buildingKinds: Uint8Array;
+  buildingLevels: Uint8Array;
 }): WorldSnapshotData => ({
   // every getter copies out of the WASM memory: read each one exactly once
   meta: parseMeta(view.meta),
@@ -117,6 +130,21 @@ const readSnapshot = (view: {
     owners: view.settlementOwners,
     stages: view.settlementStages,
   },
+  buildings: readBuildings(view),
+});
+
+const readBuildings = (view: {
+  buildingIds: Uint32Array;
+  buildingTiles: Uint32Array;
+  buildingOwners: Uint16Array;
+  buildingKinds: Uint8Array;
+  buildingLevels: Uint8Array;
+}): BuildingsBuffers => ({
+  ids: view.buildingIds,
+  tiles: view.buildingTiles,
+  owners: view.buildingOwners,
+  kinds: view.buildingKinds,
+  levels: view.buildingLevels,
 });
 
 const readDelta = (view: {
@@ -137,6 +165,12 @@ const readDelta = (view: {
   settlementOwners: Uint16Array;
   settlementStages: Uint8Array;
   settlementsRemoved: Uint32Array;
+  buildingIds: Uint32Array;
+  buildingTiles: Uint32Array;
+  buildingOwners: Uint16Array;
+  buildingKinds: Uint8Array;
+  buildingLevels: Uint8Array;
+  buildingsRemoved: Uint32Array;
 }): WorldDeltaData => ({
   meta: parseMeta(view.meta),
   tileIndices: view.tileIndices,
@@ -154,6 +188,8 @@ const readDelta = (view: {
     stages: view.settlementStages,
   },
   settlementsRemoved: view.settlementsRemoved,
+  buildings: readBuildings(view),
+  buildingsRemoved: view.buildingsRemoved,
 });
 
 /** Hand over everything the simulation buffered, so the UI log never lags behind the turn. */

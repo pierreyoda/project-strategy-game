@@ -213,6 +213,11 @@ impl World {
         self.building_templates.get(id)
     }
 
+    /// Every registered building template, in a fixed order: the projection numbers them by it.
+    pub fn building_templates(&self) -> impl Iterator<Item = (&SimulationID, &BuildingTemplate)> {
+        self.building_templates.iter()
+    }
+
     pub fn fog(&self) -> &FogOfWar {
         &self.fog
     }
@@ -339,6 +344,7 @@ impl<'a> WorldMut<'a> {
     pub fn insert_building(&mut self, building: Building) -> BuildingId {
         let position = building.position();
         let id = self.world.buildings.insert(building);
+        self.changes.mark_building(id);
         if let Some(tile) = self.tile_mut(position) {
             tile.artificial_mut().add_building(id);
         }

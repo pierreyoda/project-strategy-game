@@ -9,6 +9,8 @@
 //! to shout as it goes, while this one returns after every slice of work and lets its caller decide
 //! what to do next.
 
+use std::collections::BTreeMap;
+
 use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 
 use project_x_core::{
@@ -22,6 +24,7 @@ use project_x_core::{
     },
     hex_map::shape::RectangularHexMapShape,
     simulation::{
+        buildings::BuildingTemplate,
         fog::TileVisibility,
         ids::{EntityIndex, NationId, SimulationID},
         military::{Unit, UnitTemplate},
@@ -39,6 +42,11 @@ use crate::wire::{CommandWire, EventWire, MetaWire, NewGameSettings, RejectionWi
 
 /// The scaffold's starting unit. TODO: templates come from scripts.
 const SCOUT_TEMPLATE: &str = "scout";
+/// The scaffold's buildings, named after the client's sprites. TODO: templates come from scripts.
+const BUILDING_TEMPLATES: [(&str, Resource, u16); 2] = [
+    ("mine", Resource::Metals, 2),
+    ("solar_plant", Resource::Electricity, 3),
+];
 
 /// Terrain of a tile the viewer has never explored.
 ///
@@ -369,6 +377,32 @@ impl WorldSnapshotView {
     pub fn settlement_stages(&self) -> Vec<u8> {
         self.inner.settlement_stages.clone()
     }
+
+    #[wasm_bindgen(getter, js_name = buildingIds)]
+    pub fn building_ids(&self) -> Vec<u32> {
+        self.inner.building_ids.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingTiles)]
+    pub fn building_tiles(&self) -> Vec<u32> {
+        self.inner.building_tiles.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingOwners)]
+    pub fn building_owners(&self) -> Vec<u16> {
+        self.inner.building_owners.clone()
+    }
+
+    /// Indices into the meta's `buildingTypes`.
+    #[wasm_bindgen(getter, js_name = buildingKinds)]
+    pub fn building_kinds(&self) -> Vec<u8> {
+        self.inner.building_kinds.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingLevels)]
+    pub fn building_levels(&self) -> Vec<u8> {
+        self.inner.building_levels.clone()
+    }
 }
 
 impl WorldSnapshotView {
@@ -489,6 +523,37 @@ impl WorldDeltaView {
     pub fn settlements_removed(&self) -> Vec<u32> {
         self.inner.settlements_removed.clone()
     }
+
+    #[wasm_bindgen(getter, js_name = buildingIds)]
+    pub fn building_ids(&self) -> Vec<u32> {
+        self.inner.building_ids.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingTiles)]
+    pub fn building_tiles(&self) -> Vec<u32> {
+        self.inner.building_tiles.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingOwners)]
+    pub fn building_owners(&self) -> Vec<u16> {
+        self.inner.building_owners.clone()
+    }
+
+    /// Indices into the meta's `buildingTypes`.
+    #[wasm_bindgen(getter, js_name = buildingKinds)]
+    pub fn building_kinds(&self) -> Vec<u8> {
+        self.inner.building_kinds.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingLevels)]
+    pub fn building_levels(&self) -> Vec<u8> {
+        self.inner.building_levels.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingsRemoved)]
+    pub fn buildings_removed(&self) -> Vec<u32> {
+        self.inner.buildings_removed.clone()
+    }
 }
 
 impl WorldDeltaView {
@@ -552,6 +617,16 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedN
         2,
         2,
     ));
+    for (name, produces, per_turn) in BUILDING_TEMPLATES {
+        // priced so that a starting stockpile affords a couple, and the economy phase has something to add
+        world.register_building_template(BuildingTemplate::new(
+            SimulationID::new_abstract_id(name),
+            name.to_string(),
+            BTreeMap::from([(Resource::Credits, 60), (Resource::Metals, 15)]),
+            BTreeMap::from([(Resource::Credits, 2)]),
+            BTreeMap::from([(produces, per_turn)]),
+        ));
+    }
 
     // the setup writes through the mutation gate like everything else, into changes nobody will
     // read: nothing has a version to catch up from yet

@@ -134,6 +134,8 @@ export type ProjectionMeta = {
   viewer: number;
   activeNation: number;
   nations: NationMeta[];
+  /** What `BuildingsBuffers.kinds` index into: a building's type, as its template names it. */
+  buildingTypes: string[];
 };
 
 /** The entities of a projection, as parallel arrays. */
@@ -152,6 +154,19 @@ export type SettlementsBuffers = {
   stages: Uint8Array;
 };
 
+export type BuildingsBuffers = {
+  ids: Uint32Array;
+  tiles: Uint32Array;
+  owners: Uint16Array;
+  /** Indices into `ProjectionMeta.buildingTypes`, `UNKNOWN_BUILDING_KIND` for a template nobody registered. */
+  kinds: Uint8Array;
+  /** From 1. */
+  levels: Uint8Array;
+};
+
+/** A building whose template is unknown, like `projection::UNKNOWN_BUILDING_KIND` in the `core` crate. */
+export const UNKNOWN_BUILDING_KIND = 0xff;
+
 /** Everything the viewer can see, like `WorldSnapshot` in the `core` crate. */
 export type WorldSnapshotData = {
   meta: ProjectionMeta;
@@ -167,6 +182,7 @@ export type WorldSnapshotData = {
   tileFlags: Uint8Array;
   units: UnitsBuffers;
   settlements: SettlementsBuffers;
+  buildings: BuildingsBuffers;
 };
 
 /**
@@ -189,6 +205,8 @@ export type WorldDeltaData = {
   unitsRemoved: Uint32Array;
   settlements: SettlementsBuffers;
   settlementsRemoved: Uint32Array;
+  buildings: BuildingsBuffers;
+  buildingsRemoved: Uint32Array;
 };
 
 /**

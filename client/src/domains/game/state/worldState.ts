@@ -1,10 +1,12 @@
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
-import type {
-  ProjectionMeta,
-  SettlementStage,
-  WorldDeltaData,
-  WorldProjection,
-  WorldSnapshotData,
+import {
+  type BuildingsBuffers,
+  type ProjectionMeta,
+  type SettlementStage,
+  UNKNOWN_BUILDING_KIND,
+  type WorldDeltaData,
+  type WorldProjection,
+  type WorldSnapshotData,
 } from "../session/protocol";
 
 export type UnitView = {
@@ -21,6 +23,16 @@ export type SettlementView = {
   owner: number;
   /** How far it has grown, which is what the map draws it as. The simulation's call, never ours. */
   stage: SettlementStage;
+};
+
+export type BuildingView = {
+  id: number;
+  tile: number;
+  owner: number;
+  /** Its template's type (`mine`, `solar_plant`...), `null` for one the simulation could not name. */
+  type: string | null;
+  /** How far it has been upgraded, from 1. The simulation's call, like a settlement's stage. */
+  level: number;
 };
 
 /**
@@ -43,6 +55,7 @@ export type WorldState = {
   tileFlags: Uint8Array;
   units: Map<number, UnitView>;
   settlements: Map<number, SettlementView>;
+  buildings: Map<number, BuildingView>;
 };
 
 export type AppliedProjection = {
@@ -66,6 +79,21 @@ export const toHexMapData = (state: WorldState): HexMapData => ({
   terrain: state.terrain,
 });
 
+/** Fold a projection's buildings into a map of views, the kinds resolved against that projection's meta. */
+const readBuildings = (into: Map<number, BuildingView>, buffers: BuildingsBuffers, meta: ProjectionMeta) => {
+  for (let index = 0; index < buffers.ids.length; index++) {
+    const id = buffers.ids[index];
+    const kind = buffers.kinds[index];
+    into.set(id, {
+      id,
+      tile: buffers.tiles[index],
+      owner: buffers.owners[index],
+      type: kind === UNKNOWN_BUILDING_KIND ? null : (meta.buildingTypes[kind] ?? null),
+      level: buffers.levels[index],
+    });
+  }
+};
+
 const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
   const units = new Map<number, UnitView>();
   for (let index = 0; index < snapshot.units.ids.length; index++) {
@@ -87,6 +115,8 @@ const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
       stage: snapshot.settlements.stages[index] as SettlementStage,
     });
   }
+  const buildings = new Map<number, BuildingView>();
+  readBuildings(buildings, snapshot.buildings, snapshot.meta);
   return {
     meta: snapshot.meta,
     columns: snapshot.columns,
@@ -98,6 +128,7 @@ const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
     tileFlags: snapshot.tileFlags,
     units,
     settlements,
+    buildings,
   };
 };
 
@@ -137,6 +168,11 @@ const patch = (state: WorldState, delta: WorldDeltaData): WorldState => {
       stage: delta.settlements.stages[index] as SettlementStage,
     });
   }
+
+  for (const id of delta.buildingsRemoved) {
+    state.buildings.delete(id);
+  }
+  readBuildings(state.buildings, delta.buildings, delta.meta);
 
   state.meta = delta.meta;
   return state;
