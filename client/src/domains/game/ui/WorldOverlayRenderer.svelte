@@ -61,7 +61,6 @@
 
   const paintEntities = (drawn: DrawnOverlay, world: WorldState, layout: HexLayout, selectedTile: number | null) => {
     const context = drawn.entities.clear();
-    const outline = { width: Math.max(layout.size * 0.06, 1), color: FOG_COLOR };
     const centerOf = (tile: number) =>
       hexCenter(layout, { col: tile % world.columns, row: Math.floor(tile / world.columns) });
 
@@ -71,15 +70,8 @@
         .poly(hexCorners(layout).map((corner, i) => corner + (i % 2 === 0 ? x : y)))
         .stroke({ width: Math.max(layout.size * 0.1, 2), color: 0xffffff });
     }
-
-    // settlements are not drawn here: `MapEntityRenderer` has their sprites, one layer down
-    for (const { tile, owner } of world.units.values()) {
-      const { x, y } = centerOf(tile);
-      context
-        .circle(x, y, layout.size * 0.3)
-        .fill(nationColor(owner))
-        .stroke(outline);
-    }
+    // settlements, buildings and units are not drawn here: `MapEntityRenderer` has their sprites,
+    // one layer down
   };
 
   const drawOverlay = (pixi: PixiContext, world: WorldState, layout: HexLayout): DrawnOverlay => {

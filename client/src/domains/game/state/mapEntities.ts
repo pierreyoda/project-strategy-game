@@ -1,4 +1,11 @@
-import { type MapEntity, SETTLEMENT_SPRITES, SETTLEMENT_TOKENS, buildingDrawing } from "../../map/entities";
+import {
+  type MapEntity,
+  SETTLEMENT_SPRITES,
+  SETTLEMENT_TOKENS,
+  buildingDrawing,
+  strengthOf,
+  unitDrawing,
+} from "../../map/entities";
 import { nationColor } from "../nations";
 import type { WorldState } from "./worldState";
 
@@ -10,9 +17,10 @@ import type { WorldState } from "./worldState";
  * paints over the entity layer, so a settlement the viewer is no longer watching dims with the
  * ground it stands on.
  *
- * Buildings come first: the simulation still raises them on their settlement's tile, and the draw
- * order keeps the list's order on a tile, so the settlement ends up on top (see `inDrawOrder`).
- * The ids of the two overlap, so a building's is offset past any settlement's.
+ * Buildings come first and units last: the simulation still raises a building on its settlement's
+ * tile, a unit stands on whatever it stands on, and the draw order keeps the list's order on a
+ * tile, so the settlement covers its buildings and a unit covers both (see `inDrawOrder`). The ids
+ * of the three sets overlap, so a building's and a unit's are offset past any settlement's.
  */
 export const mapEntitiesOf = (world: WorldState): MapEntity[] => {
   const entities: MapEntity[] = [];
@@ -31,8 +39,22 @@ export const mapEntitiesOf = (world: WorldState): MapEntity[] => {
       tint: nationColor(owner),
     });
   }
+  for (const { id, tile, owner, type, health, movementLeft } of world.units.values()) {
+    const drawing = unitDrawing(type);
+    if (drawing) {
+      entities.push({
+        id: UNIT_ID_OFFSET + id,
+        tile,
+        ...drawing,
+        tint: nationColor(owner),
+        strength: strengthOf(health),
+        spent: movementLeft === 0,
+      });
+    }
+  }
   return entities;
 };
 
-/** Keeps a building's entity id apart from a settlement's: both are dense indices from 0 in the simulation. */
+/** Keep the sets' entity ids apart: each is a dense index from 0 in the simulation. */
 const BUILDING_ID_OFFSET = 1 << 24;
+const UNIT_ID_OFFSET = 2 << 24;
