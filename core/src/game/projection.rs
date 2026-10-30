@@ -15,8 +15,8 @@ use crate::{
         state::{TileIndex, World},
     },
     simulation::{
-        fog::TileVisibility,
         buildings::Building,
+        fog::TileVisibility,
         ids::{BuildingId, NationId, SettlementId, SimulationID, UnitId},
         resources::{Resource, ResourceData},
         settlements::{Settlement, SettlementStage},
@@ -84,6 +84,9 @@ pub struct WorldSnapshot {
     pub visibility: Vec<u8>,
     /// Owning nation per tile, `NO_NATION` where none or unknown.
     pub tile_owner: Vec<u16>,
+    /// Nation whose sphere of influence holds each tile (see `WorldGenesis`), `NO_NATION` where
+    /// none or unknown: the viewer's own sphere everywhere, a rival's only once the tile is explored.
+    pub tile_sphere: Vec<u16>,
     /// `tile_flags` bits.
     pub tile_flags: Vec<u8>,
     pub unit_ids: Vec<u32>,
@@ -114,6 +117,7 @@ pub struct WorldDelta {
     pub elevations: Vec<i16>,
     pub visibility: Vec<u8>,
     pub tile_owner: Vec<u16>,
+    pub tile_sphere: Vec<u16>,
     pub tile_flags: Vec<u8>,
     pub unit_ids: Vec<u32>,
     pub unit_tiles: Vec<u32>,
@@ -157,6 +161,7 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         elevations: vec![0; tiles_count],
         visibility: vec![TileVisibility::Unexplored as u8; tiles_count],
         tile_owner: vec![NO_NATION; tiles_count],
+        tile_sphere: vec![NO_NATION; tiles_count],
         tile_flags: vec![0; tiles_count],
         unit_ids: Vec::new(),
         unit_tiles: Vec::new(),
@@ -176,6 +181,7 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
     for (index, coords) in shape.coords().enumerate() {
         let visibility = visibility_of(world, viewer, index);
         snapshot.visibility[index] = visibility as u8;
+        snapshot.tile_sphere[index] = sphere_of(world, viewer, index as TileIndex, visibility);
         if visibility == TileVisibility::Unexplored {
             continue;
         }
@@ -247,6 +253,7 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         elevations: Vec::with_capacity(changes.tiles_count()),
         visibility: Vec::with_capacity(changes.tiles_count()),
         tile_owner: Vec::with_capacity(changes.tiles_count()),
+        tile_sphere: Vec::with_capacity(changes.tiles_count()),
         tile_flags: Vec::with_capacity(changes.tiles_count()),
         unit_ids: Vec::new(),
         unit_tiles: Vec::new(),
@@ -274,6 +281,9 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         let visibility = visibility_of(world, viewer, index as usize);
         delta.tile_indices.push(index);
         delta.visibility.push(visibility as u8);
+        delta
+            .tile_sphere
+            .push(sphere_of(world, viewer, index, visibility));
         if visibility == TileVisibility::Unexplored {
             delta.elevations.push(0);
             delta.tile_owner.push(NO_NATION);
@@ -423,6 +433,21 @@ fn kind_of(kinds: &BTreeMap<&SimulationID, u8>, building: &Building) -> u8 {
         .get(building.template())
         .copied()
         .unwrap_or(UNKNOWN_BUILDING_KIND)
+}
+
+/// The sphere of influence the viewer is shown on a tile.
+///
+/// The viewer's own sphere is shown everywhere from turn 1 - it is where they are meant to grow,
+/// and keeping it from them would make the generator's work invisible to the one it was done for.
+/// A rival's only shows once the tile is explored, like its borders: an unexplored tile reveals
+/// nothing, whoever it was meant for.
+fn sphere_of(world: &World, viewer: NationId, index: TileIndex, visibility: TileVisibility) -> u16 {
+    match world.genesis().sphere_of(index) {
+        Some(nation) if nation == viewer || visibility != TileVisibility::Unexplored => {
+            nation.raw()
+        }
+        _ => NO_NATION,
+    }
 }
 
 fn visibility_of(world: &World, viewer: NationId, index: usize) -> TileVisibility {

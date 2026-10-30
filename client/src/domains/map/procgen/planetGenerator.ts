@@ -6,6 +6,10 @@ export const MAX_SEED = 0xffff_ffff - 256;
 export const MAX_MAP_SIZE = 1024;
 /** Share of the map covered by the seas, like `ocean_coverage` in `MapGeneratorSettings::default`. */
 export const DEFAULT_OCEAN_COVERAGE = 0.7;
+/** Nations settled on a planet by default, like `nations` in `NationsGeneratorSettings::default`. */
+export const DEFAULT_NATIONS = 8;
+/** More nations than this is not a planet anyone would want to tune by hand. */
+export const MAX_NATIONS = 64;
 
 export type PlanetSettings = {
   seed: number;
@@ -13,6 +17,39 @@ export type PlanetSettings = {
   rows: number;
   /** Share of the map covered by the seas, from 0 (no sea) to 1 (no land). */
   oceanCoverage: number;
+  /** How many nations to settle on the planet. */
+  nations: number;
+};
+
+/** How the siting of the nations went, like `NationsReportWire` in the `wasm_bridge` crate. */
+export type NationsReport = {
+  spacingRequested: number;
+  spacingFinal: number;
+  relaxations: number;
+  unplaced: number;
+  unclaimedLand: number;
+};
+
+/**
+ * The nations of a planet, like `GeneratedNationsView` in the `wasm_bridge` crate: tile buffers laid
+ * out like the map's, per-nation buffers in nation order.
+ */
+export type PlanetNations = {
+  /** Nation whose sphere of influence holds each tile, `NO_NATION` where none. */
+  tileSphere: Uint16Array;
+  /** Nation owning each tile on turn 1, `NO_NATION` where none. */
+  tileOwner: Uint16Array;
+  /** Row-major tile index of each nation's capital. */
+  capitals: Uint32Array;
+  /** Habitability of each nation's capital site. */
+  siteScores: Float32Array;
+  report: NationsReport;
+};
+
+/** A planet with its nations. */
+export type GeneratedPlanetData = {
+  map: HexMapData;
+  nations: PlanetNations;
 };
 
 /** Message from the main thread to `planet.worker.ts`. */
@@ -22,10 +59,18 @@ export type PlanetGeneratorRequest = {
 
 /** Messages from `planet.worker.ts` to the main thread. */
 export type PlanetGeneratorResponse =
-  { type: "progress"; percentage: number } | { type: "done"; map: HexMapData } | { type: "error"; message: string };
+  | { type: "progress"; percentage: number }
+  | { type: "done"; planet: GeneratedPlanetData }
+  | { type: "error"; message: string };
 
 /** Why the given settings cannot generate a planet, if they cannot. */
-export const validatePlanetSettings = ({ seed, columns, rows, oceanCoverage }: PlanetSettings): string | null => {
+export const validatePlanetSettings = ({
+  seed,
+  columns,
+  rows,
+  oceanCoverage,
+  nations,
+}: PlanetSettings): string | null => {
   if (!Number.isInteger(seed) || seed < 0 || seed > MAX_SEED) {
     return `The seed must be an integer from 0 to ${MAX_SEED}.`;
   }
@@ -36,6 +81,9 @@ export const validatePlanetSettings = ({ seed, columns, rows, oceanCoverage }: P
   if (!Number.isFinite(oceanCoverage) || oceanCoverage < 0 || oceanCoverage > 1) {
     return "The ocean coverage must be a share from 0 to 1.";
   }
+  if (!Number.isInteger(nations) || nations < 1 || nations > MAX_NATIONS) {
+    return `The nations must be an integer from 1 to ${MAX_NATIONS}.`;
+  }
   return null;
 };
 
@@ -44,7 +92,7 @@ export type PlanetGenerator = {
    * Generate a planet, cancelling the generation in progress if any: its promise is then rejected with
    * an `AbortError`.
    */
-  generate: (settings: PlanetSettings, onProgress?: (percentage: number) => void) => Promise<HexMapData>;
+  generate: (settings: PlanetSettings, onProgress?: (percentage: number) => void) => Promise<GeneratedPlanetData>;
   /** Cancel the generation in progress if any, and release the worker. */
   dispose: () => void;
 };
@@ -94,7 +142,7 @@ export const createPlanetGenerator = (): PlanetGenerator => {
           }
           settle();
           if (response.type === "done") {
-            resolve(response.map);
+            resolve(response.planet);
           } else {
             reject(new Error(response.message));
           }

@@ -5,9 +5,11 @@
 
   import HexMapRenderer from "../../map/components/HexMapRenderer.svelte";
   import MapEntityRenderer from "../../map/components/MapEntityRenderer.svelte";
+  import NationsOverlayRenderer from "../../map/components/NationsOverlayRenderer.svelte";
   import type { MapEntity } from "../../map/entities";
   import { createHexLayout, hexCenter, mapHeight, wrapBounds } from "../../map/hexLayout";
   import type { HexMapData, OffsetCoords } from "../../map/hexMap";
+  import type { PlanetNations } from "../../map/procgen/planetGenerator";
   import type { PixiContext } from "../../../shared/pixi";
   import type { WorldState } from "../state/worldState";
   import WorldOverlayRenderer from "./WorldOverlayRenderer.svelte";
@@ -19,6 +21,11 @@
      * there is no session to show, as in the planet generator's test bench.
      */
     world?: WorldState | null;
+    /**
+     * Generated nations drawn over the map as they came out of the generator - spheres, turn-1
+     * borders, capitals - for the planet generator's test bench, which has no session.
+     */
+    nations?: PlanetNations | null;
     /**
      * Row-major indices of the tiles a projection's delta changed, repainted on their own. A new
      * `map` or `world` repaints everything instead.
@@ -46,6 +53,7 @@
   const {
     map,
     world = null,
+    nations = null,
     dirtyTiles = null,
     entities = [],
     flatColors = false,
@@ -171,6 +179,9 @@
     <MapEntityRenderer {pixi} {map} {layout} {entities} />
     {#if world}
       <WorldOverlayRenderer {pixi} {world} {layout} {dirtyTiles} {selectedTile} />
+    {/if}
+    {#if nations}
+      <NationsOverlayRenderer {pixi} {map} {nations} {layout} />
     {/if}
   {/if}
 </div>

@@ -52,6 +52,8 @@ export type WorldState = {
   /** `TileVisibility` values. */
   visibility: Uint8Array;
   tileOwner: Uint16Array;
+  /** Spheres of influence, as far as the viewer knows them. */
+  tileSphere: Uint16Array;
   tileFlags: Uint8Array;
   units: Map<number, UnitView>;
   settlements: Map<number, SettlementView>;
@@ -125,6 +127,7 @@ const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
     elevations: snapshot.elevations,
     visibility: snapshot.visibility,
     tileOwner: snapshot.tileOwner,
+    tileSphere: snapshot.tileSphere,
     tileFlags: snapshot.tileFlags,
     units,
     settlements,
@@ -140,6 +143,7 @@ const patch = (state: WorldState, delta: WorldDeltaData): WorldState => {
     state.elevations[tile] = delta.elevations[index];
     state.visibility[tile] = delta.visibility[index];
     state.tileOwner[tile] = delta.tileOwner[index];
+    state.tileSphere[tile] = delta.tileSphere[index];
     state.tileFlags[tile] = delta.tileFlags[index];
   }
 

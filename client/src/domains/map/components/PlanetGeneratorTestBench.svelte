@@ -4,11 +4,15 @@
   import Button from "../../../shared/ui/Button.svelte";
   import GameView from "../../game/ui/GameView.svelte";
   import { createFakeEntities } from "../fakeEntities";
+  import { NO_NATION } from "../../game/session/protocol";
   import { type HexMapData, type OffsetCoords, tileIndex } from "../hexMap";
   import {
+    DEFAULT_NATIONS,
     DEFAULT_OCEAN_COVERAGE,
     MAX_MAP_SIZE,
+    MAX_NATIONS,
     MAX_SEED,
+    type PlanetNations,
     type PlanetSettings,
     createPlanetGenerator,
     validatePlanetSettings,
@@ -23,10 +27,13 @@
     columns: 80,
     rows: 52,
     oceanCoverage: DEFAULT_OCEAN_COVERAGE,
+    nations: DEFAULT_NATIONS,
   });
   const settingsError = $derived(validatePlanetSettings(settings));
 
   let map = $state.raw<HexMapData | null>(null);
+  let nations = $state.raw<PlanetNations | null>(null);
+  let showNations = $state(true);
   let progress = $state<number | null>(null);
   let duration = $state<number | null>(null);
   let error = $state<string | null>(null);
@@ -51,7 +58,8 @@
         }
       });
       if (id === generation) {
-        map = generated;
+        map = generated.map;
+        nations = generated.nations;
         hoveredTile = null;
         duration = performance.now() - start;
       }
@@ -107,11 +115,15 @@
         100,
         (percentage) => (settings.oceanCoverage = percentage / 100),
       )}
+      {@render numberField("Nations", settings.nations, MAX_NATIONS, (count) => (settings.nations = count))}
       <Button type="submit" variant="primary" size="sm" icon="map" disabled={settingsError !== null}>Generate</Button>
       <Button size="sm" onclick={generateWithRandomSeed}>Random seed</Button>
     </form>
     <Button variant="ghost" size="sm" aria-pressed={flatColors} onclick={() => (flatColors = !flatColors)}>
       Flat colors
+    </Button>
+    <Button variant="ghost" size="sm" aria-pressed={showNations} onclick={() => (showNations = !showNations)}>
+      Nations
     </Button>
     <Button
       variant="ghost"
@@ -138,17 +150,35 @@
       {:else if duration !== null}
         <span>Generated in {(duration / 1000).toFixed(2)} s</span>
       {/if}
+      {#if nations && progress === null}
+        <span>
+          Spacing {nations.report.spacingRequested} → {nations.report.spacingFinal}
+          {#if nations.report.unplaced > 0}· {nations.report.unplaced} unplaced{/if}
+          · {nations.report.unclaimedLand} hexes unclaimed
+        </span>
+      {/if}
       {#if map && hoveredTile && hoveredTileIndex !== null}
         <span class="text-fg">
           ({hoveredTile.col}, {hoveredTile.row}) · {TERRAIN_NAMES[map.terrain[hoveredTileIndex] as TerrainKind]} ·
           {map.elevations[hoveredTileIndex]} m
+          {#if nations && nations.tileOwner[hoveredTileIndex] !== NO_NATION}
+            · Nation {nations.tileOwner[hoveredTileIndex] + 1}
+          {:else if nations && nations.tileSphere[hoveredTileIndex] !== NO_NATION}
+            · sphere of Nation {nations.tileSphere[hoveredTileIndex] + 1}
+          {/if}
         </span>
       {/if}
     </div>
   </header>
   <div class="min-h-0 flex-1">
     {#if map}
-      <GameView {map} {entities} {flatColors} onTileHover={(tile) => (hoveredTile = tile)} />
+      <GameView
+        {map}
+        {entities}
+        nations={showNations ? nations : null}
+        {flatColors}
+        onTileHover={(tile) => (hoveredTile = tile)}
+      />
     {/if}
   </div>
 </div>

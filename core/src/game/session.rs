@@ -393,6 +393,7 @@ mod tests {
             ai::{ControllerSlot, NationController, NationView},
             commands::{CommandRejection, GameCommand},
             events::GameEvent,
+            genesis::{Homeland, WorldGenesis},
             projection::{NO_NATION, Projection},
             rng::GameSeed,
             state::World,
@@ -444,6 +445,14 @@ mod tests {
 
     /// Two nations, one scout each, far enough apart not to see one another.
     fn two_nation_session() -> (GameSession, NationId, NationId, UnitId, UnitId) {
+        let (world, first, second, own, rival) = two_nation_world();
+        let mut session = GameSession::new(world, SEED, first);
+        fill_with_stub_ai(&mut session);
+        (session, first, second, own, rival)
+    }
+
+    /// The world of `two_nation_session`, before the session starts watching it.
+    fn two_nation_world() -> (World, NationId, NationId, UnitId, UnitId) {
         let shape = RectangularHexMapShape::new(10, 8);
         let mut tiles = HexMapStorage::with_capacity(shape.tiles_count());
         for coords in shape.coords() {
@@ -464,10 +473,7 @@ mod tests {
         let template = SimulationID::new_abstract_id(SCOUT);
         let own = world.place_unit(Unit::recruit(template.clone(), first, at(1, 1)));
         let rival = world.place_unit(Unit::recruit(template, second, at(8, 6)));
-
-        let mut session = GameSession::new(world, SEED, first);
-        fill_with_stub_ai(&mut session);
-        (session, first, second, own, rival)
+        (world, first, second, own, rival)
     }
 
     /// Drive a whole turn the way the worker does, returning the phases it went through.
@@ -705,6 +711,95 @@ mod tests {
         );
     }
 
+    /// `two_nation_world` with the west half of the map in the first nation's sphere of influence
+    /// and the east half in the second's.
+    fn two_sphere_session() -> (GameSession, NationId, NationId, UnitId) {
+        let (mut world, first, second, own, _) = two_nation_world();
+        let tile_sphere = world
+            .shape()
+            .coords()
+            .map(|coords| {
+                Some(if OffsetCoords::from(coords).col() < 5 {
+                    first
+                } else {
+                    second
+                })
+            })
+            .collect();
+        world.set_genesis(WorldGenesis::new(
+            tile_sphere,
+            vec![
+                Homeland::new(first, at(1, 1), 1.0),
+                Homeland::new(second, at(8, 6), 1.0),
+            ],
+        ));
+        let mut session = GameSession::new(world, SEED, first);
+        fill_with_stub_ai(&mut session);
+        (session, first, second, own)
+    }
+
+    #[test]
+    fn test_a_snapshot_shows_the_viewers_sphere_everywhere_and_a_rivals_once_explored() {
+        let (session, first, second, _) = two_sphere_session();
+        let snapshot = session.snapshot(first);
+        let index = |col, row| (row * 10 + col) as usize;
+
+        // the viewer's own sphere, right up to its edge, explored or not
+        assert_eq!(snapshot.tile_sphere[index(1, 1)], first.raw());
+        assert_eq!(
+            snapshot.visibility[index(4, 7)],
+            TileVisibility::Unexplored as u8
+        );
+        assert_eq!(snapshot.tile_sphere[index(4, 7)], first.raw());
+        // the rival's sphere stays unknown where the viewer has never been
+        assert_eq!(
+            snapshot.visibility[index(8, 6)],
+            TileVisibility::Unexplored as u8
+        );
+        assert_eq!(snapshot.tile_sphere[index(8, 6)], NO_NATION);
+
+        // the rival sees the mirror image
+        let snapshot = session.snapshot(second);
+        assert_eq!(snapshot.tile_sphere[index(8, 6)], second.raw());
+        assert_eq!(snapshot.tile_sphere[index(1, 1)], NO_NATION);
+    }
+
+    #[test]
+    fn test_a_delta_carries_the_sphere_of_the_tiles_it_touches() {
+        let (mut session, first, _, own) = two_sphere_session();
+        let since = session.version();
+        session
+            .submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(2, 1)],
+            })
+            .expect("a legal move");
+        resolve_turn(&mut session);
+
+        let Projection::Delta(delta) = session.project(first, since) else {
+            panic!("a move is a delta");
+        };
+        assert_eq!(delta.tile_sphere.len(), delta.tile_indices.len());
+        assert!(!delta.tile_indices.is_empty());
+        for (index, sphere) in delta.tile_indices.iter().zip(&delta.tile_sphere) {
+            // the scout stays in the west: everything it touched is in its own sphere
+            assert!(index % 10 < 5, "tile {index}");
+            assert_eq!(*sphere, first.raw(), "tile {index}");
+        }
+    }
+
+    #[test]
+    fn test_a_world_without_a_genesis_has_no_sphere_to_show() {
+        let (session, first, _, _, _) = two_nation_session();
+        let snapshot = session.snapshot(first);
+        assert!(
+            snapshot
+                .tile_sphere
+                .iter()
+                .all(|&sphere| sphere == NO_NATION)
+        );
+    }
+
     #[test]
     fn test_a_version_that_cannot_be_caught_up_with_falls_back_to_a_snapshot() {
         let (session, first, _, _, _) = two_nation_session();
@@ -773,9 +868,8 @@ mod tests {
                 name: "Landfall".to_string(),
             })
             .expect("a legal founding");
-        let settlement = SettlementId::from_index(
-            session.snapshot(first).settlement_ids[0] as usize,
-        );
+        let settlement =
+            SettlementId::from_index(session.snapshot(first).settlement_ids[0] as usize);
         let version = session.version();
 
         session

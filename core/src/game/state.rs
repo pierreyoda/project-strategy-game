@@ -11,7 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    game::{GameTurnScalar, journal::TurnChanges},
+    game::{GameTurnScalar, genesis::WorldGenesis, journal::TurnChanges},
     hex_map::{
         HexMap,
         coordinates::{CubeCoords, OffsetCoords},
@@ -63,6 +63,8 @@ pub struct World {
     unit_templates: BTreeMap<SimulationID, UnitTemplate>,
     building_templates: BTreeMap<SimulationID, BuildingTemplate>,
     fog: FogOfWar,
+    /// How the world was generated; empty when it was not.
+    genesis: WorldGenesis,
 }
 
 impl World {
@@ -89,7 +91,12 @@ impl World {
             unit_templates: BTreeMap::new(),
             building_templates: BTreeMap::new(),
             fog: FogOfWar::new(shape.tiles_count()),
+            genesis: WorldGenesis::default(),
         }
+    }
+
+    pub fn genesis(&self) -> &WorldGenesis {
+        &self.genesis
     }
 
     pub fn shape(&self) -> RectangularHexMapShape {
@@ -253,6 +260,16 @@ impl World {
     /// catch up from yet. Once the session is running, units are placed through `WorldMut`.
     pub fn place_unit(&mut self, unit: Unit) -> UnitId {
         self.units.insert(unit)
+    }
+
+    /// Record how the world was generated. Setup only, like `register_nation`: the genesis never
+    /// changes afterwards, so there is nothing for the journal to track.
+    pub fn set_genesis(&mut self, genesis: WorldGenesis) {
+        assert!(
+            genesis.is_empty() || genesis.tiles_count() == self.tiles_count(),
+            "one sphere per tile"
+        );
+        self.genesis = genesis;
     }
 }
 

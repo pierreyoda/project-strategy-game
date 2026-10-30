@@ -16,6 +16,7 @@ use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 use project_x_core::{
     game::{
         ai::stub_ai_for,
+        genesis::{Homeland, WorldGenesis},
         journal::TurnChanges,
         projection::{Projection, WorldDelta, WorldSnapshot},
         session::GameSession as CoreSession,
@@ -88,15 +89,17 @@ impl GameSession {
         if settings.nations == 0 {
             return Err(JsError::new("a game needs at least one nation"));
         }
+        if !(0.0..=1.0).contains(&settings.ocean_coverage) {
+            return Err(JsError::new("the ocean coverage must be from 0 to 1"));
+        }
 
-        let generator_settings =
-            MapGeneratorSettings::new(settings.seed, settings.columns, settings.rows);
-        let map = MapGenerator::from_settings(MapGeneratorSettings::new(
-            settings.seed,
-            settings.columns,
-            settings.rows,
-        ))
-        .generate(|_| {});
+        // the generator takes its settings, which the classification needs in turn
+        let generator_settings = || {
+            MapGeneratorSettings::new(settings.seed, settings.columns, settings.rows)
+                .with_ocean_coverage(settings.ocean_coverage)
+        };
+        let map = MapGenerator::from_settings(generator_settings()).generate(|_| {});
+        let generator_settings = generator_settings();
         let shape = RectangularHexMapShape::new(settings.columns, settings.rows);
 
         let surface = PlanetSurface::classify(&map, &generator_settings);
@@ -333,6 +336,13 @@ impl WorldSnapshotView {
         self.inner.tile_owner.clone()
     }
 
+    /// Nation whose sphere of influence holds each tile, `0xFFFF` where none or unknown: the
+    /// viewer's own everywhere, a rival's only once the tile is explored.
+    #[wasm_bindgen(getter, js_name = tileSphere)]
+    pub fn tile_sphere(&self) -> Vec<u16> {
+        self.inner.tile_sphere.clone()
+    }
+
     #[wasm_bindgen(getter, js_name = tileFlags)]
     pub fn tile_flags(&self) -> Vec<u8> {
         self.inner.tile_flags.clone()
@@ -466,6 +476,11 @@ impl WorldDeltaView {
     #[wasm_bindgen(getter, js_name = tileOwner)]
     pub fn tile_owner(&self) -> Vec<u16> {
         self.inner.tile_owner.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = tileSphere)]
+    pub fn tile_sphere(&self) -> Vec<u16> {
+        self.inner.tile_sphere.clone()
     }
 
     #[wasm_bindgen(getter, js_name = tileFlags)]
@@ -628,6 +643,16 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedN
         ));
     }
 
+    // where each nation was meant to grow, kept for the political map and the AI
+    world.set_genesis(WorldGenesis::new(
+        generated.spheres().owners().to_vec(),
+        generated
+            .nations()
+            .iter()
+            .map(|nation| Homeland::new(nation.id(), nation.capital(), nation.site_score()))
+            .collect(),
+    ));
+
     // the setup writes through the mutation gate like everything else, into changes nobody will
     // read: nothing has a version to catch up from yet
     let mut changes = TurnChanges::new();
@@ -698,6 +723,8 @@ fn to_js_error(error: serde_json::Error) -> JsError {
 
 #[cfg(test)]
 mod tests {
+    use project_x_core::simulation::fog::TileVisibility;
+
     use super::{GameSession, UNKNOWN_TERRAIN};
 
     /// A map small enough to assert over, big enough to have land and unexplored corners.
@@ -714,6 +741,57 @@ mod tests {
             }
         }
         panic!("the turn never finished");
+    }
+
+    #[test]
+    fn test_a_new_game_remembers_its_genesis_and_shows_the_viewer_their_sphere() {
+        let session = start_game();
+        let world = session.inner.world();
+        let genesis = world.genesis();
+        assert_eq!(genesis.tiles_count(), world.tiles_count());
+        assert_eq!(genesis.homelands().len(), 2);
+        for (id, nation) in world.nations().iter() {
+            let homeland = genesis.homeland(id).expect("a homeland");
+            let capital = world
+                .settlements()
+                .get(nation.capital().expect("a capital"))
+                .expect("the capital exists");
+            assert_eq!(homeland.capital(), capital.position());
+        }
+
+        let snapshot = session.snapshot(0);
+        let sphere = snapshot.tile_sphere();
+        assert_eq!(sphere.len(), world.tiles_count());
+        let own = sphere.iter().filter(|&&nation| nation == 0).count();
+        assert!(own > 0, "the viewer's own sphere is shown");
+        // nothing of the rival's sphere on a tile never explored
+        for (index, &nation) in sphere.iter().enumerate() {
+            if nation == 1 {
+                assert_ne!(
+                    snapshot.visibility()[index],
+                    TileVisibility::Unexplored as u8,
+                    "tile {index}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_new_game_takes_an_ocean_coverage() {
+        let session = GameSession::new_game(
+            r#"{"seed":7,"columns":24,"rows":16,"nations":2,"oceanCoverage":0.5}"#,
+        )
+        .expect("the settings are valid");
+        let world = session.inner.world();
+        let land = world
+            .shape()
+            .coords()
+            .filter(|&coords| world.tile(coords).unwrap().elevation() >= 0)
+            .count();
+        assert!(
+            (land as f64 / world.tiles_count() as f64 - 0.5).abs() < 0.02,
+            "{land} land tiles"
+        );
     }
 
     #[test]

@@ -13,6 +13,8 @@
   const FOGGED_ALPHA = 0.55;
   /** Opacity of the tint marking a tile's owner. */
   const OWNER_TINT_ALPHA = 0.2;
+  /** Opacity of the tint marking a sphere of influence, over the fog where there is any. */
+  const SPHERE_TINT_ALPHA = 0.1;
   /** Drawn over the map, see `GameView`. */
   const OVERLAY_Z_INDEX = 10;
 
@@ -37,6 +39,7 @@
       const index = row * world.columns + col;
       const visibility = world.visibility[index];
       const owner = world.tileOwner[index];
+      const sphere = world.tileSphere[index];
       const { x, y } = hexCenter(layout, { col, row });
       const hex = () => context.poly(corners.map((corner, i) => corner + (i % 2 === 0 ? x : y)));
 
@@ -47,6 +50,11 @@
         hex().fill(FOG_COLOR);
       } else if (visibility === TileVisibility.Fogged) {
         hex().fill({ color: FOG_COLOR, alpha: FOGGED_ALPHA });
+      }
+      // over the fog: the viewer's own sphere reaches into what they have not explored yet, which
+      // is the point of showing it
+      if (sphere !== NO_NATION) {
+        hex().fill({ color: nationColor(sphere), alpha: SPHERE_TINT_ALPHA });
       }
     }
   };
