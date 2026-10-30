@@ -72,6 +72,7 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
       snapshot.elevations.buffer,
       snapshot.visibility.buffer,
       snapshot.tileOwner.buffer,
+      snapshot.tileSphere.buffer,
       snapshot.tileFlags.buffer,
       ...entities(snapshot.units, snapshot.settlements, snapshot.buildings),
     ];
@@ -83,6 +84,7 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     delta.elevations.buffer,
     delta.visibility.buffer,
     delta.tileOwner.buffer,
+    delta.tileSphere.buffer,
     delta.tileFlags.buffer,
     delta.unitsRemoved.buffer,
     delta.settlementsRemoved.buffer,
@@ -99,6 +101,7 @@ const readSnapshot = (view: {
   elevations: Int16Array;
   visibility: Uint8Array;
   tileOwner: Uint16Array;
+  tileSphere: Uint16Array;
   tileFlags: Uint8Array;
   unitIds: Uint32Array;
   unitTiles: Uint32Array;
@@ -122,6 +125,7 @@ const readSnapshot = (view: {
   elevations: view.elevations,
   visibility: view.visibility,
   tileOwner: view.tileOwner,
+  tileSphere: view.tileSphere,
   tileFlags: view.tileFlags,
   units: { ids: view.unitIds, tiles: view.unitTiles, owners: view.unitOwners, health: view.unitHealth },
   settlements: {
@@ -154,6 +158,7 @@ const readDelta = (view: {
   elevations: Int16Array;
   visibility: Uint8Array;
   tileOwner: Uint16Array;
+  tileSphere: Uint16Array;
   tileFlags: Uint8Array;
   unitIds: Uint32Array;
   unitTiles: Uint32Array;
@@ -178,6 +183,7 @@ const readDelta = (view: {
   elevations: view.elevations,
   visibility: view.visibility,
   tileOwner: view.tileOwner,
+  tileSphere: view.tileSphere,
   tileFlags: view.tileFlags,
   units: { ids: view.unitIds, tiles: view.unitTiles, owners: view.unitOwners, health: view.unitHealth },
   unitsRemoved: view.unitsRemoved,

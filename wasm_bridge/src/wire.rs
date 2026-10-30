@@ -22,6 +22,7 @@ use project_x_core::{
         resources::Resource,
     },
 };
+use project_x_procgen::nations::GenerationReport;
 
 /// Offset coordinates, the way the client thinks of the map.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -48,10 +49,42 @@ pub struct NewGameSettings {
     /// How many nations play, the local player included. At least one.
     #[serde(default = "default_nations")]
     pub nations: u16,
+    /// Share of the map covered by the seas, from 0.0 to 1.0.
+    #[serde(default = "default_ocean_coverage")]
+    pub ocean_coverage: f64,
 }
 
 fn default_nations() -> u16 {
     2
+}
+
+/// Like `ocean_coverage` in `MapGeneratorSettings::default`.
+fn default_ocean_coverage() -> f64 {
+    0.7
+}
+
+/// How the siting of the nations went, like `GenerationReport` in the `procgen` crate.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NationsReportWire {
+    pub spacing_requested: u32,
+    pub spacing_final: u32,
+    pub relaxations: u32,
+    pub unplaced: u16,
+    pub unclaimed_land: u32,
+}
+
+impl From<&GenerationReport> for NationsReportWire {
+    fn from(report: &GenerationReport) -> Self {
+        Self {
+            spacing_requested: report.siting.spacing_requested,
+            spacing_final: report.siting.spacing_final,
+            relaxations: report.siting.relaxations,
+            unplaced: report.siting.unplaced,
+            // a map has at most 1024 * 1024 tiles
+            unclaimed_land: report.unclaimed_land as u32,
+        }
+    }
 }
 
 /// A command, as the client sends it.

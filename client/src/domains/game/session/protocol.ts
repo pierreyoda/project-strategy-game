@@ -23,6 +23,8 @@ export type NewGameSettings = {
   rows: number;
   /** How many nations play, the local player included. Defaults to 2 in the bridge. */
   nations?: number;
+  /** Share of the map covered by the seas, from 0 to 1. Defaults to 0.7 in the bridge. */
+  oceanCoverage?: number;
 };
 
 /** An order, like `GameCommand` in the `core` crate. */
@@ -179,6 +181,11 @@ export type WorldSnapshotData = {
   /** `TileVisibility` values. */
   visibility: Uint8Array;
   tileOwner: Uint16Array;
+  /**
+   * Nation whose sphere of influence holds each tile, `NO_NATION` where none or unknown: the
+   * viewer's own everywhere, a rival's only once the tile is explored.
+   */
+  tileSphere: Uint16Array;
   tileFlags: Uint8Array;
   units: UnitsBuffers;
   settlements: SettlementsBuffers;
@@ -199,6 +206,11 @@ export type WorldDeltaData = {
   elevations: Int16Array;
   visibility: Uint8Array;
   tileOwner: Uint16Array;
+  /**
+   * Nation whose sphere of influence holds each tile, `NO_NATION` where none or unknown: the
+   * viewer's own everywhere, a rival's only once the tile is explored.
+   */
+  tileSphere: Uint16Array;
   tileFlags: Uint8Array;
   units: UnitsBuffers;
   /** Units to drop: destroyed, or simply no longer in sight. */

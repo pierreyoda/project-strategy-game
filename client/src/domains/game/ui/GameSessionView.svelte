@@ -4,7 +4,7 @@
   import Button from "../../../shared/ui/Button.svelte";
   import type { OffsetCoords } from "../../map/hexMap";
   import { TERRAIN_NAMES, type TerrainKind, isExplored } from "../../map/terrain";
-  import { type GameEvent, TURN_PHASE_NAMES, TileVisibility } from "../session/protocol";
+  import { type GameEvent, NO_NATION, TURN_PHASE_NAMES, TileVisibility } from "../session/protocol";
   import { type GameLogEntry, createActiveGame } from "../state/activeGame.svelte";
   import GameView from "./GameView.svelte";
   import GameToolbar from "./toolbar/GameToolbar.svelte";
@@ -71,6 +71,8 @@
       // the terrain of a tile the viewer has never explored never left the simulation
       terrain: isExplored(terrain) ? TERRAIN_NAMES[terrain as TerrainKind] : "Unknown",
       elevation: world.elevations[index],
+      owner: world.tileOwner[index],
+      sphere: world.tileSphere[index],
     };
   });
 
@@ -125,6 +127,11 @@
         <span class="text-fg-muted tabular-nums">
           ({hovered.coords.col}, {hovered.coords.row}) · {hovered.terrain} · {hovered.elevation} m ·
           {hovered.visibility}
+          {#if hovered.owner !== NO_NATION}
+            · Nation {hovered.owner + 1}
+          {:else if hovered.sphere !== NO_NATION}
+            · sphere of Nation {hovered.sphere + 1}
+          {/if}
         </span>
       {/if}
       {#if game.resolving}

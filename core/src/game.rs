@@ -3,6 +3,7 @@
 //! The pieces, in the order they appear in a turn:
 //!
 //! - `state`: the `World` and the `WorldMut` gate every mutation goes through;
+//! - `genesis`: how the world was generated, which the simulation reads and never changes;
 //! - `commands`: what a player - or an AI - asks of the world, and why it can be refused;
 //! - `turn`: the resolution pipeline, driven one bounded step at a time;
 //! - `ai`: the controller a non-human nation plans with, emitting the very same commands;
@@ -14,6 +15,7 @@
 pub mod ai;
 pub mod commands;
 pub mod events;
+pub mod genesis;
 pub mod journal;
 pub mod projection;
 pub mod rng;
