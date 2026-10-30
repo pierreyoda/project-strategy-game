@@ -4,6 +4,7 @@ import type {
   GameSessionRequest,
   GameSessionResponse,
   ProjectionMeta,
+  ReachableData,
   SettlementsBuffers,
   TurnPhase,
   UnitsBuffers,
@@ -308,6 +309,25 @@ const handle = async (request: GameSessionRequest) => {
     case "endTurn":
       await resolveTurn(request.id);
       return;
+    case "reachable": {
+      const view = requireSession().reachable(request.viewer, request.unit);
+      if (!view) {
+        respond({ type: "reachable", id: request.id, reach: null });
+        return;
+      }
+      let reach: ReachableData;
+      try {
+        reach = { tiles: view.tiles, costs: view.costs, parents: view.parents };
+      } finally {
+        view.free();
+      }
+      respond({ type: "reachable", id: request.id, reach }, [
+        reach.tiles.buffer,
+        reach.costs.buffer,
+        reach.parents.buffer,
+      ]);
+      return;
+    }
     case "snapshot": {
       const view = requireSession().snapshot(request.viewer);
       let projection: WorldProjection;

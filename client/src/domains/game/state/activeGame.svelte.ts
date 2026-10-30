@@ -8,6 +8,7 @@ import type {
   GameEvent,
   NewGameSettings,
   ProjectionMeta,
+  ReachableData,
   TurnPhase,
   WorldProjection,
 } from "../session/protocol";
@@ -31,6 +32,45 @@ export type GameLogEntry =
 
 /** The viewer's unit the player is giving orders to. */
 export type SelectedUnit = { id: number; tile: number };
+
+/**
+ * The steps from the unit's tile to `tile`, destination last and origin left out - what a move
+ * order takes - or `null` when the tile is out of reach. `tiles` is sorted, so the lookup is a
+ * binary search and the walk follows `parents` back to the origin.
+ */
+export const pathTo = (reach: ReachableData, tile: number): number[] | null => {
+  const position = (wanted: number): number | null => {
+    let low = 0;
+    let high = reach.tiles.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      const found = reach.tiles[middle];
+      if (found === wanted) {
+        return middle;
+      }
+      if (found < wanted) {
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
+    }
+    return null;
+  };
+  let at = position(tile);
+  if (at === null) {
+    return null;
+  }
+  const path: number[] = [];
+  while (reach.parents[at] !== reach.tiles[at]) {
+    path.push(reach.tiles[at]);
+    const parent = position(reach.parents[at]);
+    if (parent === null) {
+      return null;
+    }
+    at = parent;
+  }
+  return path.reverse();
+};
 
 /**
  * The game being played, as the client holds it.
@@ -59,6 +99,13 @@ export type ActiveGame = {
   /** The viewer's own stockpiles, every resource present even when it holds none. */
   readonly stocks: Record<Resource, ResourceStock>;
   readonly selected: SelectedUnit | null;
+  /**
+   * Where the selected unit can get to this turn, as the simulation answered, or `null` while
+   * nothing is selected or the answer has not come back. Drawn over the map, never decided here.
+   */
+  readonly reach: ReachableData | null;
+  /** The steps to the hovered tile when it is in reach, for the map to preview; `null` otherwise. */
+  readonly previewPath: readonly number[] | null;
   /** A tile worth framing the camera on, such as the viewer's unit when a new game starts. */
   readonly focusTile: number | null;
   readonly phase: TurnPhase | null;
@@ -77,6 +124,8 @@ export type ActiveGame = {
   cancelTurn: () => void;
   /** Select one of the viewer's units, or move the selected one onto the tile. */
   clickTile: (tile: OffsetCoords) => Promise<void>;
+  /** The tile under the pointer, `null` once it leaves the map: what the path preview follows. */
+  hoverTile: (tile: OffsetCoords | null) => void;
   /** Release the session worker. */
   dispose: () => void;
 };
@@ -107,6 +156,10 @@ export const createActiveGame = (): ActiveGame => {
   let log = $state<GameLogEntry[]>([]);
   let selectedUnit = $state<number | null>(null);
   let focusTile = $state<number | null>(null);
+  let reach = $state.raw<ReachableData | null>(null);
+  let hoveredIndex = $state<number | null>(null);
+  /** The latest reachability request: an older answer arriving late must not overwrite a newer one. */
+  let reachRequest = 0;
 
   const record = (entries: GameLogEntry[]) => {
     if (entries.length > 0) {
@@ -140,8 +193,28 @@ export const createActiveGame = (): ActiveGame => {
     entities = mapEntitiesOf(applied.state);
   };
 
+  /**
+   * Ask the simulation where the selected unit can get to. Asked again after every order and every
+   * projection applied, since both can move the answer.
+   */
+  const refreshReach = async () => {
+    const request = ++reachRequest;
+    const unit = selectedUnit;
+    if (unit === null || !world) {
+      reach = null;
+      return;
+    }
+    const answer = await session.reachable(viewer, unit);
+    if (request === reachRequest) {
+      reach = answer;
+    }
+  };
+
   /** Catch up with everything that changed since the projection currently drawn. */
-  const catchUp = async (since: number) => apply(await session.project(viewer, since));
+  const catchUp = async (since: number) => {
+    apply(await session.project(viewer, since));
+    await refreshReach();
+  };
 
   const unsubscribe = session.subscribe((notification) => {
     switch (notification.type) {
@@ -168,6 +241,8 @@ export const createActiveGame = (): ActiveGame => {
     dirtyTiles = null;
     entities = [];
     selectedUnit = null;
+    reach = null;
+    hoveredIndex = null;
     focusTile = null;
     try {
       const ready = await session.start(settings);
@@ -214,11 +289,23 @@ export const createActiveGame = (): ActiveGame => {
       return stocks;
     },
     get selected() {
-      if (selectedUnit === null || !world) {
+      // a delta patches the world in place, so the projection's fresh `meta` is what says the unit
+      // may have moved since this was last read
+      if (selectedUnit === null || !world || !meta) {
         return null;
       }
       const unit = world.units.get(selectedUnit);
       return unit ? { id: unit.id, tile: unit.tile } : null;
+    },
+    get reach() {
+      return reach;
+    },
+    get previewPath() {
+      if (hoveredIndex === null || !reach || selectedUnit === null) {
+        return null;
+      }
+      const path = pathTo(reach, hoveredIndex);
+      return path && path.length > 0 ? path : null;
     },
     get focusTile() {
       return focusTile;
@@ -277,22 +364,35 @@ export const createActiveGame = (): ActiveGame => {
       const own = [...world.units.values()].find((unit) => unit.tile === index && unit.owner === viewer);
       if (own) {
         selectedUnit = own.id;
+        await refreshReach();
         return;
       }
       if (selectedUnit === null) {
         return;
       }
-      // no rule is checked here: whether a step is legal is the simulation's to say
+      // the path the simulation itself offered, when it offered one; a tile it did not (never
+      // explored, say) still gets the single step it always got, and the simulation's verdict on
+      // it. No rule is checked here either way.
+      const columns = world.columns;
+      const steps = reach ? pathTo(reach, index) : null;
+      const path =
+        steps && steps.length > 0
+          ? steps.map((step) => ({ col: step % columns, row: Math.floor(step / columns) }))
+          : [{ col: tile.col, row: tile.row }];
       const rejection = await session.submit({
         type: "moveUnit",
         unit: selectedUnit,
-        path: [{ col: tile.col, row: tile.row }],
+        path,
       });
       if (rejection) {
         record([{ kind: "rejected", rejection }]);
         return;
       }
       await catchUp(meta.version);
+    },
+
+    hoverTile: (tile: OffsetCoords | null) => {
+      hoveredIndex = tile && world ? tile.row * world.columns + tile.col : null;
     },
 
     dispose: () => {

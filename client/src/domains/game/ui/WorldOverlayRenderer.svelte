@@ -4,7 +4,7 @@
   import type { PixiContext } from "../../../shared/pixi";
   import { type HexLayout, hexCenter, hexCorners, wrapBounds } from "../../map/hexLayout";
   import { nationColor } from "../nations";
-  import { NO_NATION, TileVisibility } from "../session/protocol";
+  import { NO_NATION, type ReachableData, TileVisibility } from "../session/protocol";
   import type { WorldState } from "../state/worldState";
 
   /** The unseen is drawn in the background's own color rather than in black, which would look like a hole. */
@@ -15,6 +15,12 @@
   const OWNER_TINT_ALPHA = 0.2;
   /** Opacity of the tint marking a sphere of influence, over the fog where there is any. */
   const SPHERE_TINT_ALPHA = 0.1;
+  /** The tiles the selected unit can reach: a tint and a thin edge, both in the viewer's colour. */
+  const REACH_TINT_ALPHA = 0.28;
+  const REACH_EDGE_ALPHA = 0.6;
+  /** The path preview: a line through the hex centres, a dot on the destination. */
+  const PATH_COLOR = 0xffffff;
+  const PATH_ALPHA = 0.85;
   /** Drawn over the map, see `GameView`. */
   const OVERLAY_Z_INDEX = 10;
 
@@ -59,16 +65,51 @@
     }
   };
 
-  const paintEntities = (drawn: DrawnOverlay, world: WorldState, layout: HexLayout, selectedTile: number | null) => {
+  /** What the player is doing with a unit: the selection, where it can go, where the pointer would send it. */
+  type Orders = {
+    selectedTile: number | null;
+    reach: ReachableData | null;
+    previewPath: readonly number[] | null;
+    /** The viewer's nation, whose colour tints the reach. */
+    viewer: number | null;
+  };
+
+  const paintEntities = (drawn: DrawnOverlay, world: WorldState, layout: HexLayout, orders: Orders) => {
     const context = drawn.entities.clear();
     const centerOf = (tile: number) =>
       hexCenter(layout, { col: tile % world.columns, row: Math.floor(tile / world.columns) });
+    const hexAt = (tile: number) => {
+      const { x, y } = centerOf(tile);
+      return context.poly(hexCorners(layout).map((corner, i) => corner + (i % 2 === 0 ? x : y)));
+    };
 
-    if (selectedTile !== null) {
-      const { x, y } = centerOf(selectedTile);
-      context
-        .poly(hexCorners(layout).map((corner, i) => corner + (i % 2 === 0 ? x : y)))
-        .stroke({ width: Math.max(layout.size * 0.1, 2), color: 0xffffff });
+    // the reach, as the simulation answered it: a tint, nothing more, since the panel says the cost
+    if (orders.reach && orders.viewer !== null) {
+      for (const tile of orders.reach.tiles) {
+        if (tile !== orders.selectedTile) {
+          hexAt(tile)
+            .fill({ color: nationColor(orders.viewer), alpha: REACH_TINT_ALPHA })
+            .stroke({
+              width: Math.max(layout.size * 0.05, 1),
+              color: nationColor(orders.viewer),
+              alpha: REACH_EDGE_ALPHA,
+            });
+        }
+      }
+    }
+    if (orders.selectedTile !== null) {
+      hexAt(orders.selectedTile).stroke({ width: Math.max(layout.size * 0.1, 2), color: 0xffffff });
+    }
+    if (orders.selectedTile !== null && orders.previewPath && orders.previewPath.length > 0) {
+      const { x, y } = centerOf(orders.selectedTile);
+      context.moveTo(x, y);
+      for (const step of orders.previewPath) {
+        const next = centerOf(step);
+        context.lineTo(next.x, next.y);
+      }
+      context.stroke({ width: Math.max(layout.size * 0.08, 1.5), color: PATH_COLOR, alpha: PATH_ALPHA });
+      const end = centerOf(orders.previewPath[orders.previewPath.length - 1]);
+      context.circle(end.x, end.y, layout.size * 0.14).fill({ color: PATH_COLOR, alpha: PATH_ALPHA });
     }
     // settlements, buildings and units are not drawn here: `MapEntityRenderer` has their sprites,
     // one layer down
@@ -112,8 +153,23 @@
     dirtyTiles?: Uint32Array | null;
     /** Row-major index of the tile to outline, if any. */
     selectedTile?: number | null;
+    /** Where the selected unit can get to, tinted in the viewer's colour. */
+    reach?: ReachableData | null;
+    /** The steps to the hovered tile, drawn as a line from the selected tile. */
+    previewPath?: readonly number[] | null;
+    /** The nation being played, for the reach's colour. */
+    viewer?: number | null;
   };
-  const { pixi, world, layout, dirtyTiles = null, selectedTile = null }: WorldOverlayRendererProps = $props();
+  const {
+    pixi,
+    world,
+    layout,
+    dirtyTiles = null,
+    selectedTile = null,
+    reach = null,
+    previewPath = null,
+    viewer = null,
+  }: WorldOverlayRendererProps = $props();
 
   let drawn = $state.raw<DrawnOverlay | null>(null);
 
@@ -134,7 +190,7 @@
   // and row by row when a delta says which tiles moved
   $effect(() => {
     const changed = dirtyTiles;
-    const selected = selectedTile;
+    const orders: Orders = { selectedTile, reach, previewPath, viewer };
     const currentDrawn = drawn;
     if (!currentDrawn) {
       return;
@@ -155,6 +211,6 @@
       }
     }
     // entities are sparse: redrawing them whole costs less than tracking which ones moved
-    paintEntities(currentDrawn, world, layout, selected);
+    paintEntities(currentDrawn, world, layout, orders);
   });
 </script>
