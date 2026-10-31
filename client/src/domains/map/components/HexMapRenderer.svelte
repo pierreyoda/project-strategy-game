@@ -55,7 +55,16 @@
      * The blended ground under the tiles, once its textures are loaded: one mesh over the whole map,
      * reading the terrains straight from the map's own buffer.
      */
-    ground: { mesh: Mesh<Geometry, Shader>; geometry: Geometry; shader: Shader; source: BufferImageSource } | null;
+    ground: {
+      mesh: Mesh<Geometry, Shader>;
+      geometry: Geometry;
+      shader: Shader;
+      source: BufferImageSource;
+      /** The map's terrain, its rows padded: what the ground's data texture is uploaded from. */
+      terrain: Uint8Array;
+      /** Bytes per row of `terrain`. */
+      stride: number;
+    } | null;
   };
 
   const paintRow = (drawn: DrawnMap, map: HexMapData, layout: HexLayout, row: number) => {
@@ -133,9 +142,17 @@
     // the ground first, under the tiles that still stand on it
     let ground: DrawnMap["ground"] = null;
     if (grounds) {
+      // WebGL reads a texture's rows 4 bytes at a time, and PixiJS leaves it at that: a row of one byte
+      // per tile is padded to a multiple of 4, or the upload of any map of other widths fails, and the
+      // whole ground reads as the terrain numbered 0 - deep water
+      const stride = Math.ceil(map.columns / 4) * 4;
+      const terrain = new Uint8Array(stride * map.rows);
+      for (let row = 0; row < map.rows; row++) {
+        terrain.set(map.terrain.subarray(row * map.columns, (row + 1) * map.columns), row * stride);
+      }
       const source = new BufferImageSource({
-        resource: map.terrain,
-        width: map.columns,
+        resource: terrain,
+        width: stride,
         height: map.rows,
         format: "r8unorm",
         scaleMode: "nearest",
@@ -149,7 +166,7 @@
         indexBuffer: new Uint32Array([0, 1, 2, 0, 2, 3]),
       });
       const mesh = texturedTiles.addChild(new Mesh({ label: "ground", geometry, shader }));
-      ground = { mesh, geometry, shader, source };
+      ground = { mesh, geometry, shader, source, terrain, stride };
     }
 
     const tileSprites = copiesX.map((x) => {
@@ -315,18 +332,22 @@
     // the indices come up in ascending order, so a row is painted once; out of order, the worst
     // that happens is painting one twice
     let paintedRow = -1;
+    const ground = currentDrawn.ground;
     for (const index of changed) {
       if (index >= map.rows * map.columns) {
         continue;
       }
       paintTexturedTile(currentDrawn, map, layout, textures, look, index);
       const row = Math.floor(index / map.columns);
+      if (ground) {
+        ground.terrain[row * ground.stride + (index % map.columns)] = map.terrain[index];
+      }
       if (row !== paintedRow) {
         paintRow(currentDrawn, map, layout, row);
         paintedRow = row;
       }
     }
-    // the ground reads the map's buffer, patched in place by the delta: it only has to be told
-    currentDrawn.ground?.source.update();
+    // one upload for the whole delta
+    ground?.source.update();
   });
 </script>

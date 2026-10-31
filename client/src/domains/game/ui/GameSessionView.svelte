@@ -23,8 +23,11 @@
     [TileVisibility.Visible]: "In sight",
   };
 
-  /** What an event reads like in the turn log, or `null` for the ones not worth a line. */
-  const describeEvent = (event: GameEvent): string | null => {
+  /**
+   * What an event reads like in the turn log, or `null` for the ones not worth a line - or not the
+   * viewer's to read.
+   */
+  const describeEvent = (event: GameEvent, viewer: number): string | null => {
     switch (event.type) {
       case "turnStarted":
         return `— Turn ${event.turn} —`;
@@ -42,14 +45,22 @@
       case "unitMoved":
         // every step of every unit would drown everything else
         return null;
+      case "controllerLog":
+        // a controller's own diagnostics: the viewer's to read when it plays for the viewer's nation
+        // (their automation, once there is any - a disloyal general will need hiding again), and
+        // otherwise a look into a rival's planning, shown only to whoever is writing the scripts
+        if (event.nation !== viewer && !import.meta.env.DEV) {
+          return null;
+        }
+        return `Nation ${event.nation + 1} (${event.controller}): ${event.message}`;
     }
   };
 
   /** Every word the player reads of the turn log is decided here, not in `activeGame`. */
-  const describe = (entry: GameLogEntry): string | null => {
+  const describe = (entry: GameLogEntry, viewer: number): string | null => {
     switch (entry.kind) {
       case "event":
-        return describeEvent(entry.event);
+        return describeEvent(entry.event, viewer);
       case "rejected":
         return entry.rejection.message;
       case "turnCancelled":
@@ -85,9 +96,10 @@
 
   const lines = $derived(
     game.log
-      .slice(-LOG_SHOWN)
-      .map(describe)
-      .filter((line) => line !== null),
+      .map((entry) => describe(entry, game.viewer))
+      // filtered before it is cut, so that the lines nobody reads do not crowd out the others
+      .filter((line) => line !== null)
+      .slice(-LOG_SHOWN),
   );
 
   onMount(() => void game.startNewGame());

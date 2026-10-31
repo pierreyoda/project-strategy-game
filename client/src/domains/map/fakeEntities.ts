@@ -10,6 +10,7 @@ import {
   buildingDrawing,
   unitDrawing,
 } from "./entities";
+import type { MapConstruction } from "./constructions";
 import type { HexMapData } from "./hexMap";
 import { TerrainKind } from "./terrain";
 
@@ -69,4 +70,26 @@ export const createFakeEntities = (map: HexMapData, density = 0.05): MapEntity[]
     }
   }
   return entities;
+};
+
+/**
+ * Constructions on some of the tiles `createFakeEntities` puts a building on, at the same `density`:
+ * turned on together, the overlays sit over the buildings they are raising.
+ */
+export const createFakeConstructions = (map: HexMapData, density = 0.05): MapConstruction[] => {
+  const constructions: MapConstruction[] = [];
+  for (let tile = 0; tile < map.rows * map.columns; tile++) {
+    const roll = entityRandom(tile, 1);
+    // the buildings' band of `createFakeEntities`, and two in five of them
+    if (!SETTLEABLE.includes(map.terrain[tile]) || roll < density || roll >= 2 * density) {
+      continue;
+    }
+    if (entityRandom(tile, 8) >= 0.4) {
+      continue;
+    }
+    const turnsTotal = 2 + Math.floor(entityRandom(tile, 9) * 11);
+    const turnsLeft = 1 + Math.floor(entityRandom(tile, 10) * turnsTotal);
+    constructions.push({ id: tile, tile, turnsLeft, turnsTotal });
+  }
+  return constructions;
 };

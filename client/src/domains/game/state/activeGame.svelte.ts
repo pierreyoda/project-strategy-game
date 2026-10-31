@@ -4,6 +4,7 @@ import { SvelteSet } from "svelte/reactivity";
 
 import { MAX_SEED } from "../../map/procgen/planetGenerator";
 import { RESOURCES, type Resource, type ResourceStock } from "../resources";
+import { DEFAULT_SCRIPTS } from "../scripts";
 import { type GameSessionHandle, createGameSession } from "../session/gameSession";
 import type {
   CommandRejection,
@@ -382,7 +383,7 @@ export const createActiveGame = (): ActiveGame => {
     },
 
     start,
-    startNewGame: () => start({ seed: randomSeed(), ...DEFAULT_MAP }),
+    startNewGame: () => start({ seed: randomSeed(), ...DEFAULT_MAP, scripts: DEFAULT_SCRIPTS }),
 
     endTurn: async () => {
       if (!meta || resolving) {

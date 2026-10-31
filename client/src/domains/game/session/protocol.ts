@@ -26,11 +26,11 @@ export type NewGameSettings = {
   /** Share of the map covered by the seas, from 0 to 1. Defaults to 0.575 in the bridge. */
   oceanCoverage?: number;
   /**
-   * The scripts the game runs: at most one scenario - the bridge's scaffold stands in without one -
-   * and one AI script. For now the AI script plays every nation but the local player's - the stub
-   * does without one - and nothing yet hands part of the player's nation to a script.
+   * The scripts the game runs: one scenario, which a game cannot start without, and at most one AI
+   * script. For now the AI script plays every nation but the local player's - the stub does without
+   * one - and nothing yet hands part of the player's nation to a script.
    */
-  scripts?: readonly ScriptSource[];
+  scripts: readonly ScriptSource[];
 };
 
 /** A script sent with a new game, like `ScriptSourceWire` in the `wasm_bridge` crate. */
@@ -70,7 +70,9 @@ export type GameEvent =
   | { type: "settlementFounded"; settlement: number; nation: number; tile: number }
   | { type: "buildingConstructed"; building: number; settlement: number }
   | { type: "resourceShortage"; nation: number; resource: Resource }
-  | { type: "commandRejected"; nation: number; reason: string };
+  | { type: "commandRejected"; nation: number; reason: string }
+  /** What a controller said while planning for a nation, like `ControllerLog`: not narrative. */
+  | { type: "controllerLog"; nation: number; controller: string; message: string };
 
 /** A phase of turn resolution, like `TurnPhase::name` in the `core` crate. */
 export type TurnPhase =

@@ -6,6 +6,8 @@
   import HexMapRenderer from "../../map/components/HexMapRenderer.svelte";
   import MapEntityRenderer from "../../map/components/MapEntityRenderer.svelte";
   import NationsOverlayRenderer from "../../map/components/NationsOverlayRenderer.svelte";
+  import TileConstructionTurnsOverlay from "../../map/components/TileConstructionTurnsOverlay.svelte";
+  import type { MapConstruction } from "../../map/constructions";
   import type { MapEntity } from "../../map/entities";
   import { createHexLayout, hexCenter, mapHeight, wrapBounds } from "../../map/hexLayout";
   import type { HexMapData, OffsetCoords } from "../../map/hexMap";
@@ -38,6 +40,8 @@
      * own are not derived here: which stage a settlement is at is the simulation's to say.
      */
     entities?: readonly MapEntity[];
+    /** Buildings going up, each tile showing the turns it has left. Nothing in a game has any yet. */
+    constructions?: readonly MapConstruction[];
     /** Draws the flat colors of the terrains only, without the textures of their tiles. */
     flatColors?: boolean;
     /** The knobs of the textured tiles' variety, for the test bench to turn; the game keeps the default. */
@@ -66,6 +70,7 @@
     nations = null,
     dirtyTiles = null,
     entities = [],
+    constructions = [],
     flatColors = false,
     look,
     onTileHover,
@@ -193,6 +198,7 @@
   {#if pixi}
     <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {look} {onTileHover} {onTileClick} />
     <MapEntityRenderer {pixi} {map} {layout} {entities} />
+    <TileConstructionTurnsOverlay {pixi} {map} {layout} {constructions} />
     {#if world}
       <WorldOverlayRenderer {pixi} {world} {layout} {dirtyTiles} {selectedTile} {reach} {previewPath} {viewer} />
     {/if}

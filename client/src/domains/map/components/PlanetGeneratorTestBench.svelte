@@ -4,7 +4,7 @@
   import Button from "../../../shared/ui/Button.svelte";
   import Panel from "../../../shared/ui/Panel.svelte";
   import GameView from "../../game/ui/GameView.svelte";
-  import { createFakeEntities } from "../fakeEntities";
+  import { createFakeConstructions, createFakeEntities } from "../fakeEntities";
   import { NO_NATION } from "../../game/session/protocol";
   import { type HexMapData, type OffsetCoords, tileIndex } from "../hexMap";
   import { DEFAULT_MAP_LOOK, type MapLook } from "../mapLook";
@@ -43,6 +43,7 @@
   const hoveredTileIndex = $derived(hoveredTile && map && tileIndex(map, hoveredTile));
   let flatColors = $state(false);
   let showSettlements = $state(false);
+  let showConstructions = $state(false);
   let showLook = $state(false);
   // the knobs of the tiles' variety, to tune by eye before they are baked into `DEFAULT_MAP_LOOK`
   const look = $state<MapLook>({ ...DEFAULT_MAP_LOOK });
@@ -51,6 +52,7 @@
   );
   // stand-ins, to see the sprites on real terrain: the generator has no settlements to place
   const entities = $derived(map && showSettlements ? createFakeEntities(map) : []);
+  const constructions = $derived(map && showConstructions ? createFakeConstructions(map) : []);
 
   // generating cancels the generation in progress: only the latest one updates the state
   let generation = 0;
@@ -149,6 +151,14 @@
     >
       Settlements
     </Button>
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-pressed={showConstructions}
+      onclick={() => (showConstructions = !showConstructions)}
+    >
+      Constructions
+    </Button>
     <Button variant="ghost" size="sm" aria-pressed={showLook} onclick={() => (showLook = !showLook)}>Look</Button>
 
     <div class="ml-auto flex items-center gap-4 whitespace-nowrap text-fg-muted tabular-nums">
@@ -192,6 +202,7 @@
       <GameView
         {map}
         {entities}
+        {constructions}
         nations={showNations ? nations : null}
         {flatColors}
         {look}
