@@ -216,6 +216,10 @@
           {@render lookSlider("Noise depth", "noiseDepth", 0, 0.4, 0.01)}
           {@render lookSlider("Noise size", "noiseWorldSize", 100, 1200, 25)}
           {@render lookSlider("Decorated share", "decoratedShare", 0, 1, 0.05)}
+          {@render lookSlider("Edge band", "edgeBand", 0, 40, 1)}
+          {@render lookSlider("Edge warp", "edgeWarp", 0, 30, 1)}
+          {@render lookSlider("Edge warp scale", "edgeWarpScale", 20, 400, 10)}
+          {@render lookSlider("Ground scale", "groundScale", 30, 400, 5)}
         </div>
       </Panel>
     {/if}

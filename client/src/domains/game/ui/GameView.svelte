@@ -94,6 +94,8 @@
     const initialized = app
       .init({
         canvas,
+        // the ground shader of `HexMapRenderer` is written in GLSL only, so far
+        preference: "webgl",
         resizeTo: host,
         antialias: true,
         autoDensity: true,

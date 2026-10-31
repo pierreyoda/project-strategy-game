@@ -2,16 +2,20 @@ import type { OffsetCoords } from "./hexMap";
 import type { MapLook } from "./mapLook";
 import { TerrainKind } from "./terrain";
 
-/** Tile sets in `raw-assets/tiles/`, each one a bundle of PixiJS's `Assets` packed in a sprite sheet by AssetPack. */
-export type TileSet = "autumn" | "desert" | "ice" | "lava" | "nature" | "water";
+/**
+ * The bundle of PixiJS's `Assets` holding every tile still drawn, feathered and packed in one sprite sheet
+ * by AssetPack from `raw-assets/features{m}{tps}/`, which `scripts/feather-tiles.ts` fills from the tile
+ * sets of `raw-assets/tiles/`. The frames keep the names they had there.
+ */
+export const FEATURES_BUNDLE = "features";
 
 /**
- * Tiles of a terrain, as frame names in the sprite sheet of their tile set.
+ * Tiles of a terrain, as frame names in the features bundle.
  *
  * The `decorated` tiles show some details (rocks, stones...): they are picked less often than the `base` ones.
+ * A terrain without a `feature` has no base tiles left to draw: the ground layer paints its ground.
  */
 export type TerrainTiles = {
-  tileSet: TileSet;
   base: string[];
   decorated: string[];
   /**
@@ -19,7 +23,20 @@ export type TerrainTiles = {
    * Rocks and ridges are lit from the upper left, and a flipped one next to its neighbors shows two suns.
    */
   mirrorable: boolean;
+  /**
+   * Whether the base tiles paint something standing on the ground - rocks, peaks, ridges - rather than
+   * the ground alone. The ground is blended by the ground layer now, so a tile that is only ground
+   * has nothing left to draw; one with a feature on it still does, until the features are decals.
+   */
+  feature: boolean;
 };
+
+/** Whether the given tile draws one of its terrain's decorated tiles, see `pickTileVariant`. */
+export const pickTileIsDecorated = (
+  tiles: { decorated: readonly unknown[] },
+  coords: OffsetCoords,
+  { decoratedShare }: Pick<MapLook, "decoratedShare">,
+): boolean => tiles.decorated.length > 0 && tileRandom(coords, 1) < decoratedShare;
 
 /** Pseudo-random number in [0, 1), always the same for the given tile and salt (hashed with "lowbias32"). */
 const tileRandom = ({ col, row }: OffsetCoords, salt: number): number => {
@@ -38,8 +55,7 @@ export const pickTileVariant = <T>(
   coords: OffsetCoords,
   { decoratedShare }: Pick<MapLook, "decoratedShare">,
 ): T => {
-  const isDecorated = tiles.decorated.length > 0 && tileRandom(coords, 1) < decoratedShare;
-  const variants = isDecorated ? tiles.decorated : tiles.base;
+  const variants = pickTileIsDecorated(tiles, coords, { decoratedShare }) ? tiles.decorated : tiles.base;
   return variants[Math.floor(tileRandom(coords, 2) * variants.length)];
 };
 
@@ -69,22 +85,23 @@ export const pickTileTint = (
  */
 export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
   [TerrainKind.DeepWater]: {
+    feature: false,
     mirrorable: true,
-    tileSet: "water",
-    base: ["water_tile_05.png"],
+    // ground only, see `feature`: the ground layer paints it
+    base: [],
     decorated: [],
   },
   [TerrainKind.ShallowWater]: {
+    feature: false,
     mirrorable: true,
-    tileSet: "water",
-    base: ["water_tile_03.png"],
+    base: [],
     // scattered rocks
     decorated: ["water_tile_02.png"],
   },
   [TerrainKind.Flat]: {
+    feature: false,
     mirrorable: true,
-    tileSet: "nature",
-    base: ["nature_tile_01.png", "nature_tile_20.png"],
+    base: [],
     // stone slabs, scattered boulders, sand, a large flat rock
     decorated: [
       "nature_tile_03.png",
@@ -95,36 +112,27 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
     ],
   },
   [TerrainKind.Hills]: {
+    feature: true,
     mirrorable: false,
-    tileSet: "nature",
     // rocky outcrops, boulders, a grassy mound
     base: ["nature_tile_06.png", "nature_tile_13.png", "nature_tile_16.png", "nature_tile_21.png"],
     decorated: [],
   },
   [TerrainKind.Mountains]: {
+    feature: true,
     mirrorable: false,
-    tileSet: "nature",
     base: ["nature_tile_04.png", "nature_tile_05.png", "nature_tile_14.png"],
     decorated: [],
   },
   [TerrainKind.Ice]: {
+    feature: false,
     mirrorable: true,
-    tileSet: "ice",
-    base: [
-      "ice_tile_01.png",
-      "ice_tile_02.png",
-      "ice_tile_03.png",
-      "ice_tile_04.png",
-      "ice_tile_12.png",
-      "ice_tile_15.png",
-      "ice_tile_18.png",
-      "ice_tile_19.png",
-    ],
+    base: [],
     decorated: [],
   },
   [TerrainKind.RoughIce]: {
+    feature: true,
     mirrorable: false,
-    tileSet: "ice",
     // ridges, mounds, cliffs
     base: [
       "ice_tile_05.png",
@@ -137,6 +145,3 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
     decorated: [],
   },
 };
-
-/** Tile sets used by the terrains, to load. */
-export const TERRAIN_TILE_SETS: TileSet[] = [...new Set(Object.values(TERRAIN_TILES).map(({ tileSet }) => tileSet))];

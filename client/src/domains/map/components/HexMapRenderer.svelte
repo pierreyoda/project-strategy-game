@@ -1,9 +1,13 @@
 <script lang="ts" module>
   import {
+    BufferImageSource,
     Container,
     type FederatedPointerEvent,
+    Geometry,
     Graphics,
     GraphicsContext,
+    Mesh,
+    type Shader,
     Sprite,
     Texture,
     TilingSprite,
@@ -12,12 +16,14 @@
 
   import type { PixiContext } from "../../../shared/pixi";
   import { GROUND_NOISE_SIZE, createGroundNoiseTexture } from "../groundNoise";
+  import { createGroundShader, groundUniforms } from "../groundShader";
+  import { type GroundTextures, loadGroundTextures } from "../groundTextures";
   import { type HexLayout, hexAt, hexCenter, hexCorners, mapHeight, wrapBounds, wrapHex } from "../hexLayout";
   import type { HexMapData, OffsetCoords } from "../hexMap";
   import { DEFAULT_MAP_LOOK, type MapLook } from "../mapLook";
   import { TERRAIN_COLORS, isExplored } from "../terrain";
   import { type TerrainTextures, loadTerrainTextures } from "../terrainTextures";
-  import { pickTileFlip, pickTileTint, pickTileVariant } from "../tileset";
+  import { TERRAIN_TILES, pickTileFlip, pickTileIsDecorated, pickTileTint, pickTileVariant } from "../tileset";
 
   /** Heights of a hex on screen, in pixels, over which the textured tiles fade in over the flat colors. */
   const TEXTURES_FADE_IN = { from: 16, to: 32 };
@@ -45,6 +51,11 @@
     tileSprites: Sprite[][];
     /** The ground noise over the textured tiles, generated for this map and destroyed with it. */
     noise: Texture;
+    /**
+     * The blended ground under the tiles, once its textures are loaded: one mesh over the whole map,
+     * reading the terrains straight from the map's own buffer.
+     */
+    ground: { mesh: Mesh<Geometry, Shader>; geometry: Geometry; shader: Shader; source: BufferImageSource } | null;
   };
 
   const paintRow = (drawn: DrawnMap, map: HexMapData, layout: HexLayout, row: number) => {
@@ -75,10 +86,13 @@
     const terrain = map.terrain[index];
     const coords = { col: index % map.columns, row: Math.floor(index / map.columns) };
     const explored = textures !== null && isExplored(terrain);
+    // the ground layer paints the ground: a tile with nothing standing on it has nothing left to draw
+    const visible =
+      explored && (TERRAIN_TILES[terrain].feature || pickTileIsDecorated(textures[terrain], coords, look));
     for (const sprites of drawn.tileSprites) {
       const sprite = sprites[index];
-      sprite.visible = explored;
-      if (!explored) {
+      sprite.visible = visible;
+      if (!visible) {
         continue;
       }
       sprite.texture = pickTileVariant(textures[terrain], coords, look);
@@ -97,6 +111,7 @@
     map: HexMapData,
     layout: HexLayout,
     textures: TerrainTextures | null,
+    grounds: GroundTextures | null,
     look: MapLook,
   ): DrawnMap => {
     const layer = new Container({ label: "hex-map", zIndex: MAP_Z_INDEX });
@@ -114,6 +129,29 @@
 
     // over the flat colors, which also fill any gap between the textured tiles
     const texturedTiles = layer.addChild(new Container({ label: "textured-tiles", isRenderGroup: true }));
+
+    // the ground first, under the tiles that still stand on it
+    let ground: DrawnMap["ground"] = null;
+    if (grounds) {
+      const source = new BufferImageSource({
+        resource: map.terrain,
+        width: map.columns,
+        height: map.rows,
+        format: "r8unorm",
+        scaleMode: "nearest",
+        alphaMode: "no-premultiply-alpha",
+      });
+      const shader = createGroundShader(source, grounds, groundUniforms(map, layout, period, look));
+      // the odd rows of the second copy stick out past it by half a hex
+      const [right, bottom] = [2 * period + layout.width, mapHeight(layout, map)];
+      const geometry = new Geometry({
+        attributes: { aPosition: new Float32Array([0, 0, right, 0, right, bottom, 0, bottom]) },
+        indexBuffer: new Uint32Array([0, 1, 2, 0, 2, 3]),
+      });
+      const mesh = texturedTiles.addChild(new Mesh({ label: "ground", geometry, shader }));
+      ground = { mesh, geometry, shader, source };
+    }
+
     const tileSprites = copiesX.map((x) => {
       const copy = texturedTiles.addChild(new Container({ x }));
       return Array.from({ length: map.rows * map.columns }, (_, index) =>
@@ -143,7 +181,7 @@
       }),
     );
 
-    const drawn: DrawnMap = { layer, rows, texturedTiles, tileSprites, noise };
+    const drawn: DrawnMap = { layer, rows, texturedTiles, tileSprites, noise, ground };
     for (let row = 0; row < map.rows; row++) {
       paintRow(drawn, map, layout, row);
     }
@@ -186,10 +224,15 @@
   }: HexMapRendererProps = $props();
 
   let textures = $state.raw<TerrainTextures | null>(null);
+  let grounds = $state.raw<GroundTextures | null>(null);
   onMount(() => {
     loadTerrainTextures().then(
       (loadedTextures) => (textures = loadedTextures),
       (error) => console.error("Failed to load the terrain textures:", error),
+    );
+    loadGroundTextures().then(
+      (loadedGrounds) => (grounds = loadedGrounds),
+      (error) => console.error("Failed to load the ground textures:", error),
     );
   });
 
@@ -199,7 +242,7 @@
   $effect(() => {
     const currentMap = map;
     const currentTextures = textures;
-    const currentDrawn = drawMap(pixi, currentMap, layout, currentTextures, look);
+    const currentDrawn = drawMap(pixi, currentMap, layout, currentTextures, grounds, look);
     drawn = currentDrawn;
 
     const hoverOutline = new GraphicsContext().poly(hexCorners(layout)).stroke({ width: 3, color: 0xffffff });
@@ -248,6 +291,12 @@
       // the textures are shared, cached by PixiJS's `Assets`; the noise is this map's own
       currentDrawn.layer.destroy({ children: true });
       currentDrawn.noise.destroy(true);
+      if (currentDrawn.ground) {
+        // the mesh went with the layer; what it drew with is this map's own
+        currentDrawn.ground.shader.destroy();
+        currentDrawn.ground.geometry.destroy();
+        currentDrawn.ground.source.destroy();
+      }
       for (const context of currentDrawn.rows) {
         context.destroy();
       }
@@ -277,5 +326,7 @@
         paintedRow = row;
       }
     }
+    // the ground reads the map's buffer, patched in place by the delta: it only has to be told
+    currentDrawn.ground?.source.update();
   });
 </script>
