@@ -8,6 +8,7 @@
   import { type GameLogEntry, createActiveGame } from "../state/activeGame.svelte";
   import GameView from "./GameView.svelte";
   import GameToolbar from "./toolbar/GameToolbar.svelte";
+  import UnitPanel from "./UnitPanel.svelte";
 
   /** How many lines of the turn log are shown at once. */
   const LOG_SHOWN = 8;
@@ -116,6 +117,18 @@
       </p>
     {/if}
 
+    {#if game.selected}
+      <div class="unit-panel">
+        <UnitPanel
+          selected={game.selected}
+          viewer={game.viewer}
+          hasNext={game.hasNextUnit}
+          onSkip={() => game.skipUnit()}
+          onNext={() => game.nextUnit()}
+        />
+      </div>
+    {/if}
+
     {#if lines.length > 0}
       <ul class="log" aria-label="Turn log">
         {#each lines as line, index (`${index}-${line}`)}
@@ -128,7 +141,7 @@
       {#if game.error}
         <span class="text-danger">{game.error}</span>
       {:else if game.selected}
-        <span class="text-fg-muted">Unit {game.selected.id} selected · click a highlighted tile to move it</span>
+        <span class="text-fg-muted">Click a highlighted tile to move the unit</span>
       {:else if hovered}
         <span class="text-fg-muted tabular-nums">
           ({hovered.coords.col}, {hovered.coords.row}) · {hovered.terrain} · {hovered.elevation} m ·
@@ -169,5 +182,9 @@
 
   .controls {
     @apply absolute right-3 bottom-3 left-3 flex items-center justify-end gap-3 text-sm;
+  }
+
+  .unit-panel {
+    @apply absolute right-3 bottom-14;
   }
 </style>
