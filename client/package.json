@@ -16,6 +16,8 @@
     "lint": "eslint .",
     "lint:fix": "prettier --write . && eslint --fix .",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "ground:build": "node scripts/ground-from-tiles.ts",
     "features:build": "node scripts/feather-tiles.ts",
     "storybook": "storybook dev -p 6006",
@@ -62,6 +64,7 @@
     "eslint-plugin-storybook": "10.6.5",
     "eslint-plugin-svelte": "3.23.1",
     "globals": "17.13.0",
+    "happy-dom": "21.0.4",
     "prettier": "3.9.10",
     "prettier-plugin-svelte": "4.1.1",
     "prettier-plugin-tailwindcss": "0.8.1",
@@ -71,7 +74,8 @@
     "svelte-check": "4.7.7",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
-    "vite": "8.3.5"
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
   },
   "imports": {
     "#shared/*": "./src/shared/*",

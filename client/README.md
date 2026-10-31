@@ -22,4 +22,6 @@ The WASM package is built automatically by `pnpm start` (debug build, rebuilt wh
 
 UI components are developed in isolation with [Storybook](https://storybook.js.org/): run `pnpm storybook` (or `pnpm storybook:build` for a static build). Stories are colocated with their component as `*.stories.svelte` files, written in [Svelte CSF](https://github.com/storybookjs/addon-svelte-csf).
 
+Unit tests run with [Vitest](https://vitest.dev/): run `pnpm test` (or `pnpm test:watch` to rerun them on changes). Tests are colocated with their module as `*.test.ts` files.
+
 > Vite does not type-check: run `pnpm typecheck` for that. It needs the WASM package's typings, so if no build was run yet, run `pnpm bootstrap:wasm` first.

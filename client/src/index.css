@@ -54,6 +54,20 @@
   --radius-cut-lg: 10px;
 
   --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.45);
+
+  /* The dwell bar of an open concept card breathes. */
+  --animate-dwell-ready: dwell-ready 1.8s ease-in-out infinite;
+  @keyframes dwell-ready {
+    0%,
+    100% {
+      box-shadow: 0 0 6px --alpha(var(--color-accent) / 70%);
+    }
+    50% {
+      box-shadow:
+        0 0 12px var(--color-accent),
+        0 0 2px #fff;
+    }
+  }
 }
 
 /* Turns `rounded-*` corners into bevels. Unsupported before Chromium 139: corners stay rounded. */
