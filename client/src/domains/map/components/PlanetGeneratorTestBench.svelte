@@ -2,10 +2,12 @@
   import { onDestroy, onMount } from "svelte";
 
   import Button from "../../../shared/ui/Button.svelte";
+  import Panel from "../../../shared/ui/Panel.svelte";
   import GameView from "../../game/ui/GameView.svelte";
   import { createFakeEntities } from "../fakeEntities";
   import { NO_NATION } from "../../game/session/protocol";
   import { type HexMapData, type OffsetCoords, tileIndex } from "../hexMap";
+  import { DEFAULT_MAP_LOOK, type MapLook } from "../mapLook";
   import {
     DEFAULT_NATIONS,
     DEFAULT_OCEAN_COVERAGE,
@@ -41,6 +43,12 @@
   const hoveredTileIndex = $derived(hoveredTile && map && tileIndex(map, hoveredTile));
   let flatColors = $state(false);
   let showSettlements = $state(false);
+  let showLook = $state(false);
+  // the knobs of the tiles' variety, to tune by eye before they are baked into `DEFAULT_MAP_LOOK`
+  const look = $state<MapLook>({ ...DEFAULT_MAP_LOOK });
+  const lookChanged = $derived(
+    Object.keys(DEFAULT_MAP_LOOK).some((key) => look[key as keyof MapLook] !== DEFAULT_MAP_LOOK[key as keyof MapLook]),
+  );
   // stand-ins, to see the sprites on real terrain: the generator has no settlements to place
   const entities = $derived(map && showSettlements ? createFakeEntities(map) : []);
 
@@ -81,6 +89,14 @@
 
   onMount(() => void generate());
 </script>
+
+{#snippet lookSlider(label: string, key: keyof MapLook, min: number, max: number, step: number)}
+  <label class="grid grid-cols-[7rem_1fr_3.5rem] items-center gap-2 text-fg-muted">
+    {label}
+    <input type="range" {min} {max} {step} bind:value={look[key]} class="accent-accent" />
+    <span class="text-right text-fg tabular-nums">{look[key]}</span>
+  </label>
+{/snippet}
 
 {#snippet numberField(label: string, value: number, max: number, onValue: (value: number) => void)}
   <label class="flex items-center gap-2 text-fg-muted">
@@ -133,6 +149,7 @@
     >
       Settlements
     </Button>
+    <Button variant="ghost" size="sm" aria-pressed={showLook} onclick={() => (showLook = !showLook)}>Look</Button>
 
     <div class="ml-auto flex items-center gap-4 whitespace-nowrap text-fg-muted tabular-nums">
       {#if settingsError}
@@ -170,15 +187,37 @@
       {/if}
     </div>
   </header>
-  <div class="min-h-0 flex-1">
+  <div class="relative min-h-0 flex-1">
     {#if map}
       <GameView
         {map}
         {entities}
         nations={showNations ? nations : null}
         {flatColors}
+        {look}
         onTileHover={(tile) => (hoveredTile = tile)}
       />
+    {/if}
+    {#if showLook}
+      <Panel title="Look" variant="glass" class="absolute right-3 bottom-3 w-96 text-sm">
+        {#snippet actions()}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!lookChanged}
+            onclick={() => Object.assign(look, DEFAULT_MAP_LOOK)}
+          >
+            Reset
+          </Button>
+        {/snippet}
+        <div class="flex flex-col gap-2">
+          {@render lookSlider("Tint brightness", "tintBrightness", 0, 0.15, 0.005)}
+          {@render lookSlider("Tint hue", "tintHue", 0, 0.05, 0.005)}
+          {@render lookSlider("Noise depth", "noiseDepth", 0, 0.4, 0.01)}
+          {@render lookSlider("Noise size", "noiseWorldSize", 100, 1200, 25)}
+          {@render lookSlider("Decorated share", "decoratedShare", 0, 1, 0.05)}
+        </div>
+      </Panel>
     {/if}
   </div>
 </div>

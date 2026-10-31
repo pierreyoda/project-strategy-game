@@ -1,13 +1,23 @@
 <script lang="ts" module>
-  import { Container, type FederatedPointerEvent, Graphics, GraphicsContext, Sprite, Texture } from "pixi.js";
+  import {
+    Container,
+    type FederatedPointerEvent,
+    Graphics,
+    GraphicsContext,
+    Sprite,
+    Texture,
+    TilingSprite,
+  } from "pixi.js";
   import { onMount } from "svelte";
 
   import type { PixiContext } from "../../../shared/pixi";
-  import { type HexLayout, hexAt, hexCenter, hexCorners, wrapBounds, wrapHex } from "../hexLayout";
+  import { GROUND_NOISE_SIZE, createGroundNoiseTexture } from "../groundNoise";
+  import { type HexLayout, hexAt, hexCenter, hexCorners, mapHeight, wrapBounds, wrapHex } from "../hexLayout";
   import type { HexMapData, OffsetCoords } from "../hexMap";
+  import { DEFAULT_MAP_LOOK, type MapLook } from "../mapLook";
   import { TERRAIN_COLORS, isExplored } from "../terrain";
   import { type TerrainTextures, loadTerrainTextures } from "../terrainTextures";
-  import { pickTileVariant } from "../tileset";
+  import { pickTileFlip, pickTileTint, pickTileVariant } from "../tileset";
 
   /** Heights of a hex on screen, in pixels, over which the textured tiles fade in over the flat colors. */
   const TEXTURES_FADE_IN = { from: 16, to: 32 };
@@ -33,6 +43,8 @@
     texturedTiles: Container;
     /** Textured tiles, one sprite per tile indexed row-major, one array per copy of the map. */
     tileSprites: Sprite[][];
+    /** The ground noise over the textured tiles, generated for this map and destroyed with it. */
+    noise: Texture;
   };
 
   const paintRow = (drawn: DrawnMap, map: HexMapData, layout: HexLayout, row: number) => {
@@ -57,19 +69,26 @@
     map: HexMapData,
     layout: HexLayout,
     textures: TerrainTextures | null,
+    look: MapLook,
     index: number,
   ) => {
     const terrain = map.terrain[index];
     const coords = { col: index % map.columns, row: Math.floor(index / map.columns) };
-    const texture = textures && isExplored(terrain) ? pickTileVariant(textures[terrain], coords) : null;
+    const explored = textures !== null && isExplored(terrain);
     for (const sprites of drawn.tileSprites) {
       const sprite = sprites[index];
-      sprite.visible = texture !== null;
-      if (texture) {
-        sprite.texture = texture;
-        // after the texture, which resets the sprite to the texture's own size
-        sprite.setSize(layout.width * TEXTURED_TILE_SCALE, 2 * layout.size * TEXTURED_TILE_SCALE);
+      sprite.visible = explored;
+      if (!explored) {
+        continue;
       }
+      sprite.texture = pickTileVariant(textures[terrain], coords, look);
+      // after the texture, which resets the sprite to the texture's own size...
+      sprite.setSize(layout.width * TEXTURED_TILE_SCALE, 2 * layout.size * TEXTURED_TILE_SCALE);
+      // ...and leaves the scale positive, which the flips are the sign of
+      const flip = pickTileFlip(terrain, coords);
+      sprite.scale.x = Math.abs(sprite.scale.x) * (flip.x ? -1 : 1);
+      sprite.scale.y = Math.abs(sprite.scale.y) * (flip.y ? -1 : 1);
+      sprite.tint = pickTileTint(coords, look);
     }
   };
 
@@ -78,10 +97,12 @@
     map: HexMapData,
     layout: HexLayout,
     textures: TerrainTextures | null,
+    look: MapLook,
   ): DrawnMap => {
     const layer = new Container({ label: "hex-map", zIndex: MAP_Z_INDEX });
     // drawn twice side by side to wrap around east-west, see `wrapBounds`
-    const copiesX = [0, wrapBounds(layout, map).period];
+    const { period } = wrapBounds(layout, map);
+    const copiesX = [0, period];
 
     const rows = Array.from({ length: map.rows }, () => new GraphicsContext());
     for (const x of copiesX) {
@@ -107,12 +128,27 @@
       );
     });
 
-    const drawn: DrawnMap = { layer, rows, texturedTiles, tileSprites };
+    // the noise's own period has to divide the map's, or the second copy would not match the first
+    const noise = createGroundNoiseTexture(look.noiseDepth);
+    const noiseWorldSize = period / Math.max(1, Math.round(period / look.noiseWorldSize));
+    texturedTiles.addChild(
+      new TilingSprite({
+        label: "ground-noise",
+        texture: noise,
+        // the odd rows of the second copy stick out past it by half a hex
+        width: 2 * period + layout.width,
+        height: mapHeight(layout, map),
+        tileScale: { x: noiseWorldSize / GROUND_NOISE_SIZE, y: noiseWorldSize / GROUND_NOISE_SIZE },
+        blendMode: "multiply",
+      }),
+    );
+
+    const drawn: DrawnMap = { layer, rows, texturedTiles, tileSprites, noise };
     for (let row = 0; row < map.rows; row++) {
       paintRow(drawn, map, layout, row);
     }
     for (let index = 0; index < map.rows * map.columns; index++) {
-      paintTexturedTile(drawn, map, layout, textures, index);
+      paintTexturedTile(drawn, map, layout, textures, look, index);
     }
     pixi.world.addChild(layer);
     return drawn;
@@ -131,6 +167,8 @@
     dirtyTiles?: Uint32Array | null;
     /** Draws the flat colors of the terrains only, without the textures of their tiles. */
     flatColors?: boolean;
+    /** The knobs of the textured tiles' variety. A new one redraws the map whole. */
+    look?: MapLook;
     /** Called when the pointer moves to another tile, with `null` once it leaves the map. */
     onTileHover?: (tile: OffsetCoords | null) => void;
     /** Called when a tile is clicked. */
@@ -142,6 +180,7 @@
     layout,
     dirtyTiles = null,
     flatColors = false,
+    look = DEFAULT_MAP_LOOK,
     onTileHover,
     onTileClick,
   }: HexMapRendererProps = $props();
@@ -160,7 +199,7 @@
   $effect(() => {
     const currentMap = map;
     const currentTextures = textures;
-    const currentDrawn = drawMap(pixi, currentMap, layout, currentTextures);
+    const currentDrawn = drawMap(pixi, currentMap, layout, currentTextures, look);
     drawn = currentDrawn;
 
     const hoverOutline = new GraphicsContext().poly(hexCorners(layout)).stroke({ width: 3, color: 0xffffff });
@@ -206,8 +245,9 @@
       pixi.app.ticker.remove(updateTexturesOpacity);
       pixi.world.off("pointermove", onPointerMove).off("pointerleave", onPointerLeave).off("pointertap", onPointerTap);
       drawn = null;
-      // the textures are shared, cached by PixiJS's `Assets`
+      // the textures are shared, cached by PixiJS's `Assets`; the noise is this map's own
       currentDrawn.layer.destroy({ children: true });
+      currentDrawn.noise.destroy(true);
       for (const context of currentDrawn.rows) {
         context.destroy();
       }
@@ -230,7 +270,7 @@
       if (index >= map.rows * map.columns) {
         continue;
       }
-      paintTexturedTile(currentDrawn, map, layout, textures, index);
+      paintTexturedTile(currentDrawn, map, layout, textures, look, index);
       const row = Math.floor(index / map.columns);
       if (row !== paintedRow) {
         paintRow(currentDrawn, map, layout, row);

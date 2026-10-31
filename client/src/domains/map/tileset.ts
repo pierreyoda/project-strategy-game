@@ -1,4 +1,5 @@
 import type { OffsetCoords } from "./hexMap";
+import type { MapLook } from "./mapLook";
 import { TerrainKind } from "./terrain";
 
 /** Tile sets in `raw-assets/tiles/`, each one a bundle of PixiJS's `Assets` packed in a sprite sheet by AssetPack. */
@@ -13,10 +14,12 @@ export type TerrainTiles = {
   tileSet: TileSet;
   base: string[];
   decorated: string[];
+  /**
+   * Lit from no particular side, so a mirrored copy tells no lie: flips come for free as variants.
+   * Rocks and ridges are lit from the upper left, and a flipped one next to its neighbors shows two suns.
+   */
+  mirrorable: boolean;
 };
-
-/** Share of the tiles of a terrain picked among its decorated tiles, when it has some. */
-export const DECORATED_TILES_SHARE = 0.25;
 
 /** Pseudo-random number in [0, 1), always the same for the given tile and salt (hashed with "lowbias32"). */
 const tileRandom = ({ col, row }: OffsetCoords, salt: number): number => {
@@ -30,10 +33,30 @@ const tileRandom = ({ col, row }: OffsetCoords, salt: number): number => {
  * Variant of a terrain's tiles to draw on the given tile: always the same one, so that the map looks the same
  * wherever and whenever it is drawn.
  */
-export const pickTileVariant = <T>(tiles: { base: readonly T[]; decorated: readonly T[] }, coords: OffsetCoords): T => {
-  const isDecorated = tiles.decorated.length > 0 && tileRandom(coords, 1) < DECORATED_TILES_SHARE;
+export const pickTileVariant = <T>(
+  tiles: { base: readonly T[]; decorated: readonly T[] },
+  coords: OffsetCoords,
+  { decoratedShare }: Pick<MapLook, "decoratedShare">,
+): T => {
+  const isDecorated = tiles.decorated.length > 0 && tileRandom(coords, 1) < decoratedShare;
   const variants = isDecorated ? tiles.decorated : tiles.base;
   return variants[Math.floor(tileRandom(coords, 2) * variants.length)];
+};
+
+/** Whether to mirror the tile drawn on the given tile along each axis, only ever for a `mirrorable` terrain. */
+export const pickTileFlip = (terrain: TerrainKind, coords: OffsetCoords): { x: boolean; y: boolean } =>
+  TERRAIN_TILES[terrain].mirrorable
+    ? { x: tileRandom(coords, 3) < 0.5, y: tileRandom(coords, 4) < 0.5 }
+    : { x: false, y: false };
+
+/** The tint of the given tile, a few percent under white, see `MapLook`. */
+export const pickTileTint = (
+  coords: OffsetCoords,
+  { tintBrightness, tintHue }: Pick<MapLook, "tintBrightness" | "tintHue">,
+): number => {
+  const brightness = 1 - tintBrightness * tileRandom(coords, 5);
+  const channel = (salt: number) => Math.round(255 * (brightness - tintHue * tileRandom(coords, salt)));
+  return (channel(6) << 16) | (channel(7) << 8) | channel(8);
 };
 
 /*
@@ -46,17 +69,20 @@ export const pickTileVariant = <T>(tiles: { base: readonly T[]; decorated: reado
  */
 export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
   [TerrainKind.DeepWater]: {
+    mirrorable: true,
     tileSet: "water",
     base: ["water_tile_05.png"],
     decorated: [],
   },
   [TerrainKind.ShallowWater]: {
+    mirrorable: true,
     tileSet: "water",
     base: ["water_tile_03.png"],
     // scattered rocks
     decorated: ["water_tile_02.png"],
   },
   [TerrainKind.Flat]: {
+    mirrorable: true,
     tileSet: "nature",
     base: ["nature_tile_01.png", "nature_tile_20.png"],
     // stone slabs, scattered boulders, sand, a large flat rock
@@ -69,17 +95,20 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
     ],
   },
   [TerrainKind.Hills]: {
+    mirrorable: false,
     tileSet: "nature",
     // rocky outcrops, boulders, a grassy mound
     base: ["nature_tile_06.png", "nature_tile_13.png", "nature_tile_16.png", "nature_tile_21.png"],
     decorated: [],
   },
   [TerrainKind.Mountains]: {
+    mirrorable: false,
     tileSet: "nature",
     base: ["nature_tile_04.png", "nature_tile_05.png", "nature_tile_14.png"],
     decorated: [],
   },
   [TerrainKind.Ice]: {
+    mirrorable: true,
     tileSet: "ice",
     base: [
       "ice_tile_01.png",
@@ -94,6 +123,7 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
     decorated: [],
   },
   [TerrainKind.RoughIce]: {
+    mirrorable: false,
     tileSet: "ice",
     // ridges, mounds, cliffs
     base: [
