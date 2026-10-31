@@ -155,6 +155,10 @@ pub struct PlanetSurvey {
     pub foothills_share: f64,
     /// The most broken-up continent: its largest plain over its area.
     pub largest_plain_share_min: f64,
+    /// The least plain continent: its plains over its plains, hills and mountains.
+    pub continent_plains_share_min: f64,
+    /// The most mountainous continent: its mountains over its plains, hills and mountains.
+    pub continent_mountains_share_max: f64,
     pub median_land_elevation: f64,
     pub highest_peak: f64,
     // C: coasts and inland water
@@ -272,6 +276,28 @@ impl PlanetSurvey {
                 .iter()
                 .map(|&id| largest_plain[id.index()] as f64 / landmasses.area(id) as f64),
         );
+        // B9: each continent on its own, so that one mountainous continent among plain ones
+        // does not hide in the planet's average
+        let (mut continent_plains_share_min, mut continent_mountains_share_max) =
+            (f64::NAN, f64::NAN);
+        for &id in &continent_ids {
+            let (mut plains, mut hills, mut mountains) = (0usize, 0usize, 0usize);
+            for &index in landmasses.tiles(id) {
+                match surface.terrain_at(index) {
+                    TerrainKind::Flat => plains += 1,
+                    TerrainKind::Hills => hills += 1,
+                    TerrainKind::Mountains => mountains += 1,
+                    _ => {}
+                }
+            }
+            let classified = (plains + hills + mountains) as f64;
+            if classified == 0.0 {
+                continue;
+            }
+            continent_plains_share_min = continent_plains_share_min.min(plains as f64 / classified);
+            continent_mountains_share_max =
+                continent_mountains_share_max.max(mountains as f64 / classified);
+        }
         let foothills = (0..surface.tiles_count() as TileIndex)
             .filter(|&index| surface.terrain_at(index) == TerrainKind::Hills)
             .filter(|&index| {
@@ -394,6 +420,8 @@ impl PlanetSurvey {
             plains_connectivity_min,
             foothills_share,
             largest_plain_share_min,
+            continent_plains_share_min,
+            continent_mountains_share_max,
             median_land_elevation,
             highest_peak,
             shallow_fringe_share,
@@ -526,6 +554,20 @@ impl PlanetSurvey {
                 self.largest_plain_share_min,
                 Share,
                 AtLeast(0.35),
+            ),
+            criterion(
+                "B9",
+                "least plain continent, plains",
+                self.continent_plains_share_min,
+                Share,
+                AtLeast(0.55),
+            ),
+            criterion(
+                "B9",
+                "most mountainous continent, mountains",
+                self.continent_mountains_share_max,
+                Share,
+                AtMost(0.15),
             ),
             criterion(
                 "B8",
@@ -913,6 +955,36 @@ mod tests {
             survey.plains_connectivity_min > 0.99,
             "the plain goes around the chain"
         );
+    }
+
+    #[test]
+    fn test_survey_judges_each_continent_on_its_own_relief() {
+        // a plain continent to the north, a mountainous one to the south, and together they
+        // average out to something that looks fine
+        let surface = surface_from_art(
+            &[
+                "..........",
+                "..........",
+                "..........",
+                "~~~~~~~~~~",
+                "^^^^^..^^^",
+                "^^^.^^^^^^",
+                "^^^^^^^^..",
+            ]
+            .join("|"),
+        );
+        let survey = PlanetSurvey::of(&surface);
+        assert_eq!(survey.continents, 2);
+        assert!(
+            (survey.plains_share - 35.0 / 60.0).abs() < 1e-9,
+            "the average hides it"
+        );
+        assert!((survey.continent_plains_share_min - 5.0 / 30.0).abs() < 1e-9);
+        assert!((survey.continent_mountains_share_max - 25.0 / 30.0).abs() < 1e-9);
+        let criteria = survey.criteria();
+        let b9: Vec<_> = criteria.iter().filter(|c| c.id == "B9").collect();
+        assert_eq!(b9.len(), 2);
+        assert!(b9.iter().all(|c| c.met() == Some(false)));
     }
 
     #[test]

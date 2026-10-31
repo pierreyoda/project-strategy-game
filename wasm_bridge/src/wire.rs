@@ -60,7 +60,7 @@ fn default_nations() -> u16 {
 
 /// Like `ocean_coverage` in `MapGeneratorSettings::default`.
 fn default_ocean_coverage() -> f64 {
-    0.7
+    0.575
 }
 
 /// How the siting of the nations went, like `GenerationReport` in the `procgen` crate.

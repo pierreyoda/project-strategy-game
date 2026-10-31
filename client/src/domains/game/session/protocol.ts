@@ -23,7 +23,7 @@ export type NewGameSettings = {
   rows: number;
   /** How many nations play, the local player included. Defaults to 2 in the bridge. */
   nations?: number;
-  /** Share of the map covered by the seas, from 0 to 1. Defaults to 0.7 in the bridge. */
+  /** Share of the map covered by the seas, from 0 to 1. Defaults to 0.575 in the bridge. */
   oceanCoverage?: number;
 };
 

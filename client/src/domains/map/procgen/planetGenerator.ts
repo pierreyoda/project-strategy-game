@@ -5,7 +5,7 @@ export const MAX_SEED = 0xffff_ffff - 256;
 /** Bounds of the number of columns and of rows: `procgen` stores them as `i16`. */
 export const MAX_MAP_SIZE = 1024;
 /** Share of the map covered by the seas, like `ocean_coverage` in `MapGeneratorSettings::default`. */
-export const DEFAULT_OCEAN_COVERAGE = 0.7;
+export const DEFAULT_OCEAN_COVERAGE = 0.575;
 /** Nations settled on a planet by default, like `nations` in `NationsGeneratorSettings::default`. */
 export const DEFAULT_NATIONS = 8;
 /** More nations than this is not a planet anyone would want to tune by hand. */

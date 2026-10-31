@@ -1,10 +1,27 @@
+use std::collections::VecDeque;
+
 use noise::NoiseFn;
 use project_x_core::hex_map::{
-    HexMap, HexMapStorage, coordinates::CubeCoordsScalar, shape::RectangularHexMapShape,
+    HexMap, HexMapStorage,
+    coordinates::{CubeCoordsScalar, OffsetCoords},
+    shape::RectangularHexMapShape,
     tile::HexMapTile,
 };
 
-use super::{projection::CylinderProjection, settings::MapGeneratorSettings};
+use super::{
+    projection::CylinderProjection, settings::MapGeneratorSettings,
+    terrain::TERRAIN_GRADIENT_BOUNDS,
+};
+
+/// Depth of the shallow band below the water line, in planetary elevation units.
+const SHALLOW_BAND: f64 = -TERRAIN_GRADIENT_BOUNDS[0];
+/// A shelf tile already this shallow keeps its depth...
+const SHELF_KEPT: f64 = SHALLOW_BAND / 2.0;
+/// ...a deeper one is compressed towards this depth, never reaching it: inside the band.
+const SHELF_FLOOR: f64 = SHALLOW_BAND * 0.9;
+/// Depth beyond `SHELF_KEPT` at which a tile lands halfway between it and `SHELF_FLOOR`, about
+/// 1 000 m: the abyss one tile off a coast comes out near the floor, a shoal near the top.
+const SHELF_HALF_DEPTH: f64 = 0.125;
 
 /// Noise values sampled at the center of each hex of a map.
 pub struct ElevationField {
@@ -71,14 +88,65 @@ impl ElevationField {
         let (scale, bias) = settings.get_elevation_scale_bias();
         let water_line = self.water_line(settings.get_ocean_coverage());
         let flattening = settings.get_lowland_flattening();
+        let shelf = self.shelf(water_line, settings.get_coastal_shelf_width());
 
         let mut tiles = HexMapStorage::with_capacity(self.values.len());
-        for (coords, value) in self.shape.coords().zip(self.values) {
+        for ((coords, value), on_shelf) in self.shape.coords().zip(self.values).zip(shelf) {
+            let value = if on_shelf {
+                shelf_value(value, water_line)
+            } else {
+                value
+            };
             let elevation = to_meters(value, water_line, flattening, scale, bias);
             tiles.insert(coords, HexMapTile::from_properties(elevation));
         }
         HexMap::from_tiles(tiles)
     }
+
+    /// Whether each tile is sea within `width` steps of land, in the order of the values: a
+    /// breadth-first search from every shore at once, wrapping around east-west like the map.
+    fn shelf(&self, water_line: f64, width: u32) -> Vec<bool> {
+        let columns = self.shape.columns() as usize;
+        let index = |coords: OffsetCoords| coords.row() as usize * columns + coords.col() as usize;
+        let mut distance = vec![u32::MAX; self.values.len()];
+        let mut queue = VecDeque::new();
+        for (coords, &value) in self.shape.coords().zip(&self.values) {
+            if value >= water_line {
+                distance[index(coords.into())] = 0;
+                queue.push_back(coords);
+            }
+        }
+        while let Some(coords) = queue.pop_front() {
+            let next = distance[index(coords.into())] + 1;
+            if next > width {
+                continue;
+            }
+            for neighbor in self.shape.neighbors(coords) {
+                let neighbor_index = index(neighbor.into());
+                if distance[neighbor_index] == u32::MAX {
+                    distance[neighbor_index] = next;
+                    queue.push_back(neighbor);
+                }
+            }
+        }
+        distance
+            .into_iter()
+            .map(|distance| distance > 0 && distance <= width)
+            .collect()
+    }
+}
+
+/// A sea tile's value once on the shelf: depths already within the upper half of the shallow
+/// band are kept, deeper ones compressed into its lower half, so that the sea floor keeps the
+/// order it was sampled in and every shelf tile reads as shallow water.
+fn shelf_value(value: f64, water_line: f64) -> f64 {
+    let depth = water_line - value;
+    if depth <= SHELF_KEPT {
+        return value;
+    }
+    let beyond = depth - SHELF_KEPT;
+    let compressed = SHELF_KEPT + (SHELF_FLOOR - SHELF_KEPT) * beyond / (beyond + SHELF_HALF_DEPTH);
+    water_line - compressed
 }
 
 /// Elevation in meters of a sampled value, the water line becoming sea level and the lowlands
@@ -103,7 +171,7 @@ mod tests {
 
     use crate::map::{projection::CylinderProjection, settings::MapGeneratorSettings};
 
-    use super::{ElevationField, to_meters};
+    use super::{ElevationField, SHALLOW_BAND, shelf_value, to_meters};
 
     /// Outputs the height of the sampled point on the cylinder.
     struct Height;
@@ -168,6 +236,59 @@ mod tests {
     }
 
     #[test]
+    fn test_shelf_keeps_shoals_and_brings_the_abyss_up_into_the_shallow_band() {
+        let water_line = 0.125;
+        // a shoal keeps its depth
+        assert_eq!(shelf_value(0.12, water_line), 0.12);
+        // depths of any size end up shallower than the band, in the order they came in
+        let depths = [0.01, 0.05, 0.3, 1.0, 5.0];
+        let shelved: Vec<f64> = depths
+            .iter()
+            .map(|depth| water_line - shelf_value(water_line - depth, water_line))
+            .collect();
+        for (depth, shelved) in depths.iter().zip(&shelved) {
+            assert!(
+                *shelved > 0.0 && *shelved < SHALLOW_BAND,
+                "{depth} became {shelved}"
+            );
+        }
+        assert!(
+            shelved.windows(2).all(|pair| pair[0] < pair[1]),
+            "{shelved:?}"
+        );
+    }
+
+    #[test]
+    fn test_elevation_field_into_hex_map_lays_a_shelf_along_the_coast() {
+        // one value per row from the north pole to the south pole: sea to the north, land to the
+        // south, the coast between rows 5 and 6
+        let shape = RectangularHexMapShape::new(2, 10);
+        let shallow = |map: &project_x_core::hex_map::HexMap, row: i16| {
+            let coords = project_x_core::hex_map::coordinates::OffsetCoords::new(0, row).into();
+            let elevation = map.tile(&coords).expect("missing tile").elevation();
+            (-128..0).contains(&elevation)
+        };
+
+        let settings = MapGeneratorSettings::default().with_ocean_coverage(0.6);
+        let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&settings);
+        assert!(shallow(&map, 5), "the row along the coast");
+        assert!(!shallow(&map, 4), "the next one out");
+        assert!(!shallow(&map, 6), "the land");
+
+        let wide = MapGeneratorSettings::default()
+            .with_ocean_coverage(0.6)
+            .with_coastal_shelf_width(2);
+        let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&wide);
+        assert!(shallow(&map, 5) && shallow(&map, 4) && !shallow(&map, 3));
+
+        let none = MapGeneratorSettings::default()
+            .with_ocean_coverage(0.6)
+            .with_coastal_shelf_width(0);
+        let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&none);
+        assert!(!shallow(&map, 5), "the sea floor as sampled");
+    }
+
+    #[test]
     fn test_elevation_field_water_line_leaves_the_wanted_share_of_the_map_underwater() {
         // one value per row, from the north pole to the south pole
         let shape = RectangularHexMapShape::new(1, 10);
@@ -198,8 +319,9 @@ mod tests {
             .coords()
             .filter(|coords| map.tile(coords).expect("missing tile").elevation() < 0)
             .count();
-        // 70% of the rows are below the water line, each of them holding 2 of the 20 hexes
-        assert_eq!(underwater, 14);
+        // the covered share of the rows is below the water line, each row holding 2 hexes
+        let rows_underwater = (settings.get_ocean_coverage() * 10.0).round() as usize;
+        assert_eq!(underwater, rows_underwater * 2);
         assert!(water_line > 0.0, "water line {water_line}");
     }
 

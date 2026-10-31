@@ -15,7 +15,8 @@ pub(crate) const TERRAIN_GRADIENT_BOUNDS: [f64; 6] = [
     6144.0 / 16384.0,
 ];
 
-/// Share of the rows covered in ice at each pole.
+/// Share of the rows whose land is covered in ice, at each pole. The sea there stays open: ships
+/// sail along the poles, around the world.
 const POLAR_ROWS_RATIO: f64 = 0.05;
 
 /// Upper bounds of each elevation band but the last one, in meters.
@@ -66,12 +67,12 @@ impl TerrainClassifier {
         };
 
         let row = coords.row();
-        if row >= self.polar_rows && row < self.rows - self.polar_rows {
-            kind
-        } else if matches!(kind, TerrainKind::Hills | TerrainKind::Mountains) {
-            TerrainKind::RoughIce
-        } else {
-            TerrainKind::Ice
+        let polar = row < self.polar_rows || row >= self.rows - self.polar_rows;
+        match kind {
+            // ice caps the land at the poles, never the sea
+            TerrainKind::Flat if polar => TerrainKind::Ice,
+            TerrainKind::Hills | TerrainKind::Mountains if polar => TerrainKind::RoughIce,
+            _ => kind,
         }
     }
 }
@@ -148,8 +149,11 @@ mod tests {
         let classifier = TerrainClassifier::new(&MapGeneratorSettings::default());
         let pole = OffsetCoords::new(0, 0);
         let cases = [
-            (i16::MIN, TerrainKind::Ice),
-            (-1, TerrainKind::Ice),
+            // the polar sea stays open
+            (i16::MIN, TerrainKind::DeepWater),
+            (-129, TerrainKind::DeepWater),
+            (-1, TerrainKind::ShallowWater),
+            (0, TerrainKind::Ice),
             (1023, TerrainKind::Ice),
             (1024, TerrainKind::RoughIce),
             (2048, TerrainKind::RoughIce),
