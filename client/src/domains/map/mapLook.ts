@@ -19,6 +19,17 @@ export type MapLook = {
   noiseWorldSize: number;
   /** Share of the tiles of a terrain picked among its decorated tiles, when it has some. */
   decoratedShare: number;
+  /**
+   * Width of the blend between two terrains' ground, in world units: how far past its hex's edge a
+   * terrain still shows. 0 is a hard hex edge.
+   */
+  edgeBand: number;
+  /** How far the edges wander from the hex sides, in world units: 0 keeps them straight. */
+  edgeWarp: number;
+  /** The scale of that wandering, in world units: smaller is more jagged, larger is lazier. */
+  edgeWarpScale: number;
+  /** World units covered by one repetition of a terrain's ground texture. */
+  groundScale: number;
 };
 
 export const DEFAULT_MAP_LOOK: MapLook = {
@@ -27,4 +38,8 @@ export const DEFAULT_MAP_LOOK: MapLook = {
   noiseDepth: 0.35,
   noiseWorldSize: 750,
   decoratedShare: 0.1,
+  edgeBand: 2,
+  edgeWarp: 1,
+  edgeWarpScale: 120,
+  groundScale: 110,
 };

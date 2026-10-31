@@ -16,6 +16,8 @@
     "lint": "eslint .",
     "lint:fix": "prettier --write . && eslint --fix .",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "ground:build": "node scripts/ground-from-tiles.ts",
+    "features:build": "node scripts/feather-tiles.ts",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build"
   },
