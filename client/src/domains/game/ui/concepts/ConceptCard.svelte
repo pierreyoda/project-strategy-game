@@ -145,20 +145,26 @@
 
   {@render children?.()}
 
-  {#if open}
-    <div
-      class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-dashed border-line pt-1.5 pr-10 text-xs text-fg-subtle"
-    >
-      {#if byKeyboard}
-        <kbd class="kbd">Tab</kbd> next concept · <kbd class="kbd">Enter</kbd> open · <kbd class="kbd">Esc</kbd> close
-      {:else if last}
-        The chain ends here
-      {:else}
-        <Icon name="chevron-right" size="xs" />
-        Move in to explore a concept
-      {/if}
-    </div>
-  {/if}
+  <!--
+    Always laid out, shown once open: the card must not grow under the pointer at the moment it may be
+    entered, and the row keeps the depth marker clear of the last line of figures.
+  -->
+  <div
+    class={[
+      "mt-2 flex flex-wrap items-center gap-1.5 border-t border-dashed border-line pt-1.5 pr-10 text-xs text-fg-subtle",
+      !open && "invisible",
+    ]}
+    aria-hidden={!open}
+  >
+    {#if byKeyboard}
+      <kbd class="kbd">Tab</kbd> next concept · <kbd class="kbd">Enter</kbd> open · <kbd class="kbd">Esc</kbd> close
+    {:else if last}
+      The chain ends here
+    {:else}
+      <Icon name="chevron-right" size="xs" />
+      Move in to explore a concept
+    {/if}
+  </div>
 
   <!-- the dwell bar: the time the pointer has rested on the card's owner, before the card can be entered -->
   <div class="pointer-events-none absolute top-2 right-[7px] bottom-2 w-[3px] rounded-sm bg-fg/10" aria-hidden="true">

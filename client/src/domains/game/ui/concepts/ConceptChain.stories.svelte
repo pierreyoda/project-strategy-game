@@ -48,5 +48,5 @@
       Hover a figure and wait for the bar. Once it pulses, move into the card and hover a concept.
     </p>
   </div>
-  <ConceptChain {chain} meta={(concept) => meta(concept as GameConcept)} />
+  <ConceptChain {chain} {meta} />
 </Story>

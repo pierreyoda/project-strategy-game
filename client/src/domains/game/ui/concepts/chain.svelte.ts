@@ -1,6 +1,6 @@
 import type { Attachment } from "svelte/attachments";
 
-import { type Concept, type ConceptId, lookupGameConcept } from "../../concepts";
+import { type ConceptId, type GameConcept, lookupGameConcept } from "../../concepts";
 
 /**
  * The timings of a chain of concept cards, in milliseconds.
@@ -15,7 +15,7 @@ export const CONCEPT_TIMING = { appear: 300, dwell: 600, grace: 250 } as const;
 export const MAX_CONCEPT_DEPTH = 4;
 
 export type ConceptLevel = {
-  concept: Concept;
+  concept: GameConcept;
   /** The element the card hangs from: the owner for the first card, a link in the parent for the others. */
   anchor: HTMLElement;
   /** Share of the dwell time elapsed, 1 once the card is open. */
@@ -98,7 +98,7 @@ export const createConceptChain = () => {
   };
 
   /** Show a card at `depth`, in place of whatever was there and deeper. */
-  const startLevel = (depth: number, concept: Concept, anchor: HTMLElement, byKeyboard: boolean) => {
+  const startLevel = (depth: number, concept: GameConcept, anchor: HTMLElement, byKeyboard: boolean) => {
     cancelAppear();
     cancelClose();
     truncate(depth);
@@ -109,7 +109,7 @@ export const createConceptChain = () => {
   };
 
   /** Show a card at `depth` once the pointer has rested on its owner for the tooltip delay. */
-  const appear = (depth: number, concept: Concept, anchor: HTMLElement) => {
+  const appear = (depth: number, concept: GameConcept, anchor: HTMLElement) => {
     cancelAppear();
     cancelClose();
     appearTimer = setTimeout(() => startLevel(depth, concept, anchor, false), CONCEPT_TIMING.appear);

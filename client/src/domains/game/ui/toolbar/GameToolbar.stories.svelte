@@ -1,7 +1,10 @@
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
 
-  import type { Resource, ResourceStock } from "../../resources";
+  import { type Resource, type ResourceStock, formatQuantity } from "../../resources";
+  import { createConceptChain } from "../concepts/chain.svelte";
+  import ConceptChain from "../concepts/ConceptChain.svelte";
+  import ResourceBreakdown from "../concepts/ResourceBreakdown.svelte";
   import GameToolbar from "./GameToolbar.svelte";
 
   const { Story } = defineMeta({
@@ -35,6 +38,28 @@
   };
 </script>
 
+<script lang="ts">
+  const concepts = createConceptChain();
+</script>
+
 <Story name="Mid game" args={{ turn: 42, resources: midGame }} />
+
+<!-- As the game wires it: rest on a figure for its card, its stock as of this turn under the summary. -->
+<!-- `asChild`: the story is the markup below, not the toolbar given it as children -->
+<Story name="With concept cards" asChild>
+  <div class="h-[480px] bg-ground">
+    <GameToolbar turn={42} resources={midGame} {concepts} />
+  </div>
+  <ConceptChain
+    chain={concepts}
+    meta={(concept) => concept.resource && `${formatQuantity(midGame[concept.resource].quantity)} stored`}
+  >
+    {#snippet extra(concept)}
+      {#if concept.resource}
+        <ResourceBreakdown stock={midGame[concept.resource]} />
+      {/if}
+    {/snippet}
+  </ConceptChain>
+</Story>
 
 <Story name="Extremes" args={{ turn: 1337, resources: extremes }} />

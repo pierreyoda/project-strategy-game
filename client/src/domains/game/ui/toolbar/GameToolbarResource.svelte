@@ -1,35 +1,48 @@
-<script lang="ts" module>
-  const quantityFormat = new Intl.NumberFormat("en");
-  const netFormat = new Intl.NumberFormat("en", { signDisplay: "exceptZero" });
-</script>
-
 <script lang="ts">
   import Icon from "../../../../shared/ui/Icon.svelte";
-  import { RESOURCE_NAMES, type Resource, type ResourceStock, netIncome } from "../../resources";
+  import {
+    RESOURCE_NAMES,
+    type Resource,
+    type ResourceStock,
+    formatChange,
+    formatQuantity,
+    netIncome,
+  } from "../../resources";
+  import { type ConceptChain, conceptOwner } from "../concepts/chain.svelte";
 
   type GameToolbarResourceProps = {
     resource: Resource;
     stock: ResourceStock;
+    /** The chain the figure opens its concept's card in. Without one, the figure only shows. */
+    concepts?: ConceptChain;
   };
-  const { resource, stock }: GameToolbarResourceProps = $props();
+  const { resource, stock, concepts }: GameToolbarResourceProps = $props();
 
   const net = $derived(netIncome(stock));
+  // lit while its card is the chain's first, the pointer being in the card rather than on the figure
+  const active = $derived(concepts?.levels[0]?.concept.id === resource);
 </script>
 
-<div>
+<!-- A button for keyboard focus to reach it: focusing a figure opens its card at once. -->
+<button type="button" class:active {@attach concepts && conceptOwner(concepts, resource)}>
   <Icon name={resource} size="lg" label={RESOURCE_NAMES[resource]} style="color: var(--color-resource-{resource})" />
-  {quantityFormat.format(stock.quantity)}
+  {formatQuantity(stock.quantity)}
   <span class="net" class:surplus={net > 0} class:deficit={net < 0}>
-    <!-- a minus sign rather than a hyphen, as wide as the plus sign -->
-    {netFormat.format(net).replace("-", "−")}<span class="sr-only"> per turn</span>
+    {formatChange(net)}<span class="sr-only"> per turn</span>
   </span>
-</div>
+</button>
 
 <style lang="postcss">
   @reference "../../../../index.css";
 
-  div {
-    @apply flex h-full items-center gap-1.5 px-2.5 font-display text-lg font-semibold tabular-nums;
+  button {
+    @apply flex h-full cursor-default items-center gap-1.5 px-2.5 font-display text-lg font-semibold tabular-nums;
+    @apply transition-colors duration-150 outline-none;
+    &:hover,
+    &:focus-visible,
+    &.active {
+      @apply bg-surface-raised shadow-[inset_0_-2px_0_var(--color-accent)];
+    }
   }
 
   .net {

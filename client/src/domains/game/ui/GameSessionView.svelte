@@ -5,7 +5,11 @@
   import type { OffsetCoords } from "../../map/hexMap";
   import { TERRAIN_NAMES, type TerrainKind, isExplored } from "../../map/terrain";
   import { type GameEvent, NO_NATION, TURN_PHASE_NAMES, TileVisibility } from "../session/protocol";
+  import { formatQuantity } from "../resources";
   import { type GameLogEntry, createActiveGame } from "../state/activeGame.svelte";
+  import { createConceptChain } from "./concepts/chain.svelte";
+  import ConceptChain from "./concepts/ConceptChain.svelte";
+  import ResourceBreakdown from "./concepts/ResourceBreakdown.svelte";
   import GameView from "./GameView.svelte";
   import GameToolbar from "./toolbar/GameToolbar.svelte";
   import UnitPanel from "./UnitPanel.svelte";
@@ -56,6 +60,8 @@
 
 <script lang="ts">
   const game = createActiveGame();
+  /** The concept cards of the whole view: one chain, whatever opened it. */
+  const concepts = createConceptChain();
 
   let hoveredTile = $state<OffsetCoords | null>(null);
 
@@ -90,7 +96,7 @@
 
 <div class="flex h-screen flex-col">
   {#if game.world}
-    <GameToolbar turn={game.turn} resources={game.stocks} />
+    <GameToolbar turn={game.turn} resources={game.stocks} {concepts} />
   {/if}
 
   <div class="relative min-h-0 flex-1">
@@ -169,6 +175,18 @@
     </div>
   </div>
 </div>
+
+<!-- The viewer's own figures, which the concepts cannot know: a resource's card shows its stock as of this turn. -->
+<ConceptChain
+  chain={concepts}
+  meta={(concept) => concept.resource && `${formatQuantity(game.stocks[concept.resource].quantity)} stored`}
+>
+  {#snippet extra(concept)}
+    {#if concept.resource}
+      <ResourceBreakdown stock={game.stocks[concept.resource]} />
+    {/if}
+  {/snippet}
+</ConceptChain>
 
 <style lang="postcss">
   @reference "../../../index.css";

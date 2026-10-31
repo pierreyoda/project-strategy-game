@@ -1,16 +1,16 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  import type { Concept } from "../../concepts";
+  import type { GameConcept } from "../../concepts";
   import type { ConceptChain } from "./chain.svelte";
   import ConceptCard from "./ConceptCard.svelte";
 
   type ConceptChainProps = {
     chain: ConceptChain;
     /** More of a card, under its summary: the figures of the moment, which the concepts themselves cannot know. */
-    extra?: Snippet<[Concept, number]>;
+    extra?: Snippet<[GameConcept, number]>;
     /** A figure beside a card's title, for the same reason. */
-    meta?: (concept: Concept) => string | undefined;
+    meta?: (concept: GameConcept) => string | undefined;
   };
   const { chain, extra, meta }: ConceptChainProps = $props();
 

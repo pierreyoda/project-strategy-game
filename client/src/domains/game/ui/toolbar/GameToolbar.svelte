@@ -1,19 +1,22 @@
 <script lang="ts">
   import { RESOURCES, type Resource, type ResourceStock } from "../../resources";
+  import type { ConceptChain } from "../concepts/chain.svelte";
   import GameToolbarResource from "./GameToolbarResource.svelte";
 
   type GameToolbarProps = {
     turn: number;
     resources: Record<Resource, ResourceStock>;
+    /** The chain the resources open their cards in. Without one, the figures only show. */
+    concepts?: ConceptChain;
   };
-  const { turn, resources }: GameToolbarProps = $props();
+  const { turn, resources, concepts }: GameToolbarProps = $props();
 </script>
 
 <header>
   <ul aria-label="Resources">
     {#each RESOURCES as resource (resource)}
       <li>
-        <GameToolbarResource {resource} stock={resources[resource]} />
+        <GameToolbarResource {resource} stock={resources[resource]} {concepts} />
       </li>
     {/each}
   </ul>

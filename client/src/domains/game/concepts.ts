@@ -1,4 +1,3 @@
-
 import type { IconName } from "../../shared/ui/icons";
 import { type Resource, RESOURCE_NAMES } from "./resources";
 
@@ -67,16 +66,13 @@ export type GameConcept = Concept & {
   resource?: Resource;
 };
 
+/** Every resource is a concept too: the toolbar's figures each open their own card. */
 export type GameConceptId =
+  | Resource
   | "population"
   | "housing"
   | "morale"
   | "stability"
-  | "food"
-  | "water"
-  | "electricity"
-  | "metals"
-  | "uranium"
   | "shortage"
   | "supply"
   | "upkeep"
@@ -128,6 +124,10 @@ export const GAME_CONCEPTS: Record<GameConceptId, GameConcept> = {
       "Whether a [[nation]] holds together. Fed by [[morale]], spent by [[shortage|shortages]] and war.",
     ),
   },
+  credits: resource(
+    "credits",
+    "What everything is paid with: buildings, units, and the [[upkeep]] of both, every turn.",
+  ),
   food: resource("food", "Feeds the [[population]]; a surplus grows it, a [[shortage]] starves it."),
   water: resource("water", "Drawn for the [[population]] and for farming [[food]]."),
   electricity: resource(
@@ -135,6 +135,10 @@ export const GAME_CONCEPTS: Record<GameConceptId, GameConcept> = {
     "Powers [[settlement|settlements]] and [[research]]. A [[shortage]] halts production.",
   ),
   metals: resource("metals", "Mined from [[deposit|deposits]]; what buildings and units are made of."),
+  oil: resource(
+    "oil",
+    "Pumped from [[deposit|deposits]]; fuels vehicles and the plants that burn it for [[electricity]].",
+  ),
   uranium: resource(
     "uranium",
     "Mined from [[deposit|deposits]]; the only fuel a [[fission-reactor]] takes. Run dry and every reactor goes dark the turn after.",
@@ -158,7 +162,9 @@ export const GAME_CONCEPTS: Record<GameConceptId, GameConcept> = {
     id: "upkeep",
     title: "Upkeep",
     kind: "Mechanic",
-    summary: conceptText("What a building or unit costs every turn just to exist, taken before anything else."),
+    summary: conceptText(
+      "What a building or unit costs every turn to maintain in optimal condition, taken before anything else.",
+    ),
   },
   research: {
     id: "research",
@@ -181,7 +187,7 @@ export const GAME_CONCEPTS: Record<GameConceptId, GameConcept> = {
     title: "Fission reactor",
     kind: "Building",
     summary: conceptText(
-      "Burns [[uranium]] into 9 electricity a turn. Costs 2 credits of [[upkeep]]; goes cold the turn its [[supply]] is cut.",
+      "Burns [[uranium]] into electricity each turn. Costs credits in [[upkeep]]; goes cold the turn its [[supply]] is cut.",
     ),
   },
   deposit: {

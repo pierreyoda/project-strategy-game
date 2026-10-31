@@ -23,3 +23,12 @@ export type ResourceStock = {
 
 /** How much the quantity changes each turn. */
 export const netIncome = ({ income, depletion }: ResourceStock): number => income - depletion;
+
+const quantityFormat = new Intl.NumberFormat("en");
+const changeFormat = new Intl.NumberFormat("en", { signDisplay: "exceptZero" });
+
+/** A quantity, its thousands grouped. */
+export const formatQuantity = (quantity: number): string => quantityFormat.format(quantity);
+
+/** A change, signed, with a minus sign rather than a hyphen: as wide as the plus sign, so figures line up. */
+export const formatChange = (change: number): string => changeFormat.format(change).replace("-", "−");
