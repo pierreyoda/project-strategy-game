@@ -9,7 +9,7 @@ import { type ConceptId, type GameConcept, lookupGameConcept } from "../../conce
  * before the card may be entered; the bar on its side shows it passing. `grace` is how long a card
  * survives the pointer leaving it, so that crossing a gap towards its child costs nothing.
  */
-export const CONCEPT_TIMING = { appear: 300, dwell: 600, grace: 250 } as const;
+export const CONCEPT_TIMING = { appear: 300, dwell: 800, grace: 250 } as const;
 
 /** How deep a chain goes. The last card's links are plain words. */
 export const MAX_CONCEPT_DEPTH = 4;

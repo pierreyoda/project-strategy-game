@@ -114,7 +114,7 @@ export const GAME_CONCEPTS: Record<GameConceptId, GameConcept> = {
     id: "morale",
     title: "Morale",
     kind: "People",
-    summary: conceptText("How the [[population]] feels about its lot. Low for long, it turns on [[stability]]."),
+    summary: conceptText("How the [[population]] feels about its lot."),
   },
   stability: {
     id: "stability",
