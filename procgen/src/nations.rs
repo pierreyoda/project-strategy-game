@@ -13,18 +13,16 @@ use project_x_core::{
 pub use self::{
     capitals::{Capital, SitingReport},
     habitability::Habitability,
-    landmasses::{LandmassId, Landmasses},
     settings::{NationsGeneratorSettings, PerTerrain},
-    surface::PlanetSurface,
     territory::Spheres,
 };
+/// The planet and its landmasses are the map's: re-exported for the callers that settle one.
+pub use crate::map::{LandmassId, Landmasses, PlanetSurface};
 
 mod capitals;
 mod habitability;
-mod landmasses;
 pub mod renderers;
 mod settings;
-mod surface;
 mod territory;
 
 /// A nation, as generated: a start, not an identity. Names, definitions and leaders are the

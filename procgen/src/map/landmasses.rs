@@ -1,4 +1,4 @@
-//! The continents and islands of a planet, and how many nations each one gets.
+//! The continents and islands of a planet.
 
 use project_x_core::game::state::TileIndex;
 
@@ -83,52 +83,10 @@ impl Landmasses {
     }
 }
 
-/// Share `nations` between landmasses in proportion to their weights, by largest remainder.
-///
-/// A landmass under `min_weight` gets nothing. Should none qualify, the heaviest one takes them
-/// all: there is always somewhere to start, however poor.
-pub fn apportion(weights: &[f64], nations: u16, min_weight: f64) -> Vec<u16> {
-    let mut quotas = vec![0; weights.len()];
-    if weights.is_empty() || nations == 0 {
-        return quotas;
-    }
-    let eligible: Vec<usize> = (0..weights.len())
-        .filter(|&i| weights[i] >= min_weight && weights[i] > 0.0)
-        .collect();
-    if eligible.is_empty() {
-        let heaviest = (0..weights.len())
-            .max_by(|&a, &b| weights[a].total_cmp(&weights[b]).then(b.cmp(&a)))
-            .expect("non-empty weights");
-        quotas[heaviest] = nations;
-        return quotas;
-    }
-
-    let total: f64 = eligible.iter().map(|&i| weights[i]).sum();
-    let mut given = 0;
-    let mut remainders = Vec::with_capacity(eligible.len());
-    for &i in &eligible {
-        let exact = f64::from(nations) * weights[i] / total;
-        let floor = exact.floor();
-        quotas[i] = floor as u16;
-        given += quotas[i];
-        remainders.push((exact - floor, i));
-    }
-    // the largest remainders first, the first landmass on ties
-    remainders.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
-    for (_, i) in remainders {
-        if given == nations {
-            break;
-        }
-        quotas[i] += 1;
-        given += 1;
-    }
-    quotas
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Landmasses, apportion};
-    use crate::nations::surface::tests::surface_from_art;
+    use super::Landmasses;
+    use crate::map::surface::tests::surface_from_art;
 
     #[test]
     fn test_landmasses_are_found_across_the_east_west_edge() {
@@ -158,25 +116,5 @@ mod tests {
         assert_eq!(landmasses.len(), 3);
         assert_eq!(landmasses.of(11), landmasses.of(14));
         assert_ne!(landmasses.of(1), landmasses.of(4));
-    }
-
-    #[test]
-    fn test_apportionment_follows_the_weights_by_largest_remainder() {
-        // 7 nations over weights 50/30/20: exact shares 3.5/2.1/1.4
-        assert_eq!(apportion(&[50.0, 30.0, 20.0], 7, 0.0), [4, 2, 1]);
-        // a tie on the remainders goes to the first landmass
-        assert_eq!(apportion(&[10.0, 10.0, 10.0], 4, 0.0), [2, 1, 1]);
-        assert_eq!(
-            apportion(&[50.0, 30.0, 20.0], 7, 0.0).iter().sum::<u16>(),
-            7
-        );
-    }
-
-    #[test]
-    fn test_apportionment_skips_landmasses_too_small_to_live_on() {
-        assert_eq!(apportion(&[50.0, 5.0, 30.0], 4, 12.0), [3, 0, 1]);
-        // nowhere good enough: the best of a bad lot takes everyone
-        assert_eq!(apportion(&[5.0, 8.0, 3.0], 3, 12.0), [0, 3, 0]);
-        assert_eq!(apportion(&[], 3, 12.0), []);
     }
 }

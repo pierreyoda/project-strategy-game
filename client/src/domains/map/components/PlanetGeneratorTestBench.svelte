@@ -26,8 +26,8 @@
 
   const settings = $state<PlanetSettings>({
     seed: 0,
-    columns: 80,
-    rows: 52,
+    columns: 140,
+    rows: 220,
     oceanCoverage: DEFAULT_OCEAN_COVERAGE,
     nations: DEFAULT_NATIONS,
   });

@@ -54,11 +54,11 @@ impl TextRenderer {
 #[cfg(test)]
 mod tests {
     use crate::{
-        map::{MapGenerator, MapGeneratorSettings, renderers::text::TextRenderer},
-        nations::{
-            NationsGenerator, NationsGeneratorSettings, PlanetSurface,
+        map::{
+            MapGenerator, MapGeneratorSettings, renderers::text::TextRenderer,
             surface::tests::surface_from_art,
         },
+        nations::{NationsGenerator, NationsGeneratorSettings, PlanetSurface},
     };
 
     /// Displays the nations of a generated planet. Run with:

@@ -1,5 +1,5 @@
-//! The planet as the nations generator reads it: elevations and terrain, indexed like the
-//! client's buffers.
+//! The planet as the passes after the noise graph read it - the nations generator, the survey:
+//! elevations and terrain, indexed like the client's buffers.
 
 use std::collections::VecDeque;
 
@@ -8,7 +8,7 @@ use project_x_core::{
     hex_map::{HexMap, coordinates::CubeCoords, shape::RectangularHexMapShape},
 };
 
-use crate::map::{MapGeneratorSettings, TerrainClassifier, TerrainKind};
+use super::{MapGeneratorSettings, TerrainClassifier, TerrainKind};
 
 /// A generated planet, classified, with its tiles in the row-major order of
 /// `RectangularHexMapShape::coords`.

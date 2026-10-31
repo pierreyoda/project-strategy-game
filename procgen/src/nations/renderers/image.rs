@@ -25,11 +25,10 @@ mod tests {
     use image::Rgba;
 
     use crate::{
-        map::renderers::image::ImageRenderer,
+        map::{renderers::image::ImageRenderer, surface::tests::surface_from_art},
         nations::{
             NationsGenerator, NationsGeneratorSettings,
             renderers::{WATER, nation_color},
-            surface::tests::surface_from_art,
         },
     };
 

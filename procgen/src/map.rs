@@ -2,20 +2,26 @@ use project_x_core::hex_map::{HexMap, shape::RectangularHexMapShape};
 
 pub use self::{
     graph::{PlanetGraph, SubGroupId},
+    landmasses::{LandmassId, Landmasses},
     node::NoiseNode,
     projection::CylinderProjection,
     sampling::ElevationField,
     settings::{MAX_SEED, MapGeneratorSeedScalar, MapGeneratorSettings},
+    surface::PlanetSurface,
+    survey::{Criterion, PlanetSurvey, Target, Unit},
     terrain::{TerrainClassifier, TerrainKind},
 };
 
 mod graph;
 mod groups;
+mod landmasses;
 mod node;
 mod projection;
 pub mod renderers;
 mod sampling;
 mod settings;
+pub(crate) mod surface;
+mod survey;
 mod terrain;
 
 #[derive(Debug)]

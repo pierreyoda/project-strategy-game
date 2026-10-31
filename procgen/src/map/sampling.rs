@@ -70,20 +70,30 @@ impl ElevationField {
     pub fn into_hex_map(self, settings: &MapGeneratorSettings) -> HexMap {
         let (scale, bias) = settings.get_elevation_scale_bias();
         let water_line = self.water_line(settings.get_ocean_coverage());
+        let flattening = settings.get_lowland_flattening();
 
         let mut tiles = HexMapStorage::with_capacity(self.values.len());
         for (coords, value) in self.shape.coords().zip(self.values) {
-            let elevation = to_meters(value, water_line, scale, bias);
+            let elevation = to_meters(value, water_line, flattening, scale, bias);
             tiles.insert(coords, HexMapTile::from_properties(elevation));
         }
         HexMap::from_tiles(tiles)
     }
 }
 
-/// Elevation in meters of a sampled value, the water line becoming sea level.
-fn to_meters(value: f64, water_line: f64, scale: f64, bias: f64) -> i16 {
+/// Elevation in meters of a sampled value, the water line becoming sea level and the lowlands
+/// above it flattened: a height `h` becomes `h² / (h + flattening)`, which sinks the plateaus
+/// towards the plains and costs a peak little more than the flattening itself. The seas keep
+/// their depths.
+fn to_meters(value: f64, water_line: f64, flattening: f64, scale: f64, bias: f64) -> i16 {
+    let above = value - water_line;
+    let relieved = if above > 0.0 {
+        above * above / (above + flattening)
+    } else {
+        above
+    };
     // same computation as `noise::ScaleBias`; float to integer casts saturate
-    (value - water_line).mul_add(scale, bias).round() as i16
+    relieved.mul_add(scale, bias).round() as i16
 }
 
 #[cfg(test)]
@@ -126,25 +136,33 @@ mod tests {
     fn test_elevations_are_converted_to_meters_from_the_water_line() {
         let (scale, bias) = MapGeneratorSettings::default().get_elevation_scale_bias();
         let cases = [
-            (-1.0, 0.0, -8192),
-            (0.0, 0.0, 0),
-            (0.5, 0.0, 4096),
-            (1.0, 0.0, 8192),
-            (0.00006, 0.0, 0),
-            (0.00007, 0.0, 1),
-            (5.0, 0.0, i16::MAX),
-            (-5.0, 0.0, i16::MIN),
+            (-1.0, 0.0, 0.0, -8192),
+            (0.0, 0.0, 0.0, 0),
+            (0.5, 0.0, 0.0, 4096),
+            (1.0, 0.0, 0.0, 8192),
+            (0.00006, 0.0, 0.0, 0),
+            (0.00007, 0.0, 0.0, 1),
+            (5.0, 0.0, 0.0, i16::MAX),
+            (-5.0, 0.0, 0.0, i16::MIN),
             // the water line is sea level, whatever its own elevation
-            (0.125, 0.125, 0),
-            (0.25, 0.125, 1024),
-            (0.0, 0.125, -1024),
-            (-1.0, 0.125, -9216),
+            (0.125, 0.125, 0.0, 0),
+            (0.25, 0.125, 0.0, 1024),
+            (0.0, 0.125, 0.0, -1024),
+            (-1.0, 0.125, 0.0, -9216),
+            // the flattening halves a lowland as high as itself, costs a peak about itself,
+            // and leaves the seas alone
+            (0.25, 0.125, 0.125, 512),
+            (0.5, 0.125, 0.125, 2304),
+            (1.125, 0.125, 0.125, 7282),
+            (0.125, 0.125, 0.125, 0),
+            (0.0, 0.125, 0.125, -1024),
+            (-1.0, 0.125, 0.125, -9216),
         ];
-        for (value, water_line, expected) in cases {
+        for (value, water_line, flattening, expected) in cases {
             assert_eq!(
-                to_meters(value, water_line, scale, bias),
+                to_meters(value, water_line, flattening, scale, bias),
                 expected,
-                "value {value}, water line {water_line}"
+                "value {value}, water line {water_line}, flattening {flattening}"
             );
         }
     }

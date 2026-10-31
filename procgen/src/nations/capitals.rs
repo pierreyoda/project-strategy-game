@@ -9,12 +9,8 @@ use project_x_core::{
 };
 use rand::RngExt;
 
-use super::{
-    habitability::Habitability,
-    landmasses::{LandmassId, Landmasses, apportion},
-    settings::NationsGeneratorSettings,
-    surface::PlanetSurface,
-};
+use super::{habitability::Habitability, settings::NationsGeneratorSettings};
+use crate::map::{LandmassId, Landmasses, PlanetSurface};
 
 /// A capital, placed.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -93,6 +89,48 @@ pub fn place_capitals(
         unplaced,
     };
     (siting.capitals, report)
+}
+
+/// Share `nations` between landmasses in proportion to their weights, by largest remainder.
+///
+/// A landmass under `min_weight` gets nothing. Should none qualify, the heaviest one takes them
+/// all: there is always somewhere to start, however poor.
+pub fn apportion(weights: &[f64], nations: u16, min_weight: f64) -> Vec<u16> {
+    let mut quotas = vec![0; weights.len()];
+    if weights.is_empty() || nations == 0 {
+        return quotas;
+    }
+    let eligible: Vec<usize> = (0..weights.len())
+        .filter(|&i| weights[i] >= min_weight && weights[i] > 0.0)
+        .collect();
+    if eligible.is_empty() {
+        let heaviest = (0..weights.len())
+            .max_by(|&a, &b| weights[a].total_cmp(&weights[b]).then(b.cmp(&a)))
+            .expect("non-empty weights");
+        quotas[heaviest] = nations;
+        return quotas;
+    }
+
+    let total: f64 = eligible.iter().map(|&i| weights[i]).sum();
+    let mut given = 0;
+    let mut remainders = Vec::with_capacity(eligible.len());
+    for &i in &eligible {
+        let exact = f64::from(nations) * weights[i] / total;
+        let floor = exact.floor();
+        quotas[i] = floor as u16;
+        given += quotas[i];
+        remainders.push((exact - floor, i));
+    }
+    // the largest remainders first, the first landmass on ties
+    remainders.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+    for (_, i) in remainders {
+        if given == nations {
+            break;
+        }
+        quotas[i] += 1;
+        given += 1;
+    }
+    quotas
 }
 
 struct Siting<'a> {
@@ -218,14 +256,14 @@ impl Siting<'_> {
 mod tests {
     use project_x_core::simulation::ids::EntityIndex;
 
-    use super::place_capitals;
-    use crate::nations::{
-        habitability::Habitability, landmasses::Landmasses, settings::NationsGeneratorSettings,
-        surface::tests::surface_from_art,
+    use super::{apportion, place_capitals};
+    use crate::{
+        map::{Landmasses, surface::tests::surface_from_art},
+        nations::{habitability::Habitability, settings::NationsGeneratorSettings},
     };
 
     /// Hex distance between two tiles, by brute force over the surface's own BFS.
-    fn distance(surface: &crate::nations::surface::PlanetSurface, a: u32, b: u32) -> u32 {
+    fn distance(surface: &crate::map::PlanetSurface, a: u32, b: u32) -> u32 {
         surface
             .within(a, u32::MAX)
             .into_iter()
@@ -339,5 +377,25 @@ mod tests {
             (1..=6).any(|seed| place(seed) != place(7)),
             "the jitter draws from the seed"
         );
+    }
+
+    #[test]
+    fn test_apportionment_follows_the_weights_by_largest_remainder() {
+        // 7 nations over weights 50/30/20: exact shares 3.5/2.1/1.4
+        assert_eq!(apportion(&[50.0, 30.0, 20.0], 7, 0.0), [4, 2, 1]);
+        // a tie on the remainders goes to the first landmass
+        assert_eq!(apportion(&[10.0, 10.0, 10.0], 4, 0.0), [2, 1, 1]);
+        assert_eq!(
+            apportion(&[50.0, 30.0, 20.0], 7, 0.0).iter().sum::<u16>(),
+            7
+        );
+    }
+
+    #[test]
+    fn test_apportionment_skips_landmasses_too_small_to_live_on() {
+        assert_eq!(apportion(&[50.0, 5.0, 30.0], 4, 12.0), [3, 0, 1]);
+        // nowhere good enough: the best of a bad lot takes everyone
+        assert_eq!(apportion(&[5.0, 8.0, 3.0], 3, 12.0), [0, 3, 0]);
+        assert_eq!(apportion(&[], 3, 12.0), []);
     }
 }

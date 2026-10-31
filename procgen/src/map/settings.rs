@@ -59,6 +59,14 @@ pub struct MapGeneratorSettings {
     /// noise graph: the water line is their matching quantile, which pins the land budget
     /// of every seed instead of letting it swing with the noise.
     ocean_coverage: f64,
+    /// How much the lowlands flatten, in planetary elevation units: 0.0 keeps the relief of the
+    /// original example. Applied to the sampled elevations above the water line like the water
+    /// line itself, never below it: the seas keep their depths and their share of the map.
+    ///
+    /// A height `h` above the water line becomes `h² / (h + flattening)`: the plateaus sink
+    /// towards the plains while a peak keeps its height but for the flattening itself, so the
+    /// mountain ranges survive what the hills do not.
+    lowland_flattening: f64,
     /// Specifies the level on the planet in which continental shelves appear.
     /// This value must be between -1.0 (minimum planet elevation) and +1.0
     /// (maximum planet elevation), and must be less than `SEA_LEVEL`.
@@ -112,10 +120,15 @@ impl Default for MapGeneratorSettings {
             // Earth is about 71% sea; the noise graph on its own leaves only 33% to 60%
             // of the map underwater, depending on the seed
             ocean_coverage: 0.7,
+            // 5/64: with the mountains below, the land outside the polar rows comes out about
+            // 69% plains, 25% hills and 6% mountains (16 seeds, 80 × 52), against 60 / 30 / 10
+            // unflattened - the continents' plateaus were reading as hills
+            lowland_flattening: 0.078125,
             shelf_level: -0.375,
-            // 0.6 rather than the original example's 0.5: raising the water line sinks the
-            // land by about 800 m, which would otherwise leave the continents nearly flat
-            mountains_amount: 0.6,
+            // 0.65 rather than the original example's 0.5: raising the water line sinks the
+            // land by about 800 m and the flattening above takes the plateaus down with the
+            // ranges, so the ranges need a little more to start from
+            mountains_amount: 0.65,
             badlands_amount: 0.3125,
             terrain_offset: 1.0,
             mountain_glaciation: 1.375,
@@ -154,6 +167,16 @@ impl MapGeneratorSettings {
         }
     }
 
+    /// How much the lowlands flatten, in planetary elevation units: 0.0 keeps the example's
+    /// relief.
+    pub fn with_lowland_flattening(self, lowland_flattening: f64) -> Self {
+        assert!(lowland_flattening >= 0.0, "lowland_flattening >= 0.0");
+        Self {
+            lowland_flattening,
+            ..self
+        }
+    }
+
     settings_scalar_accessors! {
         get_seed: seed, MapGeneratorSeedScalar,
         get_columns: columns, CubeCoordsScalar,
@@ -169,6 +192,7 @@ impl MapGeneratorSettings {
         get_badlands_twist: badlands_twist, f64,
         get_sea_level: sea_level, f64,
         get_ocean_coverage: ocean_coverage, f64,
+        get_lowland_flattening: lowland_flattening, f64,
         get_shelf_level: shelf_level, f64,
         get_mountains_amount: mountains_amount, f64,
         get_badlands_amount: badlands_amount, f64,
@@ -212,7 +236,7 @@ mod tests {
     };
 
     use super::{MapGeneratorSeedScalar, MapGeneratorSettings};
-    use crate::map::MapGenerator;
+    use crate::map::{MapGenerator, PlanetSurface, PlanetSurvey, TerrainClassifier, TerrainKind};
 
     #[test]
     fn test_default_settings_have_a_valid_map_size() {
@@ -238,6 +262,18 @@ mod tests {
     #[should_panic(expected = "0.0 <= ocean_coverage <= 1.0")]
     fn test_settings_reject_an_ocean_coverage_out_of_bounds() {
         MapGeneratorSettings::default().with_ocean_coverage(1.5);
+    }
+
+    #[test]
+    fn test_settings_take_a_lowland_flattening() {
+        let settings = MapGeneratorSettings::default().with_lowland_flattening(0.125);
+        assert_eq!(settings.get_lowland_flattening(), 0.125);
+    }
+
+    #[test]
+    #[should_panic(expected = "lowland_flattening >= 0.0")]
+    fn test_settings_reject_a_negative_flattening() {
+        MapGeneratorSettings::default().with_lowland_flattening(-0.1);
     }
 
     /// Share of the map covered in land, and share covered by its biggest landmass, on a map
@@ -303,6 +339,77 @@ mod tests {
         )
     }
 
+    /// Plains, hills and mountains as shares of the land outside the polar rows, on a map
+    /// generated with the default settings.
+    fn land_mix(seed: MapGeneratorSeedScalar) -> (f64, f64, f64) {
+        let (columns, rows) = (40, 26);
+        let settings = MapGeneratorSettings::new(seed, columns, rows);
+        let map = MapGenerator::from_settings(MapGeneratorSettings::new(seed, columns, rows))
+            .generate(|_| {});
+        let classifier = TerrainClassifier::new(&settings);
+        let (mut plains, mut hills, mut mountains) = (0, 0, 0);
+        for coords in RectangularHexMapShape::new(columns, rows).coords() {
+            let elevation = map.tile(&coords).expect("missing tile").elevation();
+            match classifier.classify(coords.into(), elevation) {
+                TerrainKind::Flat => plains += 1,
+                TerrainKind::Hills => hills += 1,
+                TerrainKind::Mountains => mountains += 1,
+                _ => {}
+            }
+        }
+        let land = f64::from(plains + hills + mountains);
+        (
+            f64::from(plains) / land,
+            f64::from(hills) / land,
+            f64::from(mountains) / land,
+        )
+    }
+
+    #[test]
+    fn test_default_settings_survey_as_a_few_continents_in_one_ocean() {
+        for seed in [0, 1, 2, 3] {
+            let (columns, rows) = (40, 26);
+            let settings = MapGeneratorSettings::new(seed, columns, rows);
+            let map = MapGenerator::from_settings(MapGeneratorSettings::new(seed, columns, rows))
+                .generate(|_| {});
+            let survey = PlanetSurvey::of(&PlanetSurface::classify(&map, &settings));
+            // the loose ends of the survey's own ranges: what a retuning must not break - a map
+            // this small samples the planet coarsely enough to merge two continents into one
+            assert!(
+                (1..=6).contains(&survey.continents),
+                "seed {seed}: {} continents",
+                survey.continents
+            );
+            assert!(
+                survey.top_three_share >= 0.7,
+                "seed {seed}: the top three continents hold {:.0}% of the land",
+                survey.top_three_share * 100.0
+            );
+            assert!(
+                survey.world_ocean_share >= 0.9,
+                "seed {seed}: the world ocean holds {:.0}% of the water",
+                survey.world_ocean_share * 100.0
+            );
+        }
+    }
+
+    #[test]
+    fn test_default_settings_leave_most_of_the_land_flat() {
+        for seed in [0, 1, 2, 3] {
+            let (plains, hills, mountains) = land_mix(seed);
+            let shares = format!(
+                "seed {seed}: plains {:.0}%, hills {:.0}%, mountains {:.0}%",
+                plains * 100.0,
+                hills * 100.0,
+                mountains * 100.0
+            );
+            // a continent is mostly plain, with hills in belts and a few real ranges
+            assert!(plains >= 0.6, "{shares}");
+            assert!(hills <= 0.32, "{shares}");
+            assert!(mountains > 0.0 && mountains <= 0.15, "{shares}");
+        }
+    }
+
     #[test]
     fn test_default_settings_generate_earth_like_maps() {
         let settings = MapGeneratorSettings::default();
@@ -324,3 +431,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "/private/tmp/claude-501/-Users-pierreyvesd--claude-spares-spare-A0Y8un/fce84af9-e918-4b76-a6e5-330de11c2d03/scratchpad/tuning.rs"]
+mod tuning;

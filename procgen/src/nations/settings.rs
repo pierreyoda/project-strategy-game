@@ -72,7 +72,9 @@ impl Default for NationsGeneratorSettings {
             spacing_floor: 3,
             spacing_relaxation: 0.75,
             site_jitter: 3,
-            border_radius: 3,
+            // the capital and two rings, about 19 hexes before the sphere and the sea clip it:
+            // a homeland to grow out of, not an empire
+            border_radius: 2,
             terrain_scores: PerTerrain {
                 flat: 1.0,
                 hills: 0.6,

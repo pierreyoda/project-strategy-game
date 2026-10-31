@@ -2,7 +2,8 @@
 
 use project_x_core::game::state::TileIndex;
 
-use super::{landmasses::Landmasses, settings::NationsGeneratorSettings, surface::PlanetSurface};
+use super::settings::NationsGeneratorSettings;
+use crate::map::{Landmasses, PlanetSurface};
 
 /// A score per tile, roughly from 0.0 (nobody lives here, every water tile included) to 1.0.
 ///
@@ -98,9 +99,9 @@ fn own_score(
 #[cfg(test)]
 mod tests {
     use super::Habitability;
-    use crate::nations::{
-        landmasses::Landmasses, settings::NationsGeneratorSettings,
-        surface::tests::surface_from_art,
+    use crate::{
+        map::{Landmasses, surface::tests::surface_from_art},
+        nations::settings::NationsGeneratorSettings,
     };
 
     #[test]

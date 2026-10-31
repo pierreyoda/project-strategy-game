@@ -4,7 +4,8 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 
 use project_x_core::{game::state::TileIndex, simulation::ids::NationId};
 
-use super::{capitals::Capital, settings::NationsGeneratorSettings, surface::PlanetSurface};
+use super::{capitals::Capital, settings::NationsGeneratorSettings};
+use crate::map::PlanetSurface;
 
 /// The spheres of influence: every land tile a capital can reach over land belongs to the
 /// capital that reaches it the cheapest.
@@ -104,16 +105,12 @@ mod tests {
     use project_x_core::simulation::ids::{EntityIndex, NationId};
 
     use super::{Spheres, starting_territory};
-    use crate::nations::{
-        capitals::Capital, landmasses::Landmasses, settings::NationsGeneratorSettings,
-        surface::tests::surface_from_art,
+    use crate::{
+        map::{Landmasses, surface::tests::surface_from_art},
+        nations::{capitals::Capital, settings::NationsGeneratorSettings},
     };
 
-    fn capital(
-        nation: usize,
-        tile: u32,
-        surface: &crate::nations::surface::PlanetSurface,
-    ) -> Capital {
+    fn capital(nation: usize, tile: u32, surface: &crate::map::PlanetSurface) -> Capital {
         Capital {
             nation: NationId::from_index(nation),
             tile,
