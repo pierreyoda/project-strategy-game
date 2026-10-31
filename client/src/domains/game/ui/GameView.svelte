@@ -9,6 +9,7 @@
   import type { MapEntity } from "../../map/entities";
   import { createHexLayout, hexCenter, mapHeight, wrapBounds } from "../../map/hexLayout";
   import type { HexMapData, OffsetCoords } from "../../map/hexMap";
+  import type { MapLook } from "../../map/mapLook";
   import type { PlanetNations } from "../../map/procgen/planetGenerator";
   import type { PixiContext } from "../../../shared/pixi";
   import type { ReachableData } from "../session/protocol";
@@ -39,6 +40,8 @@
     entities?: readonly MapEntity[];
     /** Draws the flat colors of the terrains only, without the textures of their tiles. */
     flatColors?: boolean;
+    /** The knobs of the textured tiles' variety, for the test bench to turn; the game keeps the default. */
+    look?: MapLook;
     /** Called when the pointer moves to another tile, with `null` once it leaves the map. */
     onTileHover?: (tile: OffsetCoords | null) => void;
     /** Called when a tile is clicked. */
@@ -64,6 +67,7 @@
     dirtyTiles = null,
     entities = [],
     flatColors = false,
+    look,
     onTileHover,
     onTileClick,
     selectedTile = null,
@@ -185,7 +189,7 @@
 <div bind:this={host} class="size-full overflow-hidden">
   <canvas bind:this={canvas} class="block"></canvas>
   {#if pixi}
-    <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {onTileHover} {onTileClick} />
+    <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {look} {onTileHover} {onTileClick} />
     <MapEntityRenderer {pixi} {map} {layout} {entities} />
     {#if world}
       <WorldOverlayRenderer {pixi} {world} {layout} {dirtyTiles} {selectedTile} {reach} {previewPath} {viewer} />
