@@ -25,11 +25,26 @@ export type NewGameSettings = {
   nations?: number;
   /** Share of the map covered by the seas, from 0 to 1. Defaults to 0.575 in the bridge. */
   oceanCoverage?: number;
+  /**
+   * The scripts the game runs: at most one scenario - the bridge's scaffold stands in without one -
+   * and one AI script. For now the AI script plays every nation but the local player's - the stub
+   * does without one - and nothing yet hands part of the player's nation to a script.
+   */
+  scripts?: readonly ScriptSource[];
+};
+
+/** A script sent with a new game, like `ScriptSourceWire` in the `wasm_bridge` crate. */
+export type ScriptSource = {
+  /** What the script is called in errors and in the turn log. */
+  name: string;
+  /** Like `ScriptKind` in the `scripting` crate: decides the hooks the script must declare. */
+  kind: "ai" | "scenario";
+  source: string;
 };
 
 /** An order, like `GameCommand` in the `core` crate. */
 export type GameCommand =
-  | { type: "moveUnit"; unit: number; path: OffsetCoordsWire[] }
+  | { type: "moveUnit"; unit: number; path: readonly OffsetCoordsWire[] }
   | { type: "foundSettlement"; founder: number; name: string }
   | { type: "constructBuilding"; settlement: number; template: string };
 

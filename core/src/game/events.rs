@@ -47,6 +47,18 @@ pub enum GameEvent {
     /// For a player this is feedback; for an AI it is a bug report, which is exactly why the AI
     /// goes through the same validation rather than writing to the world directly.
     CommandRejected { nation: NationId, reason: String },
+    /// What a controller had to say while planning for `nation`: a script's `print`, the error it
+    /// stopped on.
+    ///
+    /// Not narrative but the controller's own diagnostics, which the player may or may not be meant
+    /// to read - their own automation's, yes; a rival AI's thinking, no. Hence a variant of its own
+    /// rather than a `Log` line the client could not tell apart, and the controller named, since a
+    /// nation can come to be played by more than one.
+    ControllerLog {
+        nation: NationId,
+        controller: String,
+        message: String,
+    },
 }
 
 /// Events buffered until the client drains them.

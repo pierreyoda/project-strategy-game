@@ -9,13 +9,11 @@
 //! to shout as it goes, while this one returns after every slice of work and lets its caller decide
 //! what to do next.
 
-use std::collections::BTreeMap;
-
 use wasm_bindgen::prelude::{JsError, wasm_bindgen};
 
 use project_x_core::{
     game::{
-        ai::stub_ai_for,
+        ai::{ControllerSlot, stub_ai_for},
         genesis::{Homeland, WorldGenesis},
         journal::TurnChanges,
         projection::{Projection, WorldDelta, WorldSnapshot},
@@ -27,11 +25,9 @@ use project_x_core::{
     simulation::{
         buildings::BuildingTemplate,
         fog::TileVisibility,
-        ids::{EntityIndex, NationId, SimulationID, UnitId},
+        ids::{EntityIndex, NationId, UnitId},
         military::{Unit, UnitTemplate},
         movement::{self, Reachable},
-        nations::Nation,
-        resources::{Resource, ResourceDataStore},
         settlements::Settlement,
     },
 };
@@ -39,21 +35,9 @@ use project_x_procgen::{
     map::{MAX_SEED, MapGenerator, MapGeneratorSettings},
     nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings, PlanetSurface},
 };
+use project_x_scripting::{NationSetup, ScriptEngine, ScriptSource};
 
 use crate::wire::{CommandWire, EventWire, MetaWire, NewGameSettings, RejectionWire};
-
-/// The scaffold's starting roster, named after the client's counters: type, movement, sight.
-/// TODO: templates come from scripts.
-const UNIT_TEMPLATES: [(&str, u8, u8); 3] = [
-    ("infantry_division", 2, 2),
-    ("motorized_division", 4, 3),
-    ("light_tank_division", 3, 2),
-];
-/// The scaffold's buildings, named after the client's sprites. TODO: templates come from scripts.
-const BUILDING_TEMPLATES: [(&str, Resource, u16); 2] = [
-    ("mine", Resource::Metals, 2),
-    ("solar_plant", Resource::Electricity, 3),
-];
 
 /// Terrain of a tile the viewer has never explored.
 ///
@@ -98,6 +82,17 @@ impl GameSession {
         if !(0.0..=1.0).contains(&settings.ocean_coverage) {
             return Err(JsError::new("the ocean coverage must be from 0 to 1"));
         }
+        // scripts that do not load are a bug in the scripts, and no reason to generate a planet
+        let sources: Vec<ScriptSource> = settings
+            .scripts
+            .iter()
+            .cloned()
+            .map(ScriptSource::from)
+            .collect();
+        let scripts =
+            ScriptEngine::load(&sources).map_err(|error| JsError::new(&error.to_string()))?;
+        let content = StartingContent::from_scripts(&scripts, settings.nations)
+            .map_err(|error| JsError::new(&error))?;
 
         // the generator takes its settings, which the classification needs in turn
         let generator_settings = || {
@@ -119,13 +114,17 @@ impl GameSession {
         let mut world = World::new(shape, map);
         // the simulation reads the ground for its rules; the client gets the same kinds from `terrain`
         world.paint_terrain(surface.terrain());
-        set_up_scaffold_world(&mut world, settings.nations, &nations);
+        set_up_world(&mut world, &nations, content);
 
         let local_player = NationId::from_index(0);
         let mut inner = CoreSession::new(world, settings.seed as u64, local_player);
         for index in 1..settings.nations as usize {
             let nation = NationId::from_index(index);
-            inner.set_controller(nation, stub_ai_for(inner.seed(), nation));
+            let controller = match scripts.controller_for(nation, inner.seed()) {
+                Some(scripted) => ControllerSlot::Ai(Box::new(scripted)),
+                None => stub_ai_for(inner.seed(), nation),
+            };
+            inner.set_controller(nation, controller);
         }
 
         Ok(Self { inner, terrain })
@@ -689,28 +688,39 @@ impl WorldProjectionView {
     }
 }
 
-/// Nations, a capital each, and one division of each kind around it.
-///
-/// TODO: this is the scaffold standing in for a scenario. Nations, their rosters and their starting
-/// position all belong to scripts, and this function is what they will replace.
-fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedNations) {
-    for (name, movement, sight) in UNIT_TEMPLATES {
-        world.register_unit_template(UnitTemplate::new(
-            SimulationID::new_abstract_id(name),
-            name.to_string(),
-            movement,
-            sight,
-        ));
+/// What a new game starts with, as its scenario script says it.
+struct StartingContent {
+    unit_templates: Vec<UnitTemplate>,
+    building_templates: Vec<BuildingTemplate>,
+    /// One per nation, in `NationId` order.
+    nations: Vec<NationSetup>,
+}
+
+impl StartingContent {
+    /// Everything the game's scenario says, every slot asked for up front: a slot the script gets
+    /// wrong is refused before a planet is generated for nothing.
+    fn from_scripts(scripts: &ScriptEngine, nations: u16) -> Result<Self, String> {
+        let scenario = scripts
+            .scenario()
+            .ok_or("a game needs a scenario script, to say what its nations start with")?;
+        Ok(Self {
+            unit_templates: scenario.unit_templates().collect(),
+            building_templates: scenario.building_templates().collect(),
+            nations: (0..nations as usize)
+                .map(|slot| scenario.nation(slot).map_err(|error| error.to_string()))
+                .collect::<Result<_, _>>()?,
+        })
     }
-    for (name, produces, per_turn) in BUILDING_TEMPLATES {
-        // priced so that a starting stockpile affords a couple, and the economy phase has something to add
-        world.register_building_template(BuildingTemplate::new(
-            SimulationID::new_abstract_id(name),
-            name.to_string(),
-            BTreeMap::from([(Resource::Credits, 60), (Resource::Metals, 15)]),
-            BTreeMap::from([(Resource::Credits, 2)]),
-            BTreeMap::from([(produces, per_turn)]),
-        ));
+}
+
+/// Write the starting content into the world, where the nations generator placed each nation: its
+/// capital, its turn-1 territory, and its starting units around the capital.
+fn set_up_world(world: &mut World, generated: &GeneratedNations, content: StartingContent) {
+    for template in content.unit_templates {
+        world.register_unit_template(template);
+    }
+    for template in content.building_templates {
+        world.register_building_template(template);
     }
 
     // where each nation was meant to grow, kept for the political map and the AI
@@ -726,25 +736,8 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedN
     // the setup writes through the mutation gate like everything else, into changes nobody will
     // read: nothing has a version to catch up from yet
     let mut changes = TurnChanges::new();
-    for index in 0..nations as usize {
-        let mut nation = Nation::new(
-            SimulationID::new_abstract_id(&format!("nation_{index}")),
-            format!("Nation {}", index + 1),
-        );
-        // something for the economy phase to tick and the toolbar to show, until a scenario says
-        // what a nation actually starts with
-        let stockpile = nation.resources_mut();
-        for (resource, quantity, income) in [
-            (Resource::Credits, 250, 12),
-            (Resource::Water, 120, 4),
-            (Resource::Food, 180, 6),
-            (Resource::Electricity, 60, 3),
-            (Resource::Metals, 90, 2),
-        ] {
-            stockpile.replenish(resource, quantity);
-            stockpile.set_income(resource, income);
-        }
-        let nation = world.register_nation(nation);
+    for (index, setup) in content.nations.into_iter().enumerate() {
+        let nation = world.register_nation(setup.nation);
 
         // the generator places the nations in this very order; one it found no room for starts
         // with nothing, like a nation on a planet with no land at all
@@ -753,11 +746,7 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedN
         };
         debug_assert_eq!(start.id(), nation);
         let mut gate = WorldMut::new(world, &mut changes);
-        gate.insert_settlement(Settlement::found(
-            format!("Nation {} capital", index + 1),
-            nation,
-            start.capital(),
-        ));
+        gate.insert_settlement(Settlement::found(setup.capital, nation, start.capital()));
         for &tile in start.territory() {
             if let Some(coords) = gate.world().tile_coords(tile)
                 && let Some(tile) = gate.tile_mut(coords)
@@ -765,19 +754,16 @@ fn set_up_scaffold_world(world: &mut World, nations: u16, generated: &GeneratedN
                 tile.artificial_mut().set_owner(Some(nation));
             }
         }
-        // one unit per tile: the capital, then its land neighbours, nearest first
+        // one unit per tile: the capital, then its land neighbours, nearest first - a roster longer
+        // than there is land around the capital is cut short
         let mut sites = vec![start.capital()];
         sites.extend(world.shape().neighbors(start.capital()).filter(|&coords| {
             world
                 .tile(coords)
                 .is_some_and(|tile| !tile.natural().terrain().is_water())
         }));
-        for ((name, _, _), site) in UNIT_TEMPLATES.into_iter().zip(sites) {
-            world.place_unit(Unit::recruit(
-                SimulationID::new_abstract_id(name),
-                nation,
-                site,
-            ));
+        for (template, site) in setup.starting_units.into_iter().zip(sites) {
+            world.place_unit(Unit::recruit(template, nation, site));
         }
     }
 }
@@ -806,10 +792,36 @@ mod tests {
 
     use super::{GameSession, UNKNOWN_TERRAIN};
 
-    /// A map small enough to assert over, big enough to have land and unexplored corners.
+    /// The default scenario, as the client sends it.
+    fn default_scenario() -> serde_json::Value {
+        serde_json::json!({
+            "name": "default",
+            "kind": "scenario",
+            "source": include_str!("../../scripts/scenarios/default.rhai"),
+        })
+    }
+
+    /// A new game's settings: a map small enough to assert over, big enough to have land and
+    /// unexplored corners, the default scenario - and whatever `overrides` replaces of those.
+    fn settings(overrides: serde_json::Value) -> String {
+        let mut settings = serde_json::json!({
+            "seed": 7,
+            "columns": 24,
+            "rows": 16,
+            "nations": 2,
+            "scripts": [default_scenario()],
+        });
+        let (Some(settings_map), Some(overrides)) =
+            (settings.as_object_mut(), overrides.as_object())
+        else {
+            panic!("settings are objects");
+        };
+        settings_map.extend(overrides.clone());
+        settings.to_string()
+    }
+
     fn start_game() -> GameSession {
-        GameSession::new_game(r#"{"seed":7,"columns":24,"rows":16,"nations":2}"#)
-            .expect("the settings are valid")
+        GameSession::new_game(&settings(serde_json::json!({}))).expect("the settings are valid")
     }
 
     fn resolve_turn(session: &mut GameSession) {
@@ -820,6 +832,51 @@ mod tests {
             }
         }
         panic!("the turn never finished");
+    }
+
+    #[test]
+    fn test_a_game_sent_no_scenario_is_refused() {
+        use project_x_scripting::ScriptEngine;
+
+        let error = super::StartingContent::from_scripts(&ScriptEngine::load(&[]).unwrap(), 2)
+            .err()
+            .expect("no scenario, no game");
+        assert!(error.contains("scenario"), "{error}");
+    }
+
+    #[test]
+    fn test_a_game_sent_an_ai_script_has_its_nations_played_by_it() {
+        use project_x_core::{
+            game::commands::GameCommand,
+            simulation::ids::{EntityIndex, NationId},
+        };
+
+        let settings = settings(serde_json::json!({
+            "scripts": [default_scenario(), {
+                "name": "scout",
+                "kind": "ai",
+                "source": include_str!("../../scripts/ai/scout.rhai"),
+            }],
+        }));
+        let mut session = GameSession::new_game(&settings).expect("the settings are valid");
+        let ai = NationId::from_index(1);
+        assert_eq!(
+            session.inner.controller(ai).map(|slot| slot.name()),
+            Some("scout")
+        );
+
+        resolve_turn(&mut session);
+
+        let moves = session
+            .inner
+            .command_log()
+            .iter()
+            .filter(|logged| logged.nation == ai)
+            .filter(|logged| matches!(logged.command, GameCommand::MoveUnit { .. }))
+            .count();
+        assert!(moves > 0, "the scripted nation never moved");
+        let events = session.drain_events().expect("events");
+        assert!(!events.contains(r#""type":"commandRejected""#), "{events}");
     }
 
     #[test]
@@ -857,10 +914,8 @@ mod tests {
 
     #[test]
     fn test_a_new_game_takes_an_ocean_coverage() {
-        let session = GameSession::new_game(
-            r#"{"seed":7,"columns":24,"rows":16,"nations":2,"oceanCoverage":0.5}"#,
-        )
-        .expect("the settings are valid");
+        let session = GameSession::new_game(&settings(serde_json::json!({"oceanCoverage": 0.5})))
+            .expect("the settings are valid");
         let world = session.inner.world();
         let land = world
             .shape()

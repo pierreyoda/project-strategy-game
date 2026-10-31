@@ -248,6 +248,13 @@ impl GameSession {
             Some(ControllerSlot::Ai(controller)) => {
                 let view = NationView::new(&self.world, nation);
                 let planned = controller.plan(&view, budget);
+                for message in controller.take_log() {
+                    self.events.push(GameEvent::ControllerLog {
+                        nation,
+                        controller: controller.name().to_string(),
+                        message,
+                    });
+                }
                 (planned, controller.needs_more_steps())
             }
             _ => (Vec::new(), false),
@@ -818,6 +825,70 @@ mod tests {
             |event| matches!(event, GameEvent::CommandRejected { nation, .. } if nation == second),
         );
         assert!(rejected, "an illegal AI order must surface as a rejection");
+    }
+
+    /// A controller that plans nothing and says so.
+    #[derive(Debug)]
+    struct TalkativeController;
+
+    impl NationController for TalkativeController {
+        fn name(&self) -> &str {
+            "talkative"
+        }
+
+        fn plan(&mut self, _view: &NationView<'_>, _budget: StepBudget) -> Vec<GameCommand> {
+            Vec::new()
+        }
+
+        fn take_log(&mut self) -> Vec<String> {
+            vec!["nothing to do".to_string()]
+        }
+    }
+
+    #[test]
+    fn test_what_a_controller_says_lands_in_the_turn_log() {
+        let (mut session, _, second, _, _) = two_nation_session();
+        session.set_controller(second, ControllerSlot::Ai(Box::new(TalkativeController)));
+
+        resolve_turn(&mut session);
+
+        let logged = session.drain_events().into_iter().any(|event| {
+            matches!(event, GameEvent::ControllerLog { nation, ref controller, ref message }
+                if nation == second && controller == "talkative" && message == "nothing to do")
+        });
+        assert!(
+            logged,
+            "a controller's log must reach the events, under its nation"
+        );
+    }
+
+    #[test]
+    fn test_a_nation_view_knows_no_ground_it_never_explored() {
+        let ground = |col: i16, _: i16| {
+            if col == 8 {
+                TerrainKind::Mountains
+            } else {
+                TerrainKind::Hills
+            }
+        };
+        let (session, first, _, own, rival, _) = session_on(ground, &[]);
+        let view = NationView::new(session.world(), first);
+
+        assert_eq!(
+            view.terrain(at(1, 1)),
+            Some(TerrainKind::Hills),
+            "under its own scout"
+        );
+        // the rival's corner of the map, which the first nation has never seen
+        assert_eq!(view.terrain(at(8, 6)), None);
+        assert_eq!(view.terrain(at(1, -1)), None, "beyond the pole");
+
+        let reachable = view.reachable(own).expect("its own unit");
+        assert!(
+            reachable.tiles.len() > 1,
+            "a scout on hills still gets somewhere"
+        );
+        assert!(view.reachable(rival).is_none(), "not its unit");
     }
 
     #[test]

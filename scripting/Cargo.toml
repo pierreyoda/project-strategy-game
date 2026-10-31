@@ -1,5 +1,6 @@
 [package]
 name = "project_x_scripting"
+description = "Project X: the scripts that define the game's content and play for its nations."
 version = "0.1.0"
 authors = ["pierreyoda <pierreyoda@users.noreply.github.com>"]
 edition = "2024"
@@ -9,4 +10,11 @@ readme = "README.md"
 path = "src/lib.rs"
 
 [dependencies]
-rhai = "1.27.0"
+# internal:
+project_x_core = { path = "../core" }
+# external:
+rand = { version = "0.10.3", default-features = false }
+# - `no_time`: a script that can read the clock is a script that does not replay;
+# - no default features: they seed `ahash` from the OS at runtime, which neither replays nor builds for
+#   wasm32-unknown-unknown without a `getrandom` backend. Seeded at compile time instead.
+rhai = { version = "1.27.0", default-features = false, features = ["std", "no_time"] }

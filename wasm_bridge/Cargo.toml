@@ -16,6 +16,7 @@ lto = true # Link-Time Optimisation: faster and smaller code but longer compilat
 # internal:
 project_x_core = { path = "../core" }
 project_x_procgen = { path = "../procgen" }
+project_x_scripting = { path = "../scripting" }
 # external:
 # `rand`'s OS randomness (pulled by `fake` in `procgen`) needs a backend on wasm32-unknown-unknown: the browser's
 # `crypto.getRandomValues`, to only be enabled by the final crate

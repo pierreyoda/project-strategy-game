@@ -9,8 +9,9 @@ export default defineConfig({
   plugins: [svelte(), tailwindcss(), assetPack()],
   server: {
     fs: {
-      // the WASM bridge is built outside of the client (see `vite.wasm-pack.ts`)
-      allow: [".", "../wasm-pkg"],
+      // the WASM bridge is built outside of the client (see `vite.wasm-pack.ts`), and the game's
+      // scripts live at the repository's root, shared with the Rust tests
+      allow: [".", "../wasm-pkg", "../scripts"],
     },
   },
   worker: {

@@ -23,6 +23,7 @@ use project_x_core::{
     },
 };
 use project_x_procgen::nations::GenerationReport;
+use project_x_scripting::{ScriptKind, ScriptSource};
 
 /// Offset coordinates, the way the client thinks of the map.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -52,6 +53,40 @@ pub struct NewGameSettings {
     /// Share of the map covered by the seas, from 0.0 to 1.0.
     #[serde(default = "default_ocean_coverage")]
     pub ocean_coverage: f64,
+    /// The scripts the game runs: one scenario, which a game cannot start without, and at most one
+    /// AI script. For now the AI script plays every nation but the local player's - the stub does
+    /// without one - and nothing yet hands part of the player's nation to a script.
+    #[serde(default)]
+    pub scripts: Vec<ScriptSourceWire>,
+}
+
+/// A script, sent by the client: the bridge compiles what it is handed and embeds nothing.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ScriptSourceWire {
+    pub name: String,
+    pub kind: ScriptKindWire,
+    pub source: String,
+}
+
+/// Like `ScriptKind` in the `scripting` crate.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScriptKindWire {
+    Ai,
+    Scenario,
+}
+
+impl From<ScriptSourceWire> for ScriptSource {
+    fn from(value: ScriptSourceWire) -> Self {
+        Self {
+            name: value.name,
+            kind: match value.kind {
+                ScriptKindWire::Ai => ScriptKind::Ai,
+                ScriptKindWire::Scenario => ScriptKind::Scenario,
+            },
+            source: value.source,
+        }
+    }
 }
 
 fn default_nations() -> u16 {
@@ -178,6 +213,12 @@ pub enum EventWire {
     ResourceShortage { nation: u16, resource: &'static str },
     #[serde(rename_all = "camelCase")]
     CommandRejected { nation: u16, reason: String },
+    #[serde(rename_all = "camelCase")]
+    ControllerLog {
+        nation: u16,
+        controller: String,
+        message: String,
+    },
 }
 
 impl From<&GameEvent> for EventWire {
@@ -216,6 +257,15 @@ impl From<&GameEvent> for EventWire {
             GameEvent::CommandRejected { nation, reason } => Self::CommandRejected {
                 nation: nation.raw(),
                 reason: reason.clone(),
+            },
+            GameEvent::ControllerLog {
+                nation,
+                controller,
+                message,
+            } => Self::ControllerLog {
+                nation: nation.raw(),
+                controller: controller.clone(),
+                message: message.clone(),
             },
         }
     }

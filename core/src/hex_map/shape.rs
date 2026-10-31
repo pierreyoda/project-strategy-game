@@ -51,6 +51,23 @@ impl RectangularHexMapShape {
         Some(OffsetCoords::new(col, offset.row()).into())
     }
 
+    /// Hex distance between two tiles, the shortest way round: one lap east or west is a shift of
+    /// the axial `q` by the column count, at the same row.
+    ///
+    /// Computed in `i32`, so that no pair of coordinates can overflow it.
+    pub fn distance(&self, from: CubeCoords, to: CubeCoords) -> u32 {
+        let lap = i32::from(self.columns);
+        let (dq, dr) = (
+            i32::from(from.q()) - i32::from(to.q()),
+            i32::from(from.r()) - i32::from(to.r()),
+        );
+        [dq - lap, dq, dq + lap]
+            .into_iter()
+            .map(|dq| (dq.unsigned_abs() + dr.unsigned_abs() + (dq + dr).unsigned_abs()) / 2)
+            .min()
+            .unwrap_or_default()
+    }
+
     /// Iterate over the immediate neighbors of the given tile, wrapping around east-west.
     ///
     /// Tiles on the polar rows only have 4 neighbors. On maps narrower than 3 columns,
@@ -146,6 +163,35 @@ mod tests {
             offset_neighbors(&shape, 4, 3),
             expected(&[(0, 3), (3, 3), (4, 2), (0, 2)])
         );
+    }
+
+    #[test]
+    fn test_rectangular_shape_distance_wraps_around_east_west() {
+        let shape = RectangularHexMapShape::new(10, 4);
+        let distance = |from: (i16, i16), to: (i16, i16)| {
+            shape.distance(
+                OffsetCoords::new(from.0, from.1).into(),
+                OffsetCoords::new(to.0, to.1).into(),
+            )
+        };
+        assert_eq!(distance((3, 1), (3, 1)), 0);
+        assert_eq!(distance((0, 0), (3, 0)), 3);
+        // across the seam rather than across the map
+        assert_eq!(distance((0, 1), (9, 1)), 1);
+        assert_eq!(distance((1, 2), (8, 2)), 3);
+        assert_eq!(distance((0, 0), (0, 3)), 3);
+        assert_eq!(distance((2, 0), (7, 3)), distance((7, 3), (2, 0)));
+
+        // and every neighbor is one step away, the wrapped ones included
+        for coords in shape.coords() {
+            for neighbor in shape.neighbors(coords) {
+                assert_eq!(
+                    shape.distance(coords, neighbor),
+                    1,
+                    "{coords:?} {neighbor:?}"
+                );
+            }
+        }
     }
 
     #[test]
