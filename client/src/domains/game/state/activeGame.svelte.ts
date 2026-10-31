@@ -1,5 +1,7 @@
 import type { MapEntity } from "../../map/entities";
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
+import { SvelteSet } from "svelte/reactivity";
+
 import { MAX_SEED } from "../../map/procgen/planetGenerator";
 import { RESOURCES, type Resource, type ResourceStock } from "../resources";
 import { type GameSessionHandle, createGameSession } from "../session/gameSession";
@@ -13,7 +15,7 @@ import type {
   WorldProjection,
 } from "../session/protocol";
 import { mapEntitiesOf } from "./mapEntities";
-import { type WorldState, applyProjection, toHexMapData } from "./worldState";
+import { type UnitView, type WorldState, applyProjection, toHexMapData } from "./worldState";
 
 /** How many entries of the turn log are kept. */
 const LOG_LENGTH = 40;
@@ -30,8 +32,14 @@ const DEFAULT_MAP = { columns: 60, rows: 40, nations: 3 };
 export type GameLogEntry =
   { kind: "event"; event: GameEvent } | { kind: "rejected"; rejection: CommandRejection } | { kind: "turnCancelled" };
 
-/** The viewer's unit the player is giving orders to. */
-export type SelectedUnit = { id: number; tile: number };
+/** The viewer's unit the player is giving orders to, with what the panel shows of it. */
+export type SelectedUnit = {
+  id: number;
+  tile: number;
+  unit: UnitView;
+  /** Set aside for this turn by the player: `nextUnit` passes over it. UI state, nothing more. */
+  skipped: boolean;
+};
 
 /**
  * The steps from the unit's tile to `tile`, destination last and origin left out - what a move
@@ -126,6 +134,15 @@ export type ActiveGame = {
   clickTile: (tile: OffsetCoords) => Promise<void>;
   /** The tile under the pointer, `null` once it leaves the map: what the path preview follows. */
   hoverTile: (tile: OffsetCoords | null) => void;
+  /** Set the selected unit aside for this turn and go to the next one that can still act. */
+  skipUnit: () => void;
+  /**
+   * Select the next of the viewer's units that still has points and was not skipped, after the
+   * selected one in the simulation's order, and frame the camera on it. Nothing when none is left.
+   */
+  nextUnit: () => void;
+  /** Whether `nextUnit` has somewhere to go. */
+  readonly hasNextUnit: boolean;
   /** Release the session worker. */
   dispose: () => void;
 };
@@ -158,6 +175,8 @@ export const createActiveGame = (): ActiveGame => {
   let focusTile = $state<number | null>(null);
   let reach = $state.raw<ReachableData | null>(null);
   let hoveredIndex = $state<number | null>(null);
+  /** Units set aside by the player this turn. Cleared when the turn ends, like their points refill. */
+  const skipped = new SvelteSet<number>();
   /** The latest reachability request: an older answer arriving late must not overwrite a newer one. */
   let reachRequest = 0;
 
@@ -169,6 +188,34 @@ export const createActiveGame = (): ActiveGame => {
 
   const fail = (thrown: unknown) => {
     error = thrown instanceof Error ? thrown.message : String(thrown);
+  };
+
+  /**
+   * The viewer's units with something left to do this turn, in the simulation's order, starting
+   * after `after` and wrapping around. The simulation says who can move; the player says who waits.
+   */
+  const actionable = (after: number | null): UnitView[] => {
+    if (!world) {
+      return [];
+    }
+    const own = [...world.units.values()].filter(
+      (unit) => unit.owner === viewer && unit.movementLeft > 0 && !skipped.has(unit.id),
+    );
+    if (after === null) {
+      return own;
+    }
+    const index = own.findIndex((unit) => unit.id > after);
+    return index < 0 ? own : [...own.slice(index), ...own.slice(0, index)];
+  };
+
+  const selectNext = () => {
+    const [next] = actionable(selectedUnit);
+    if (!next) {
+      return;
+    }
+    selectedUnit = next.id;
+    focusTile = next.tile;
+    void refreshReach();
   };
 
   /**
@@ -243,6 +290,7 @@ export const createActiveGame = (): ActiveGame => {
     selectedUnit = null;
     reach = null;
     hoveredIndex = null;
+    skipped.clear();
     focusTile = null;
     try {
       const ready = await session.start(settings);
@@ -295,7 +343,11 @@ export const createActiveGame = (): ActiveGame => {
         return null;
       }
       const unit = world.units.get(selectedUnit);
-      return unit ? { id: unit.id, tile: unit.tile } : null;
+      return unit ? { id: unit.id, tile: unit.tile, unit, skipped: skipped.has(unit.id) } : null;
+    },
+    get hasNextUnit() {
+      // read `meta` for the same reason as `selected`
+      return meta !== null && actionable(selectedUnit).some((unit) => unit.id !== selectedUnit);
     },
     get reach() {
       return reach;
@@ -340,6 +392,8 @@ export const createActiveGame = (): ActiveGame => {
       error = null;
       try {
         const outcome = await session.endTurn();
+        // a new turn: everyone can act again, the skipped included
+        skipped.clear();
         // the version the client last drew: everything since is what it has to catch up with
         await catchUp(meta.version);
         if (outcome.type === "cancelled") {
@@ -394,6 +448,22 @@ export const createActiveGame = (): ActiveGame => {
     hoverTile: (tile: OffsetCoords | null) => {
       hoveredIndex = tile && world ? tile.row * world.columns + tile.col : null;
     },
+
+    skipUnit: () => {
+      if (selectedUnit === null) {
+        return;
+      }
+      skipped.add(selectedUnit);
+      const [next] = actionable(selectedUnit);
+      if (next) {
+        selectNext();
+      } else {
+        selectedUnit = null;
+        reach = null;
+      }
+    },
+
+    nextUnit: selectNext,
 
     dispose: () => {
       unsubscribe();
