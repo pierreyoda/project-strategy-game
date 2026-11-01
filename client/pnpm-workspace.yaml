@@ -11,5 +11,6 @@ allowBuilds:
   # Pulled by AssetPack, for audio files only: allow it to process some (its postinstall makes ffmpeg executable).
   # One package per platform, without wildcards.
   "@ffmpeg-installer/darwin-arm64": false
+  "@ffmpeg-installer/linux-x64": false
   # Pulled by AssetPack's GPU texture encoders, unused: an optional native addon.
   cpu-features: false
