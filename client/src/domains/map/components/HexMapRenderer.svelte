@@ -12,7 +12,7 @@
     Texture,
     TilingSprite,
   } from "pixi.js";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
   import type { PixiContext } from "../../../shared/pixi";
   import { GROUND_NOISE_SIZE, createGroundNoiseTexture } from "../groundNoise";
@@ -21,6 +21,7 @@
   import { type HexLayout, hexAt, hexCenter, hexCorners, mapHeight, wrapBounds, wrapHex } from "../hexLayout";
   import type { HexMapData, OffsetCoords } from "../hexMap";
   import { DEFAULT_MAP_LOOK, type MapLook } from "../mapLook";
+  import { createMutedFilter } from "../lensLook";
   import { TERRAIN_COLORS, isExplored } from "../terrain";
   import { type TerrainTextures, loadTerrainTextures } from "../terrainTextures";
   import {
@@ -44,6 +45,11 @@
   const FOREST_COLOR = 0x4a7a3c;
   /** The map draws under everything the game puts over it, see `GameView`. */
   const MAP_Z_INDEX = 0;
+  /**
+   * The outline of the hovered hex, right over the map: a layer of its own, so that a lens muting the
+   * map leaves it white.
+   */
+  const HOVER_Z_INDEX = 1;
 
   /**
    * The drawn map, kept addressable tile by tile.
@@ -237,6 +243,8 @@
     dirtyTiles?: Uint32Array | null;
     /** Draws the flat colors of the terrains only, without the textures of their tiles. */
     flatColors?: boolean;
+    /** Steps the map back to grey, for a lens to bring something forward over it. */
+    muted?: boolean;
     /** The knobs of the textured tiles' variety. A new one redraws the map whole. */
     look?: MapLook;
     /** Called when the pointer moves to another tile, with `null` once it leaves the map. */
@@ -252,6 +260,7 @@
     layout,
     dirtyTiles = null,
     flatColors = false,
+    muted = false,
     look = DEFAULT_MAP_LOOK,
     onTileHover,
     onTileClick,
@@ -281,7 +290,9 @@
     drawn = currentDrawn;
 
     const hoverOutline = new GraphicsContext().poly(hexCorners(layout)).stroke({ width: 3, color: 0xffffff });
-    const hoverMarker = currentDrawn.layer.addChild(new Graphics({ context: hoverOutline, visible: false }));
+    const hoverMarker = pixi.world.addChild(
+      new Graphics({ label: "hex-hover", context: hoverOutline, visible: false, zIndex: HOVER_Z_INDEX }),
+    );
 
     // the textured tiles fade in once hexes are large enough on screen for their details
     const updateTexturesOpacity = () => {
@@ -343,6 +354,7 @@
         .off("pointertap", onPointerTap)
         .off("rightclick", onRightClick);
       drawn = null;
+      hoverMarker.destroy();
       // the textures are shared, cached by PixiJS's `Assets`; the noise is this map's own
       currentDrawn.layer.destroy({ children: true });
       currentDrawn.noise.destroy(true);
@@ -358,6 +370,15 @@
       hoverOutline.destroy();
     };
   });
+
+  // a lens greys the whole map, textured and flat alike; the filter outlives the maps it is set on
+  const mutedFilter = createMutedFilter();
+  $effect(() => {
+    if (drawn) {
+      drawn.layer.filters = muted ? [mutedFilter] : [];
+    }
+  });
+  onDestroy(() => mutedFilter.destroy());
 
   // and tile by tile when a delta says which ones moved: a unit stepping into the fog repaints two
   // rows, not the map

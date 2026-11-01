@@ -2,11 +2,12 @@
   import { Container, Graphics, GraphicsContext, Text } from "pixi.js";
   import { onMount } from "svelte";
 
-  import type { PixiContext } from "../../../shared/pixi";
+  import { type PixiContext, tokenColor } from "../../../shared/pixi";
   import { type MapConstruction, constructionProgress } from "../constructions";
   import { entityCoords } from "../entities";
   import { type HexLayout, hexCenter, hexCorners, wrapBounds } from "../hexLayout";
   import type { HexMapData } from "../hexMap";
+  import { DIMMED_ALPHA } from "../lensLook";
 
   /** Over the entities, whose building the plate dims, and under the fog. See `GameView`. */
   const CONSTRUCTIONS_Z_INDEX = 6;
@@ -30,10 +31,6 @@
    * constructions at a time, so the textures stay small.
    */
   const TEXT_RESOLUTION = 8;
-
-  /** A design token of `index.css`, as a number PixiJS takes: the accent follows the stylesheet. */
-  const tokenColor = (name: string): number =>
-    parseInt(getComputedStyle(document.documentElement).getPropertyValue(name).trim().replace("#", ""), 16);
 
   /** Corners of the plate centered at (0, 0), clockwise from the top one, as points. */
   const plateCorners = (layout: HexLayout): { x: number; y: number }[] => {
@@ -165,8 +162,17 @@
     layout: HexLayout;
     /** The buildings going up, and how long each has left. A new list redraws the layer. */
     constructions: readonly MapConstruction[];
+    /** Steps the overlay back, for a lens to bring something else forward. */
+    dimmed?: boolean;
   };
-  const { pixi, map, layout, constructions }: TileConstructionTurnsOverlayProps = $props();
+  const { pixi, map, layout, constructions, dimmed = false }: TileConstructionTurnsOverlayProps = $props();
+
+  let layer = $state.raw<Container | null>(null);
+  $effect(() => {
+    if (layer) {
+      layer.alpha = dimmed ? DIMMED_ALPHA : 1;
+    }
+  });
 
   // PixiJS draws text on a canvas, which uses a font only once the page has it: the stylesheet's
   // Rajdhani is loaded on first use, which a canvas does not count as
@@ -180,6 +186,7 @@
 
   $effect(() => {
     const drawn = drawConstructions(pixi, map, layout, constructions, fontsReady);
+    layer = drawn.layer;
 
     // the number is readable well before its label: each fades in once large enough on screen
     const updateDetail = () => {
@@ -198,6 +205,7 @@
 
     return () => {
       pixi.app.ticker.remove(updateDetail);
+      layer = null;
       drawn.layer.destroy({ children: true });
       drawn.plate.destroy();
       for (const border of drawn.borders) {

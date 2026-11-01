@@ -7,11 +7,15 @@
   import { type GameEvent, NO_NATION, TURN_PHASE_NAMES, TileVisibility } from "../session/protocol";
   import { formatQuantity } from "../resources";
   import { type GameLogEntry, createActiveGame } from "../state/activeGame.svelte";
+  import { lensForKey } from "../state/lens";
+  import { tileDetailsOf } from "../state/tileDetails";
   import { createConceptChain } from "./concepts/chain.svelte";
   import ConceptChain from "./concepts/ConceptChain.svelte";
   import ResourceBreakdown from "./concepts/ResourceBreakdown.svelte";
   import GameView from "./GameView.svelte";
+  import LensPanel from "./LensPanel.svelte";
   import { nationColor } from "../nations";
+  import { depositSummary } from "./tile/depositSummary";
   import TileFocusPanel from "./tile/TileFocusPanel.svelte";
   import TilePanel from "./tile/TilePanel.svelte";
   import GameToolbar from "./toolbar/GameToolbar.svelte";
@@ -29,6 +33,14 @@
     [TileVisibility.Fogged]: "Out of sight",
     [TileVisibility.Visible]: "In sight",
   };
+
+  /** Whether a key press is typing into a field, which no hotkey should take from it. */
+  const isTyping = (target: EventTarget | null): boolean =>
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT");
 
   /**
    * What an event reads like in the turn log, or `null` for the ones not worth a line - or not the
@@ -94,11 +106,18 @@
 
   /**
    * Escape closes the deepest thing open: a concept card first, which the chain does on its own -
-   * read here before it does, in the capture phase - then the focus view, the tile panel, the unit.
+   * read here before it does, in the capture phase - then the focus view, the tile panel, the unit,
+   * and the lens last. The lenses have a key each.
    */
   const onKeydown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && concepts.levels.length === 0) {
       game.escape();
+      return;
+    }
+    const lens = event.repeat || isTyping(event.target) ? null : lensForKey(event);
+    if (lens && game.world) {
+      event.preventDefault();
+      game.toggleLens(lens);
     }
   };
 
@@ -109,6 +128,9 @@
     }
     const index = hoveredTile.row * world.columns + hoveredTile.col;
     const terrain = world.terrain[index];
+    // in the resource lens, the deposit the lens shows on the tile, if any
+    const lens = game.lens;
+    const deposit = lens.kind === "resources" ? tileDetailsOf(world, index).deposit : undefined;
     return {
       coords: hoveredTile,
       visibility: VISIBILITY_NAMES[world.visibility[index]] ?? "",
@@ -117,6 +139,10 @@
       elevation: world.elevations[index],
       owner: world.tileOwner[index],
       sphere: world.tileSphere[index],
+      deposit:
+        deposit && lens.kind === "resources" && (lens.filter === "all" || lens.filter === deposit.resource)
+          ? depositSummary(deposit)
+          : null,
     };
   });
 
@@ -152,6 +178,7 @@
         reach={game.reach}
         previewPath={game.previewPath}
         viewer={game.viewer}
+        lens={game.lens}
         onTileHover={(tile) => {
           hoveredTile = tile;
           game.hoverTile(tile);
@@ -192,8 +219,9 @@
       </div>
     {/if}
 
-    {#if game.selected}
-      <div class="unit-panel">
+    <!-- above the turn's controls: the lenses in the corner, the unit's panel beside them -->
+    <div class="corner">
+      {#if game.selected}
         <UnitPanel
           selected={game.selected}
           viewer={game.viewer}
@@ -201,8 +229,17 @@
           onSkip={() => game.skipUnit()}
           onNext={() => game.nextUnit()}
         />
-      </div>
-    {/if}
+      {/if}
+      {#if game.world}
+        <LensPanel
+          lens={game.lens}
+          nations={game.knownNations}
+          viewer={game.viewer}
+          onToggle={(kind) => game.toggleLens(kind)}
+          onFilter={(filter) => game.filterResources(filter)}
+        />
+      {/if}
+    </div>
 
     {#if lines.length > 0}
       <ul class="log" class:beside-focus={game.focusOpen} aria-label="Turn log">
@@ -225,6 +262,9 @@
             · Nation {hovered.owner + 1}
           {:else if hovered.sphere !== NO_NATION}
             · sphere of Nation {hovered.sphere + 1}
+          {/if}
+          {#if hovered.deposit}
+            · <span class="text-fg">{hovered.deposit}</span>
           {/if}
         </span>
       {/if}
@@ -271,8 +311,11 @@
     @apply absolute right-3 bottom-3 left-3 flex items-center justify-end gap-3 text-sm;
   }
 
-  .unit-panel {
-    @apply absolute right-3 bottom-14;
+  .corner {
+    @apply pointer-events-none absolute right-3 bottom-14 flex items-end gap-3;
+    > :global(*) {
+      @apply pointer-events-auto;
+    }
   }
   .tile-panel {
     @apply absolute top-3 left-3;

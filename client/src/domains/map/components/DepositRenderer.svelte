@@ -1,12 +1,13 @@
 <script lang="ts" module>
   import { Container, Sprite } from "pixi.js";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
   import type { PixiContext } from "../../../shared/pixi";
   import { type DepositTextures, type MapDeposit, depositFrame, loadDepositTextures } from "../deposits";
   import { entityCoords } from "../entities";
   import { type HexLayout, hexCenter, wrapBounds } from "../hexLayout";
   import type { HexMapData } from "../hexMap";
+  import { createMutedFilter } from "../lensLook";
 
   /**
    * Heights of a hex on screen, in pixels, over which the deposits fade in: the window of the
@@ -18,13 +19,13 @@
   const DEPOSITS_Z_INDEX = 2;
 
   const drawDeposits = (
-    pixi: PixiContext,
+    root: Container,
     map: HexMapData,
     layout: HexLayout,
     textures: DepositTextures,
     deposits: readonly MapDeposit[],
   ): Container => {
-    const layer = new Container({ label: "map-deposits", zIndex: DEPOSITS_Z_INDEX, isRenderGroup: true });
+    const layer = new Container({ label: "deposit-sprites", isRenderGroup: true });
     // drawn twice side by side to wrap around east-west, like the map under it
     for (const x of [0, wrapBounds(layout, map).period]) {
       const copy = layer.addChild(new Container({ x }));
@@ -43,7 +44,7 @@
         copy.addChild(sprite);
       }
     }
-    pixi.world.addChild(layer);
+    root.addChild(layer);
     return layer;
   };
 </script>
@@ -55,8 +56,31 @@
     layout: HexLayout;
     /** The deposits the viewer knows of, one per tile. A new list redraws the layer. */
     deposits: readonly MapDeposit[];
+    /** Greys the deposits along with the ground they lie on, under a lens. */
+    muted?: boolean;
+    /** Leaves the deposits out, for a lens drawing them its own way. */
+    hidden?: boolean;
   };
-  const { pixi, map, layout, deposits }: DepositRendererProps = $props();
+  const { pixi, map, layout, deposits, muted = false, hidden = false }: DepositRendererProps = $props();
+
+  // what a lens decides, apart from what the zoom does to the sprites inside
+  const root = new Container({ label: "map-deposits", zIndex: DEPOSITS_Z_INDEX });
+  const mutedFilter = createMutedFilter();
+  $effect(() => {
+    pixi.world.addChild(root);
+    return () => {
+      root.removeFromParent();
+    };
+  });
+  $effect(() => {
+    root.visible = !hidden;
+    root.filters = muted ? [mutedFilter] : [];
+  });
+  onDestroy(() => {
+    // the sprites are the drawing effect's to destroy, whichever of the two goes first
+    root.destroy();
+    mutedFilter.destroy();
+  });
 
   let textures = $state.raw<DepositTextures | null>(null);
   onMount(() => {
@@ -71,7 +95,7 @@
       return;
     }
     // deposits do not move and are few: the layer is rebuilt whole when the list changes
-    const layer = drawDeposits(pixi, map, layout, textures, deposits);
+    const layer = drawDeposits(root, map, layout, textures, deposits);
 
     const updateDetail = () => {
       const hexHeight = 2 * layout.size * pixi.world.scale.y;

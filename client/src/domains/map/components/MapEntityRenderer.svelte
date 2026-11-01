@@ -7,6 +7,7 @@
   import { type EntityTextures, loadEntityTextures, spriteTextures } from "../entityTextures";
   import { type HexLayout, hexCenter, wrapBounds } from "../hexLayout";
   import type { HexMapData } from "../hexMap";
+  import { DIMMED_ALPHA } from "../lensLook";
 
   /**
    * Heights of a hex on screen, in pixels, over which the sprites fade in over the tokens.
@@ -145,8 +146,17 @@
     layout: HexLayout;
     /** What to draw on the tiles, with its colors already resolved. A new list redraws the layer. */
     entities: readonly MapEntity[];
+    /** Steps everything back, for a lens to bring something else forward. */
+    dimmed?: boolean;
   };
-  const { pixi, map, layout, entities }: MapEntityRendererProps = $props();
+  const { pixi, map, layout, entities, dimmed = false }: MapEntityRendererProps = $props();
+
+  let layer = $state.raw<Container | null>(null);
+  $effect(() => {
+    if (layer) {
+      layer.alpha = dimmed ? DIMMED_ALPHA : 1;
+    }
+  });
 
   let textures = $state.raw<EntityTextures | null>(null);
   onMount(() => {
@@ -158,6 +168,7 @@
 
   $effect(() => {
     const drawn = drawEntities(pixi, map, layout, textures, entities);
+    layer = drawn.layer;
 
     // the sprites take over from the tokens once hexes are large enough on screen for their details
     const updateDetail = () => {
@@ -173,6 +184,7 @@
 
     return () => {
       pixi.app.ticker.remove(updateDetail);
+      layer = null;
       // the textures are shared, cached by PixiJS's `Assets`
       drawn.layer.destroy({ children: true });
       for (const shape of drawn.tokenShapes.values()) {

@@ -11,12 +11,22 @@ import { type GameSessionHandle, createGameSession } from "../session/gameSessio
 import type {
   CommandRejection,
   GameEvent,
+  NationMeta,
   NewGameSettings,
   ProjectionMeta,
   ReachableData,
   TurnPhase,
   WorldProjection,
 } from "../session/protocol";
+import {
+  type Lens,
+  type LensKind,
+  NO_LENS,
+  type ResourceFilter,
+  knownNations,
+  lensFiltered,
+  lensToggled,
+} from "./lens";
 import { mapDepositsOf } from "./mapDeposits";
 import { mapEntitiesOf } from "./mapEntities";
 import { type SlotView, type TileDetails, slotOf, tileDetailsOf } from "./tileDetails";
@@ -157,7 +167,7 @@ export type ActiveGame = {
   /** Stop inspecting: both panels close. */
   closeInspection: () => void;
   deselectUnit: () => void;
-  /** What Escape does: close the focus view, else the compact panel, else deselect the unit. */
+  /** What Escape does: close the focus view, else the compact panel, else deselect the unit, else the lens. */
   escape: () => void;
   /** The tile under the pointer, `null` once it leaves the map: what the path preview follows. */
   hoverTile: (tile: OffsetCoords | null) => void;
@@ -170,6 +180,14 @@ export type ActiveGame = {
   nextUnit: () => void;
   /** Whether `nextUnit` has somewhere to go. */
   readonly hasNextUnit: boolean;
+  /** How the map is looked at. Kept from turn to turn, back to none on a new game. */
+  readonly lens: Lens;
+  /** Switch a lens on, or off when it already is. */
+  toggleLens: (kind: LensKind) => void;
+  /** Narrow the resource lens to one resource, or widen it back to all. Nothing in any other lens. */
+  filterResources: (filter: ResourceFilter) => void;
+  /** The nations the political lens names, the viewer's first: see `knownNations`. */
+  readonly knownNations: readonly NationMeta[];
   /** Release the session worker. */
   dispose: () => void;
 };
@@ -205,6 +223,7 @@ export const createActiveGame = (): ActiveGame => {
   let focusTile = $state<number | null>(null);
   let reach = $state.raw<ReachableData | null>(null);
   let hoveredIndex = $state<number | null>(null);
+  let lens = $state.raw<Lens>(NO_LENS);
   /** Units set aside by the player this turn. Cleared when the turn ends, like their points refill. */
   const skipped = new SvelteSet<number>();
   /** The latest reachability request: an older answer arriving late must not overwrite a newer one. */
@@ -326,6 +345,7 @@ export const createActiveGame = (): ActiveGame => {
     focusTile = null;
     inspectedTile = null;
     focusOpen = false;
+    lens = NO_LENS;
     try {
       const ready = await session.start(settings);
       viewer = ready.localPlayer;
@@ -385,6 +405,16 @@ export const createActiveGame = (): ActiveGame => {
     get hasNextUnit() {
       // read `meta` for the same reason as `selected`
       return meta !== null && actionable(selectedUnit).some((unit) => unit.id !== selectedUnit);
+    },
+    get lens() {
+      return lens;
+    },
+    get knownNations() {
+      // read `meta` for the same reason as `selected`: a delta changes the borders in place
+      if (!world || !meta) {
+        return [];
+      }
+      return knownNations(world, viewer);
     },
     get reach() {
       return reach;
@@ -527,10 +557,19 @@ export const createActiveGame = (): ActiveGame => {
         focusOpen = false;
       } else if (inspectedTile !== null) {
         inspectedTile = null;
-      } else {
+      } else if (selectedUnit !== null) {
         selectedUnit = null;
         reach = null;
+      } else {
+        lens = NO_LENS;
       }
+    },
+
+    toggleLens: (kind: LensKind) => {
+      lens = lensToggled(lens, kind);
+    },
+    filterResources: (filter: ResourceFilter) => {
+      lens = lensFiltered(lens, filter);
     },
 
     hoverTile: (tile: OffsetCoords | null) => {

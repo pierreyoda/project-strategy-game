@@ -19,9 +19,10 @@ export const mapDepositsOf = (world: WorldState): MapDeposit[] => {
       byTile.set(deposit.tile, deposit);
     }
   }
-  return [...byTile.values()].map(({ tile, resource, level }) => ({
+  return [...byTile.values()].map(({ tile, resource, level, turnsLeft }) => ({
     tile,
     resource: resource as MapDeposit["resource"],
     level: Math.min(level, DEPOSIT_LEVELS) as DepositLevel,
+    depleting: turnsLeft !== null,
   }));
 };

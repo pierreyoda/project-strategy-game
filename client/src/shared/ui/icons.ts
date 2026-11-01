@@ -2,6 +2,7 @@ import Anvil from "@lucide/svelte/icons/anvil";
 import ArrowUp from "@lucide/svelte/icons/arrow-up";
 import Ban from "@lucide/svelte/icons/ban";
 import Eye from "@lucide/svelte/icons/eye";
+import Flag from "@lucide/svelte/icons/flag";
 import Bell from "@lucide/svelte/icons/bell";
 import Building from "@lucide/svelte/icons/building";
 import Check from "@lucide/svelte/icons/check";
@@ -20,6 +21,7 @@ import Lock from "@lucide/svelte/icons/lock";
 import MapIcon from "@lucide/svelte/icons/map";
 import Minus from "@lucide/svelte/icons/minus";
 import Mountain from "@lucide/svelte/icons/mountain";
+import Pickaxe from "@lucide/svelte/icons/pickaxe";
 import Plus from "@lucide/svelte/icons/plus";
 import Radiation from "@lucide/svelte/icons/radiation";
 import Route from "@lucide/svelte/icons/route";
@@ -62,6 +64,9 @@ export const icons = {
   supply: Route,
   upgrade: ArrowUp,
   demolish: Trash2,
+  // the map's lenses
+  deposits: Pickaxe,
+  territory: Flag,
   // interface
   close: X,
   "chevron-down": ChevronDown,

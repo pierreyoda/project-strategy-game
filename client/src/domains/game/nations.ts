@@ -17,3 +17,6 @@ export const NATION_COLORS = [
 
 /** The color of a nation, wrapping around once there are more nations than colors. */
 export const nationColor = (nation: number): number => NATION_COLORS[nation % NATION_COLORS.length];
+
+/** The color of a nation, for CSS. */
+export const nationCssColor = (nation: number): string => `#${nationColor(nation).toString(16).padStart(6, "0")}`;

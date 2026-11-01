@@ -3,6 +3,7 @@
   import { Application } from "pixi.js";
   import { onMount } from "svelte";
 
+  import DepositLensRenderer from "../../map/components/DepositLensRenderer.svelte";
   import DepositRenderer from "../../map/components/DepositRenderer.svelte";
   import HexMapRenderer from "../../map/components/HexMapRenderer.svelte";
   import MapEntityRenderer from "../../map/components/MapEntityRenderer.svelte";
@@ -17,6 +18,7 @@
   import type { PlanetNations } from "../../map/procgen/planetGenerator";
   import type { PixiContext } from "../../../shared/pixi";
   import type { ReachableData } from "../session/protocol";
+  import { type Lens, NO_LENS, filteredDeposits } from "../state/lens";
   import type { WorldState } from "../state/worldState";
   import WorldOverlayRenderer from "./WorldOverlayRenderer.svelte";
 
@@ -76,6 +78,11 @@
      * almost nothing explored, so the whole map is not a useful first view.
      */
     focusTile?: number | null;
+    /**
+     * How the map is looked at. Any lens greys the ground; the resource lens also dims what stands on
+     * it and draws the deposits as chips, the political lens draws who holds what.
+     */
+    lens?: Lens;
   };
   const {
     map,
@@ -97,7 +104,11 @@
     previewPath = null,
     viewer = null,
     focusTile = null,
+    lens = NO_LENS,
   }: GameViewProps = $props();
+
+  const muted = $derived(lens.kind !== "none");
+  const resourceLens = $derived(lens.kind === "resources");
 
   /** A hex is 64 world units tall. */
   const layout = createHexLayout(32);
@@ -158,6 +169,19 @@
     };
   });
 
+  /**
+   * Bring the camera back over the first copy of the map, see `wrapBounds`: a view starting further
+   * west or east would show the void beyond the map's two copies.
+   */
+  const keepWrapped = (viewport: Viewport) => {
+    const { period, minLeft } = wrapBounds(layout, map);
+    if (viewport.left < minLeft) {
+      viewport.left += period;
+    } else if (viewport.left >= minLeft + period) {
+      viewport.left -= period;
+    }
+  };
+
   // the camera starts zoomed out at the center of the map, and wraps around it east-west
   $effect(() => {
     if (!camera) {
@@ -173,13 +197,7 @@
       .setZoom(Math.max(viewport.screenWidth / maxWidth, viewport.screenHeight / height))
       .moveCenter(minLeft + period / 2, height / 2);
 
-    const wrap = () => {
-      if (viewport.left < minLeft) {
-        viewport.left += period;
-      } else if (viewport.left >= minLeft + period) {
-        viewport.left -= period;
-      }
-    };
+    const wrap = () => keepWrapped(viewport);
     viewport.on("moved", wrap).on("zoomed", wrap);
     return () => {
       viewport.off("moved", wrap).off("zoomed", wrap);
@@ -195,6 +213,9 @@
     const { x, y } = hexCenter(layout, { col: tile % map.columns, row: Math.floor(tile / map.columns) });
     // hexes at their texture's own scale, close enough to tell what is on them
     camera.setZoom(1).moveCenter(x, y);
+    // moved by hand rather than by the player, so the wrapping around east-west is not triggered:
+    // a tile near the map's western edge would otherwise open on the void west of it
+    keepWrapped(camera);
   });
 
   // the focus view's tile, in the room its panel leaves: the panel covers the left of the screen
@@ -208,12 +229,7 @@
     const zoom = Math.max(viewport.scale.x, frame.minZoom);
     viewport.setZoom(zoom).moveCenter(x - frame.insetLeft / (2 * zoom), y);
     // moved by hand rather than by the player, so the wrapping around east-west is not triggered
-    const { period, minLeft } = wrapBounds(layout, map);
-    if (viewport.left < minLeft) {
-      viewport.left += period;
-    } else if (viewport.left >= minLeft + period) {
-      viewport.left -= period;
-    }
+    keepWrapped(viewport);
   });
 
   // zoomed out, the camera shows the whole height of the map at most
@@ -234,10 +250,21 @@
   <!-- the right button gives orders on the map: its menu would cover them -->
   <canvas bind:this={canvas} class="block" oncontextmenu={(event) => event.preventDefault()}></canvas>
   {#if pixi}
-    <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {look} {onTileHover} {onTileClick} {onTileOrder} />
-    <DepositRenderer {pixi} {map} {layout} {deposits} />
-    <MapEntityRenderer {pixi} {map} {layout} {entities} />
-    <TileConstructionTurnsOverlay {pixi} {map} {layout} {constructions} />
+    <HexMapRenderer
+      {pixi}
+      {map}
+      {layout}
+      {dirtyTiles}
+      {flatColors}
+      {muted}
+      {look}
+      {onTileHover}
+      {onTileClick}
+      {onTileOrder}
+    />
+    <DepositRenderer {pixi} {map} {layout} {deposits} {muted} hidden={resourceLens} />
+    <MapEntityRenderer {pixi} {map} {layout} {entities} dimmed={resourceLens} />
+    <TileConstructionTurnsOverlay {pixi} {map} {layout} {constructions} dimmed={resourceLens} />
     {#if world}
       <WorldOverlayRenderer
         {pixi}
@@ -249,7 +276,11 @@
         {reach}
         {previewPath}
         {viewer}
+        political={lens.kind === "political"}
       />
+    {/if}
+    {#if lens.kind === "resources"}
+      <DepositLensRenderer {pixi} {map} {layout} deposits={filteredDeposits(deposits, lens.filter)} />
     {/if}
     {#if nations}
       <NationsOverlayRenderer {pixi} {map} {nations} {layout} />

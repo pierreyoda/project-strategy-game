@@ -22,6 +22,8 @@ export type MapDeposit = {
   tile: number;
   resource: DepositResource;
   level: DepositLevel;
+  /** Something draws on it, so it runs out at some point: what the resource lens warns of. */
+  depleting: boolean;
 };
 
 export const isDepositResource = (resource: string): resource is DepositResource =>
@@ -33,6 +35,13 @@ const DEPOSITS_BUNDLE = "deposits";
 /** The frame of a deposit in the sprite sheet. */
 export const depositFrame = ({ resource, level }: Pick<MapDeposit, "resource" | "level">): string =>
   `${resource}_${level}.png`;
+
+/**
+ * The frame of a deposit's chip in the sprite sheet, as the resource lens draws it: its resource's
+ * icon, a pip per level, and the warning colour while it is depleting.
+ */
+export const chipFrame = ({ resource, level, depleting }: MapDeposit): string =>
+  `chip_${resource}_${level}${depleting ? "_depleting" : ""}.png`;
 
 /** The frames of the deposits, by frame name. */
 export type DepositTextures = Record<string, Texture>;

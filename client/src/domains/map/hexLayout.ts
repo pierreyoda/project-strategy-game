@@ -66,6 +66,39 @@ export const wrapHex = (map: MapSize, { col, row }: OffsetCoords): OffsetCoords 
   row >= 0 && row < map.rows ? { col: ((col % map.columns) + map.columns) % map.columns, row } : null;
 
 /**
+ * The neighbor across each edge of a hex, in the order of the edges between `hexCorners`' corners -
+ * north-east, east, south-east, south-west, west, north-west - as column and row steps. Odd rows
+ * sit half a hex right of even ones in the "odd-r" layout, so the steps depend on the row's parity.
+ */
+const EDGE_STEPS = {
+  even: [
+    [0, -1],
+    [1, 0],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [-1, -1],
+  ],
+  odd: [
+    [1, -1],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ],
+} as const;
+
+/**
+ * The neighbor of a hex across its `edge`th edge, the one from its `edge`th corner of `hexCorners` to
+ * the next, wrapped around east-west - or `null` beyond the poles.
+ */
+export const neighborAcross = (map: MapSize, { col, row }: OffsetCoords, edge: number): OffsetCoords | null => {
+  const [dcol, drow] = EDGE_STEPS[row & 1 ? "odd" : "even"][edge];
+  return wrapHex(map, { col: col + dcol, row: row + drow });
+};
+
+/**
  * Horizontal bounds of a view of the map wrapping around east-west, with the map drawn twice side by side:
  * at x = 0 and at x = `period`.
  *

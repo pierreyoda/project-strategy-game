@@ -7,9 +7,14 @@
  * 1110x1280 frames like every tile and entity, the art below the hex centre. One frame per deposit:
  * nobody owns the ground, so there is no mark frame to tint.
  *
+ * Also the resource lens's chips, `chip_<resource>_<level>[_depleting]`: the kit's badge shape with
+ * the resource's icon and one pip per level, in 256x112 frames centred on the chip, drawn at twice
+ * that like every raw asset.
+ *
  * Usage, from `client/`:
  *   node art/deposits/deposits.mjs art/deposits/svg
- *   for f in art/deposits/svg/*.svg; do rsvg-convert -w 1110 -h 1280 "$f" -o "raw-assets/deposits{m}{tps}/$(basename "${f%.svg}").png"; done
+ *   for f in art/deposits/svg/[!c]*.svg; do rsvg-convert -w 1110 -h 1280 "$f" -o "raw-assets/deposits{m}{tps}/$(basename "${f%.svg}").png"; done
+ *   for f in art/deposits/svg/chip_*.svg; do rsvg-convert -w 512 -h 224 "$f" -o "raw-assets/deposits{m}{tps}/$(basename "${f%.svg}").png"; done
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 
@@ -312,16 +317,85 @@ const RES = {
   },
 };
 
+/** The lucide icons the client draws these resources with (`shared/ui/icons.ts`), in their 24x24 box. */
+const ICONS = {
+  water: ["M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"],
+  oil: [
+    "M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 4 0v-6.998a2 2 0 0 0-.59-1.42L18 5",
+    "M14 21V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16",
+    "M2 21h13",
+    "M3 9h11",
+  ],
+  metals: [
+    "M7 10H6a4 4 0 0 1-4-4 1 1 0 0 1 1-1h4",
+    "M7 5a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1 7 7 0 0 1-7 7H8a1 1 0 0 1-1-1z",
+    "M9 12v5",
+    "M15 12v5",
+    "M5 20a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3 1 1 0 0 1-1 1H6a1 1 0 0 1-1-1",
+  ],
+  uranium: [
+    "M12 12h.01",
+    "M14 15.4641a4 4 0 0 1-4 0L7.52786 19.74597 A 1 1 0 0 0 7.99303 21.16211 10 10 0 0 0 16.00697 21.16211 1 1 0 0 0 16.47214 19.74597z",
+    "M16 12a4 4 0 0 0-2-3.464l2.472-4.282a1 1 0 0 1 1.46-.305 10 10 0 0 1 4.006 6.94A1 1 0 0 1 21 12z",
+    "M8 12a4 4 0 0 1 2-3.464L7.528 4.254a1 1 0 0 0-1.46-.305 10 10 0 0 0-4.006 6.94A1 1 0 0 0 3 12z",
+  ],
+};
+/** The warning colour of the kit (`--color-warning`), which a depleting deposit's chip turns to. */
+const WARNING = "#f0b43c";
+
+/**
+ * The yield chip: the kit's badge shape (a stretched hexagon), the resource's icon in its colour,
+ * one pip per step of richness. Depleting, its rim and its last pip turn to the warning colour.
+ */
+function chip(res, level, cx, cy, depleting) {
+  const w = 240,
+    h = 92,
+    x0 = cx - w / 2,
+    x1 = cx + w / 2,
+    y0 = cy - h / 2,
+    y1 = cy + h / 2,
+    b = h / 2;
+  const hex = (dx, dy) =>
+    `M${r(x0 + dx)} ${r(cy + dy)} L${r(x0 + b + dx)} ${r(y0 + dy)} L${r(x1 - b + dx)} ${r(y0 + dy)} ` +
+    `L${r(x1 + dx)} ${r(cy + dy)} L${r(x1 - b + dx)} ${r(y1 + dy)} L${r(x0 + b + dx)} ${r(y1 + dy)} Z`;
+  path(hex(6, 9), { fill: "#000", opacity: 0.35 });
+  path(hex(0, 0), { fill: "#0f161f", opacity: 0.92, stroke: depleting ? WARNING : "#405670", "stroke-width": 4 });
+  const s = 2.5,
+    ix = x0 + b * 0.78,
+    iy = cy - 12 * s;
+  out.push(
+    `<g transform="translate(${r(ix)} ${r(iy)}) scale(${s})" fill="none" stroke="${RES[res].accent}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICONS[res].map((d) => `<path d="${d}"/>`).join("")}</g>`,
+  );
+  for (let k = 0; k < 3; k++) {
+    const px = ix + 24 * s + 26 + k * 34,
+      py = cy,
+      q = 11;
+    const d =
+      `M${r(px)} ${r(py - q)} L${r(px + q * 0.9)} ${r(py - q / 2)} L${r(px + q * 0.9)} ${r(py + q / 2)} ` +
+      `L${r(px)} ${r(py + q)} L${r(px - q * 0.9)} ${r(py + q / 2)} L${r(px - q * 0.9)} ${r(py - q / 2)} Z`;
+    const colour = depleting && k === level - 1 ? WARNING : RES[res].accent;
+    path(d, k < level ? { fill: colour } : { fill: "none", stroke: RES[res].accent, "stroke-width": 3, opacity: 0.5 });
+  }
+}
+
 const OUT = process.argv[2] || "svg";
 mkdirSync(OUT, { recursive: true });
 const frame = (body) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 1280" width="1110" height="1280">\n${body}\n</svg>\n`;
+/** The chip's frame: the chip in its centre, room for its rim and its shadow (6, 9) around it. */
+const chipFrame = (body) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 112" width="256" height="112">\n${body}\n</svg>\n`;
 for (const res of Object.keys(RES)) {
   for (const level of [1, 2, 3]) {
     out = [];
     RES[res].draw(level);
     out = [`<g transform="translate(${CX} ${CY}) scale(${GROW}) translate(${-CX} ${-CY})">`, ...out, "</g>"];
     writeFileSync(`${OUT}/${res}_${level}.svg`, frame(out.join("\n")));
+    for (const depleting of [false, true]) {
+      out = [];
+      chip(res, level, 128, 56, depleting);
+      writeFileSync(`${OUT}/chip_${res}_${level}${depleting ? "_depleting" : ""}.svg`, chipFrame(out.join("\n")));
+    }
   }
 }
 console.log("ok");
