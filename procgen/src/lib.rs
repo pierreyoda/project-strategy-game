@@ -29,5 +29,6 @@
 #[macro_use]
 mod macros;
 
+pub mod deposits;
 pub mod map;
 pub mod nations;

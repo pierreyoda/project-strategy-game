@@ -58,7 +58,7 @@ pub enum Unit {
 }
 
 impl Unit {
-    fn format(self, value: f64) -> String {
+    pub fn format(self, value: f64) -> String {
         match self {
             Self::Share => format!("{:.0}%", value * 100.0),
             Self::Count => format!("{value:.0}"),
@@ -69,7 +69,7 @@ impl Unit {
         }
     }
 
-    fn format_target(self, target: Target) -> String {
+    pub fn format_target(self, target: Target) -> String {
         let one = |value| match self {
             Self::Share => format!("{:.0}%", value * 100.0),
             Self::Count | Self::Flag => format!("{value:.0}"),
@@ -631,14 +631,19 @@ impl PlanetSurvey {
 
     /// Criteria met over criteria judged.
     pub fn score(&self) -> (usize, usize) {
-        let judged: Vec<bool> = self
-            .criteria()
-            .iter()
-            .filter(|criterion| criterion.target != Target::Info)
-            .filter_map(Criterion::met)
-            .collect();
-        (judged.iter().filter(|&&met| met).count(), judged.len())
+        score(&self.criteria())
     }
+}
+
+/// Criteria met over criteria judged: the informative ones and those with nothing to measure are
+/// left out.
+pub fn score(criteria: &[Criterion]) -> (usize, usize) {
+    let judged: Vec<bool> = criteria
+        .iter()
+        .filter(|criterion| criterion.target != Target::Info)
+        .filter_map(Criterion::met)
+        .collect();
+    (judged.iter().filter(|&&met| met).count(), judged.len())
 }
 
 impl fmt::Display for PlanetSurvey {
@@ -670,7 +675,10 @@ fn min_over(values: impl Iterator<Item = f64>) -> f64 {
 
 /// The connected groups of the tiles `include` picks, each in row-major order, wrapping around
 /// east-west like the map.
-fn components(surface: &PlanetSurface, include: impl Fn(TileIndex) -> bool) -> Vec<Vec<TileIndex>> {
+pub(crate) fn components(
+    surface: &PlanetSurface,
+    include: impl Fn(TileIndex) -> bool,
+) -> Vec<Vec<TileIndex>> {
     let mut seen = vec![false; surface.tiles_count()];
     let mut groups = Vec::new();
     for start in 0..surface.tiles_count() as TileIndex {
@@ -799,8 +807,8 @@ fn wraps_around(surface: &PlanetSurface, group: &[TileIndex]) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{PlanetSurvey, Target};
+pub(crate) mod tests {
+    use super::{Criterion, PlanetSurvey, Target, score};
     use crate::map::{
         MapGenerator, MapGeneratorSettings, PlanetSurface, surface::tests::surface_from_art,
     };
@@ -820,18 +828,25 @@ mod tests {
                 PlanetSurvey::of(&PlanetSurface::classify(&map, &settings))
             })
             .collect();
-        let first = surveys[0].criteria();
+        let criteria: Vec<Vec<Criterion>> = surveys.iter().map(PlanetSurvey::criteria).collect();
         println!("{} seeds, 80 x 52\n", seeds.len());
-        for (position, criterion) in first.iter().enumerate() {
+        print!("{}", tabulate(&criteria));
+    }
+
+    /// The criteria of many surveys, one line per criterion: how often it was met, and the spread
+    /// of its values; then the spread of the criteria met per survey.
+    pub(crate) fn tabulate(surveys: &[Vec<Criterion>]) -> String {
+        let mut text = String::new();
+        for (position, criterion) in surveys[0].iter().enumerate() {
             let mut values: Vec<f64> = surveys
                 .iter()
-                .map(|survey| survey.criteria()[position].value)
+                .map(|criteria| criteria[position].value)
                 .filter(|value| !value.is_nan())
                 .collect();
             values.sort_by(f64::total_cmp);
             let met = surveys
                 .iter()
-                .filter(|survey| survey.criteria()[position].met() == Some(true))
+                .filter(|criteria| criteria[position].met() == Some(true))
                 .count();
             let (min, median, max) = if values.is_empty() {
                 (f64::NAN, f64::NAN, f64::NAN)
@@ -843,25 +858,27 @@ mod tests {
                 )
             };
             let unit = criterion.unit;
-            println!(
-                "{:>3}% met  {} {} ({}): min {} median {} max {}",
-                met * 100 / seeds.len(),
+            text.push_str(&format!(
+                "{:>3}% met  {} {} ({}): min {} median {} max {}\n",
+                met * 100 / surveys.len(),
                 criterion.id,
                 criterion.name,
                 unit.format_target(criterion.target),
                 unit.format(min),
                 unit.format(median),
                 unit.format(max),
-            );
+            ));
         }
-        let scores: Vec<usize> = surveys.iter().map(|survey| survey.score().0).collect();
-        println!(
-            "\ncriteria met per seed: min {} median {} max {} of {}",
-            scores.iter().min().unwrap(),
+        let mut scores: Vec<usize> = surveys.iter().map(|criteria| score(criteria).0).collect();
+        scores.sort_unstable();
+        text.push_str(&format!(
+            "\ncriteria met per seed: min {} median {} max {} of {}\n",
+            scores[0],
             scores[scores.len() / 2],
-            scores.iter().max().unwrap(),
-            surveys[0].score().1
-        );
+            scores[scores.len() - 1],
+            score(&surveys[0]).1
+        ));
+        text
     }
 
     #[test]

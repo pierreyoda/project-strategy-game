@@ -8,7 +8,7 @@ pub use self::{
     sampling::ElevationField,
     settings::{MAX_SEED, MapGeneratorSeedScalar, MapGeneratorSettings},
     surface::PlanetSurface,
-    survey::{Criterion, PlanetSurvey, Target, Unit},
+    survey::{Criterion, PlanetSurvey, Target, Unit, score},
     terrain::{TerrainClassifier, TerrainKind},
 };
 
@@ -21,7 +21,7 @@ pub mod renderers;
 mod sampling;
 mod settings;
 pub(crate) mod surface;
-mod survey;
+pub(crate) mod survey;
 mod terrain;
 
 #[derive(Debug)]

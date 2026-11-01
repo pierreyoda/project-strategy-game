@@ -24,6 +24,9 @@ pub type GameSeed = u64;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum RngPurpose {
     WorldGeneration,
+    /// The resource deposits of a generated world, apart from `WorldGeneration` so that placing
+    /// them never shifts the capitals, nor the capitals them.
+    DepositGeneration,
     Economy,
     Logistics,
     Military,
@@ -41,11 +44,12 @@ impl RngPurpose {
     fn stream(self) -> u64 {
         let (purpose, nation): (u32, u32) = match self {
             Self::WorldGeneration => (0, 0),
-            Self::Economy => (1, 0),
-            Self::Logistics => (2, 0),
-            Self::Military => (3, 0),
-            Self::Population => (4, 0),
-            Self::Ai(nation) => (5, nation.index() as u32),
+            Self::DepositGeneration => (1, 0),
+            Self::Economy => (2, 0),
+            Self::Logistics => (3, 0),
+            Self::Military => (4, 0),
+            Self::Population => (5, 0),
+            Self::Ai(nation) => (6, nation.index() as u32),
         };
         (u64::from(purpose) << 32) | u64::from(nation)
     }
@@ -126,6 +130,10 @@ mod tests {
         assert_ne!(draws(7, ai(0)), draws(7, ai(1)));
         // the first nation's AI must not be mistaken for a nation-wide purpose
         assert_ne!(draws(7, ai(0)), draws(7, RngPurpose::WorldGeneration));
+        assert_ne!(
+            draws(7, RngPurpose::DepositGeneration),
+            draws(7, RngPurpose::WorldGeneration)
+        );
     }
 
     /// The exact numbers a seed gives, frozen.
