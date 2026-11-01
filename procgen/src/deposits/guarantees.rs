@@ -221,8 +221,11 @@ mod tests {
     fn test_every_nation_gets_its_guarantees_even_on_a_bare_plain() {
         // a featureless plain: metals have nowhere good to go
         let surface = surface_from_art(&["~..............~"; 8].join("|"));
-        let nations =
-            NationsGenerator::from_settings(NationsGeneratorSettings::new(0, 3)).generate(&surface);
+        let nations = NationsGenerator::from_settings(
+            // forests would move the capitals closer, and their zones would share deposits
+            NationsGeneratorSettings::new(0, 3).with_forest_score(1.0),
+        )
+        .generate(&surface);
         let geology = Geology::survey(&surface);
         let mut ledger = Ledger::new(surface.tiles_count());
         let report = guarantee(

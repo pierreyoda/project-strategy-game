@@ -6,6 +6,7 @@ use project_x_core::{
     hex_map::{HexMap, shape::RectangularHexMapShape},
 };
 use project_x_procgen::{
+    forests::Forests,
     map::{MAX_SEED, MapGenerator, MapGeneratorEvent, MapGeneratorSettings},
     nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings, PlanetSurface},
 };
@@ -21,6 +22,8 @@ pub struct GeneratedPlanet {
     rows: i16,
     elevations: Vec<i16>,
     terrain: Vec<u8>,
+    /// `Vegetation` discriminants, grown from the classified surface.
+    vegetation: Vec<u8>,
     /// What `nations` reads: classified once, with the planet.
     surface: PlanetSurface,
 }
@@ -47,6 +50,12 @@ impl GeneratedPlanet {
     #[wasm_bindgen(getter)]
     pub fn terrain(&self) -> Vec<u8> {
         self.terrain.clone()
+    }
+
+    /// `Vegetation` discriminants of the tiles. Copied on each access.
+    #[wasm_bindgen(getter)]
+    pub fn vegetation(&self) -> Vec<u8> {
+        self.vegetation.clone()
     }
 
     /// Settle the planet: `nations` nations, each with its capital, the land it owns on turn 1
@@ -80,11 +89,17 @@ impl GeneratedPlanet {
             .map(|coords| map.tile(&coords).expect("missing tile").elevation())
             .collect();
         let terrain = surface.terrain().iter().map(|&kind| kind as u8).collect();
+        let vegetation = Forests::grow(&surface)
+            .vegetation()
+            .iter()
+            .map(|&grown| grown as u8)
+            .collect();
         Self {
             columns: shape.columns(),
             rows: shape.rows(),
             elevations,
             terrain,
+            vegetation,
             surface,
         }
     }
@@ -226,6 +241,15 @@ mod tests {
         assert_eq!(planet.surface.tiles_count(), 30);
         assert_eq!(planet.elevations().len(), 30);
         assert_eq!(planet.terrain().len(), 30);
+        assert_eq!(planet.vegetation().len(), 30);
+        assert!(
+            planet
+                .vegetation()
+                .iter()
+                .zip(planet.terrain())
+                .all(|(&grown, kind)| grown == 0 || kind == 2 || kind == 3),
+            "forests grow on plains and hills only"
+        );
         let classifier = TerrainClassifier::new(&settings);
         for coords in RectangularHexMapShape::new(columns, rows).coords() {
             let offset = OffsetCoords::from(coords);

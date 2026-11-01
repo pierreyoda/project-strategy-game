@@ -32,6 +32,7 @@ use project_x_core::{
     },
 };
 use project_x_procgen::{
+    forests::Forests,
     map::{MAX_SEED, MapGenerator, MapGeneratorSettings},
     nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings, PlanetSurface},
 };
@@ -46,13 +47,40 @@ use crate::wire::{CommandWire, EventWire, MetaWire, NewGameSettings, RejectionWi
 /// shape of the planet to anyone who opens the devtools.
 const UNKNOWN_TERRAIN: u8 = 255;
 
+/// Vegetation of a tile the viewer has never explored, for the same reason as `UNKNOWN_TERRAIN`.
+const UNKNOWN_VEGETATION: u8 = 255;
+
+/// What a planet's ground is, classified once when the game starts: neither the terrain nor the
+/// vegetation changes during a game, so neither belongs in a delta - only what the viewer may know
+/// of them does.
+struct Ground {
+    /// `TerrainKind` discriminants, row-major.
+    terrain: Vec<u8>,
+    /// `Vegetation` discriminants, row-major.
+    vegetation: Vec<u8>,
+}
+
+impl Ground {
+    /// What the viewer may know of the tile's terrain and vegetation, given its visibility.
+    fn seen(&self, index: usize, visibility: u8) -> (u8, u8) {
+        if visibility == TileVisibility::Unexplored as u8 {
+            return (UNKNOWN_TERRAIN, UNKNOWN_VEGETATION);
+        }
+        (
+            self.terrain.get(index).copied().unwrap_or(UNKNOWN_TERRAIN),
+            self.vegetation
+                .get(index)
+                .copied()
+                .unwrap_or(UNKNOWN_VEGETATION),
+        )
+    }
+}
+
 /// One playthrough, driven from the client's worker.
 #[wasm_bindgen]
 pub struct GameSession {
     inner: CoreSession,
-    /// `TerrainKind` discriminants, classified once: terrain is derived from the elevation and the
-    /// latitude, neither of which a turn changes, so it never belongs in a delta.
-    terrain: Vec<u8>,
+    ground: Ground,
 }
 
 #[wasm_bindgen]
@@ -105,6 +133,7 @@ impl GameSession {
 
         let surface = PlanetSurface::classify(&map, &generator_settings);
         let terrain: Vec<u8> = surface.terrain().iter().map(|&kind| kind as u8).collect();
+        let vegetation = Forests::grow(&surface).vegetation();
         let nations = NationsGenerator::from_settings(NationsGeneratorSettings::new(
             u64::from(settings.seed),
             settings.nations,
@@ -114,6 +143,7 @@ impl GameSession {
         let mut world = World::new(shape, map);
         // the simulation reads the ground for its rules; the client gets the same kinds from `terrain`
         world.paint_terrain(surface.terrain());
+        world.paint_vegetation(&vegetation);
         set_up_world(&mut world, &nations, content);
 
         let local_player = NationId::from_index(0);
@@ -127,7 +157,13 @@ impl GameSession {
             inner.set_controller(nation, controller);
         }
 
-        Ok(Self { inner, terrain })
+        Ok(Self {
+            inner,
+            ground: Ground {
+                terrain,
+                vegetation: vegetation.iter().map(|&grown| grown as u8).collect(),
+            },
+        })
     }
 
     /// The nation this client plays.
@@ -202,7 +238,7 @@ impl GameSession {
     pub fn snapshot(&self, viewer: u16) -> WorldSnapshotView {
         WorldSnapshotView::build(
             self.inner.snapshot(NationId::from_index(viewer as usize)),
-            &self.terrain,
+            &self.ground,
         )
     }
 
@@ -214,10 +250,10 @@ impl GameSession {
         match self.inner.project(viewer, since.max(0.0) as u64) {
             Projection::Delta(delta) => WorldProjectionView {
                 full: None,
-                delta: Some(WorldDeltaView::build(delta, &self.terrain)),
+                delta: Some(WorldDeltaView::build(delta, &self.ground)),
             },
             Projection::Full(snapshot) => WorldProjectionView {
-                full: Some(WorldSnapshotView::build(snapshot, &self.terrain)),
+                full: Some(WorldSnapshotView::build(snapshot, &self.ground)),
                 delta: None,
             },
         }
@@ -309,6 +345,7 @@ pub struct WorldSnapshotView {
     columns: i16,
     rows: i16,
     terrain: Vec<u8>,
+    vegetation: Vec<u8>,
     inner: WorldSnapshot,
 }
 
@@ -334,6 +371,12 @@ impl WorldSnapshotView {
     #[wasm_bindgen(getter)]
     pub fn terrain(&self) -> Vec<u8> {
         self.terrain.clone()
+    }
+
+    /// `Vegetation` discriminants, for the whole map, `UNKNOWN_VEGETATION` where never explored.
+    #[wasm_bindgen(getter)]
+    pub fn vegetation(&self) -> Vec<u8> {
+        self.vegetation.clone()
     }
 
     /// In meters, zeroed on tiles the viewer has never explored.
@@ -445,18 +488,19 @@ impl WorldSnapshotView {
 }
 
 impl WorldSnapshotView {
-    fn build(snapshot: WorldSnapshot, terrain: &[u8]) -> Self {
-        let visible_terrain = snapshot
+    fn build(snapshot: WorldSnapshot, ground: &Ground) -> Self {
+        let (terrain, vegetation) = snapshot
             .visibility
             .iter()
-            .zip(terrain.iter())
-            .map(|(&visibility, &kind)| hidden_unless_explored(visibility, kind))
-            .collect();
+            .enumerate()
+            .map(|(index, &visibility)| ground.seen(index, visibility))
+            .unzip();
         Self {
             meta: meta_json(&MetaWire::from(&snapshot.meta)),
             columns: snapshot.columns,
             rows: snapshot.rows,
-            terrain: visible_terrain,
+            terrain,
+            vegetation,
             inner: snapshot,
         }
     }
@@ -494,6 +538,7 @@ impl ReachableView {
 pub struct WorldDeltaView {
     meta: String,
     terrain: Vec<u8>,
+    vegetation: Vec<u8>,
     inner: WorldDelta,
 }
 
@@ -517,6 +562,12 @@ impl WorldDeltaView {
     #[wasm_bindgen(getter)]
     pub fn terrain(&self) -> Vec<u8> {
         self.terrain.clone()
+    }
+
+    /// `Vegetation` discriminants of those tiles, like `terrain`.
+    #[wasm_bindgen(getter)]
+    pub fn vegetation(&self) -> Vec<u8> {
+        self.vegetation.clone()
     }
 
     #[wasm_bindgen(getter)]
@@ -639,22 +690,17 @@ impl WorldDeltaView {
 }
 
 impl WorldDeltaView {
-    fn build(delta: WorldDelta, terrain: &[u8]) -> Self {
-        let changed_terrain = delta
+    fn build(delta: WorldDelta, ground: &Ground) -> Self {
+        let (terrain, vegetation) = delta
             .tile_indices
             .iter()
             .zip(delta.visibility.iter())
-            .map(|(&index, &visibility)| {
-                let kind = terrain
-                    .get(index as usize)
-                    .copied()
-                    .unwrap_or(UNKNOWN_TERRAIN);
-                hidden_unless_explored(visibility, kind)
-            })
-            .collect();
+            .map(|(&index, &visibility)| ground.seen(index as usize, visibility))
+            .unzip();
         Self {
             meta: meta_json(&MetaWire::from(&delta.meta)),
-            terrain: changed_terrain,
+            terrain,
+            vegetation,
             inner: delta,
         }
     }
@@ -769,14 +815,6 @@ fn set_up_world(world: &mut World, generated: &GeneratedNations, content: Starti
 }
 
 /// The terrain of a tile, or `UNKNOWN_TERRAIN` while the viewer has never explored it.
-fn hidden_unless_explored(visibility: u8, kind: u8) -> u8 {
-    if visibility == TileVisibility::Unexplored as u8 {
-        UNKNOWN_TERRAIN
-    } else {
-        kind
-    }
-}
-
 fn meta_json(meta: &MetaWire) -> String {
     // a `MetaWire` has no map and no non-string keys: it cannot fail to serialize
     serde_json::to_string(meta).unwrap_or_else(|_| "{}".to_string())
@@ -788,9 +826,12 @@ fn to_js_error(error: serde_json::Error) -> JsError {
 
 #[cfg(test)]
 mod tests {
-    use project_x_core::{game::session::LoggedCommand, simulation::fog::TileVisibility};
+    use project_x_core::{
+        game::session::LoggedCommand, hex_map::vegetation::Vegetation,
+        simulation::fog::TileVisibility,
+    };
 
-    use super::{GameSession, UNKNOWN_TERRAIN};
+    use super::{GameSession, UNKNOWN_TERRAIN, UNKNOWN_VEGETATION};
 
     /// The default scenario, as the client sends it.
     fn default_scenario() -> serde_json::Value {
@@ -1074,7 +1115,12 @@ mod tests {
         // every tile carries the kind the client is shown, so the rules and the map agree
         for (index, coords) in world.shape().coords().enumerate() {
             let kind = world.tile(coords).expect("on the map").natural().terrain();
-            assert_eq!(kind as u8, session.terrain[index], "tile {index}");
+            assert_eq!(kind as u8, session.ground.terrain[index], "tile {index}");
+            let grown = world.tile(coords).unwrap().natural().vegetation();
+            assert_eq!(
+                grown as u8, session.ground.vegetation[index],
+                "tile {index}"
+            );
         }
         assert!(
             world.shape().coords().any(|coords| world
@@ -1100,6 +1146,19 @@ mod tests {
         for (index, (&kind, &seen)) in terrain.iter().zip(visibility.iter()).enumerate() {
             assert_eq!(kind == UNKNOWN_TERRAIN, seen == 0, "tile {index}");
         }
+        // nor its forests
+        let vegetation = snapshot.vegetation();
+        assert_eq!(vegetation.len(), visibility.len());
+        for (index, (&grown, &seen)) in vegetation.iter().zip(visibility.iter()).enumerate() {
+            assert_eq!(grown == UNKNOWN_VEGETATION, seen == 0, "tile {index}");
+        }
+        assert!(
+            session
+                .ground
+                .vegetation
+                .contains(&(Vegetation::Forest as u8)),
+            "the planet grows forests"
+        );
         // and neither has its elevation
         for (index, (&elevation, &seen)) in snapshot
             .elevations()
@@ -1130,6 +1189,7 @@ mod tests {
         // the tile arrays are parallel to the indices, and sorted so the renderer can paint a row once
         let indices = delta.tile_indices();
         assert_eq!(delta.terrain().len(), indices.len());
+        assert_eq!(delta.vegetation().len(), indices.len());
         assert_eq!(delta.visibility().len(), indices.len());
         assert_eq!(delta.elevations().len(), indices.len());
         assert!(indices.windows(2).all(|pair| pair[0] < pair[1]));

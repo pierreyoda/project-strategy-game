@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     game::state::{TileIndex, World},
-    hex_map::{coordinates::CubeCoords, terrain::TerrainKind},
+    hex_map::{coordinates::CubeCoords, terrain::TerrainKind, vegetation::Vegetation},
     simulation::{
         fog::TileVisibility,
         ids::{NationId, UnitId},
@@ -21,15 +21,23 @@ use crate::{
 /// The entry cost of ground no land unit crosses.
 pub const IMPASSABLE: u8 = u8::MAX;
 
-/// Points a unit spends to enter a tile of this kind.
+/// Points a forest adds to the entry cost of its ground.
+pub const FOREST_EXTRA_COST: u8 = 1;
+
+/// Points a unit spends to enter a tile of this kind, with this vegetation on it.
 ///
 /// A table for now; script-defined per template later, through `UnitTemplate::attributes`.
-pub fn entry_cost(kind: TerrainKind) -> u8 {
-    match kind {
+pub fn entry_cost(kind: TerrainKind, vegetation: Vegetation) -> u8 {
+    let ground = match kind {
         TerrainKind::Flat => 1,
         TerrainKind::Hills | TerrainKind::Ice => 2,
         TerrainKind::Mountains | TerrainKind::RoughIce => 3,
-        TerrainKind::DeepWater | TerrainKind::ShallowWater => IMPASSABLE,
+        TerrainKind::DeepWater | TerrainKind::ShallowWater => return IMPASSABLE,
+    };
+    if vegetation.is_forest() {
+        ground + FOREST_EXTRA_COST
+    } else {
+        ground
     }
 }
 
@@ -92,11 +100,11 @@ pub fn step_cost(
     {
         return Err(StepRefusal::NotAdjacent);
     }
-    let kind = world
+    let (kind, vegetation) = world
         .tile(to)
-        .map(|tile| tile.natural().terrain())
+        .map(|tile| (tile.natural().terrain(), tile.natural().vegetation()))
         .ok_or(StepRefusal::OffMap)?;
-    let cost = entry_cost(kind);
+    let cost = entry_cost(kind, vegetation);
     if cost == IMPASSABLE {
         return Err(StepRefusal::Impassable);
     }
@@ -197,8 +205,10 @@ pub fn reachable(world: &World, viewer: NationId, unit: UnitId) -> Option<Reacha
 
 #[cfg(test)]
 mod tests {
-    use super::{IMPASSABLE, entry_cost};
-    use crate::hex_map::terrain::TerrainKind;
+    use super::{FOREST_EXTRA_COST, IMPASSABLE, entry_cost};
+    use crate::hex_map::{terrain::TerrainKind, vegetation::Vegetation};
+
+    const BARE: Vegetation = Vegetation::None;
 
     #[test]
     fn test_water_is_the_only_impassable_ground() {
@@ -209,10 +219,21 @@ mod tests {
             TerrainKind::Ice,
             TerrainKind::RoughIce,
         ] {
-            assert!(entry_cost(kind) < IMPASSABLE, "{kind:?}");
+            assert!(entry_cost(kind, BARE) < IMPASSABLE, "{kind:?}");
         }
-        assert_eq!(entry_cost(TerrainKind::DeepWater), IMPASSABLE);
-        assert_eq!(entry_cost(TerrainKind::ShallowWater), IMPASSABLE);
-        assert!(entry_cost(TerrainKind::Hills) > entry_cost(TerrainKind::Flat));
+        assert_eq!(entry_cost(TerrainKind::DeepWater, BARE), IMPASSABLE);
+        assert_eq!(entry_cost(TerrainKind::ShallowWater, BARE), IMPASSABLE);
+        assert!(entry_cost(TerrainKind::Hills, BARE) > entry_cost(TerrainKind::Flat, BARE));
+    }
+
+    #[test]
+    fn test_a_forest_slows_its_ground_down() {
+        let forest = Vegetation::Forest;
+        assert_eq!(entry_cost(TerrainKind::Flat, forest), 1 + FOREST_EXTRA_COST);
+        assert_eq!(
+            entry_cost(TerrainKind::Hills, forest),
+            2 + FOREST_EXTRA_COST
+        );
+        assert_eq!(entry_cost(TerrainKind::ShallowWater, forest), IMPASSABLE);
     }
 }

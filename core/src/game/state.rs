@@ -8,7 +8,10 @@
 //! touched in the journal's pending batch. A write that skips the gate is a change the client will
 //! never be told about, and that class of bug is invisible until someone notices a stale hex.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet, BinaryHeap},
+};
 
 use crate::{
     game::{GameTurnScalar, genesis::WorldGenesis, journal::TurnChanges},
@@ -18,6 +21,7 @@ use crate::{
         shape::RectangularHexMapShape,
         terrain::TerrainKind,
         tile::HexMapTile,
+        vegetation::Vegetation,
     },
     simulation::{
         buildings::{Building, BuildingTemplate},
@@ -169,6 +173,45 @@ impl World {
         seen.into_iter().collect()
     }
 
+    /// The tiles a watcher on `from` sees with this sight, in ascending order: every tile at most
+    /// `sight` steps away, each step out of a forest costing one more - the edge of a forest is
+    /// in sight, what lies past it less so, and a watcher standing in one sees a step less. The
+    /// tiles next to the watcher are always in sight.
+    pub fn tiles_in_sight(&self, from: CubeCoords, sight: u32) -> Vec<TileIndex> {
+        let Some(origin) = self.tile_index(from) else {
+            return Vec::new();
+        };
+        let mut seen = BTreeSet::from([origin]);
+        let mut spent: BTreeMap<TileIndex, u32> = BTreeMap::from([(origin, 0)]);
+        let mut queue = BinaryHeap::from([Reverse((0u32, origin))]);
+        while let Some(Reverse((cost, index))) = queue.pop() {
+            if spent.get(&index).is_some_and(|&known| known < cost) {
+                continue;
+            }
+            let Some(coords) = self.tile_coords(index) else {
+                continue;
+            };
+            let leaving = self.tile(coords).map_or(1, |tile| {
+                1 + u32::from(tile.natural().vegetation().is_forest())
+            });
+            let reached = cost + leaving;
+            for neighbor in self.shape.neighbors(coords) {
+                let Some(next) = self.tile_index(neighbor) else {
+                    continue;
+                };
+                if index == origin {
+                    seen.insert(next);
+                }
+                if reached <= sight && spent.get(&next).is_none_or(|&known| reached < known) {
+                    seen.insert(next);
+                    spent.insert(next, reached);
+                    queue.push(Reverse((reached, next)));
+                }
+            }
+        }
+        seen.into_iter().collect()
+    }
+
     pub fn tile(&self, coords: CubeCoords) -> Option<&HexMapTile> {
         self.map.tile(&self.shape.wrap(coords)?)
     }
@@ -252,6 +295,21 @@ impl World {
         for (coords, &kind) in self.shape.coords().zip(kinds) {
             if let Some(tile) = self.map.tile_mut(&coords) {
                 tile.natural_mut().set_terrain(kind);
+            }
+        }
+    }
+
+    /// Write the vegetation of every tile, row-major like `paint_terrain` and for the same reasons
+    /// outside the mutation gate. Panics on a slice of the wrong length.
+    pub fn paint_vegetation(&mut self, vegetation: &[Vegetation]) {
+        assert_eq!(
+            vegetation.len(),
+            self.tiles_count(),
+            "one vegetation per tile, in row-major order"
+        );
+        for (coords, &grown) in self.shape.coords().zip(vegetation) {
+            if let Some(tile) = self.map.tile_mut(&coords) {
+                tile.natural_mut().set_vegetation(grown);
             }
         }
     }
@@ -420,7 +478,7 @@ mod tests {
         game::journal::TurnChanges,
         hex_map::{
             HexMap, HexMapStorage, coordinates::OffsetCoords, shape::RectangularHexMapShape,
-            tile::HexMapTile,
+            tile::HexMapTile, vegetation::Vegetation,
         },
         simulation::{
             ids::{EntityIndex, NationId, SimulationID},
@@ -438,6 +496,91 @@ mod tests {
             tiles.insert(coords, HexMapTile::from_properties(100));
         }
         World::new(shape, HexMap::from_tiles(tiles))
+    }
+
+    /// Tiles at most `radius` hexes from the center, by the plain disc.
+    fn disc(world: &World, center: OffsetCoords, radius: u32) -> Vec<u32> {
+        world.tiles_within(center.into(), radius)
+    }
+
+    fn plant(world: &mut World, wooded: &[(i16, i16)]) {
+        let mut vegetation = vec![Vegetation::None; world.tiles_count()];
+        for &(col, row) in wooded {
+            let index = world
+                .tile_index(OffsetCoords::new(col, row).into())
+                .unwrap();
+            vegetation[index as usize] = Vegetation::Forest;
+        }
+        world.paint_vegetation(&vegetation);
+    }
+
+    #[test]
+    fn test_sight_over_bare_ground_is_the_plain_disc() {
+        let world = build_test_world(12, 9);
+        let center = OffsetCoords::new(5, 4);
+        for sight in 0..=3 {
+            assert_eq!(
+                world.tiles_in_sight(center.into(), sight),
+                if sight == 0 {
+                    disc(&world, center, 1)
+                } else {
+                    disc(&world, center, sight)
+                },
+                "sight {sight}: the neighbors are always in sight"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_forest_hides_what_lies_past_it() {
+        let mut world = build_test_world(12, 9);
+        // a wooded tile two hexes east of the watcher, on its row
+        plant(&mut world, &[(7, 4)]);
+        let seen = world.tiles_in_sight(OffsetCoords::new(5, 4).into(), 3);
+        let index = |col, row| {
+            world
+                .tile_index(OffsetCoords::new(col, row).into())
+                .unwrap()
+        };
+        assert!(seen.contains(&index(7, 4)), "the edge of the forest");
+        assert!(!seen.contains(&index(8, 4)), "right behind it");
+        assert!(seen.contains(&index(2, 4)), "the open side, as far as ever");
+    }
+
+    #[test]
+    fn test_a_watcher_in_a_forest_sees_a_step_less() {
+        let mut world = build_test_world(12, 9);
+        plant(&mut world, &[(5, 4)]);
+        let center = OffsetCoords::new(5, 4);
+        assert_eq!(
+            world.tiles_in_sight(center.into(), 2),
+            disc(&world, center, 1)
+        );
+        assert_eq!(
+            world.tiles_in_sight(center.into(), 1),
+            disc(&world, center, 1),
+            "but always its neighbors"
+        );
+    }
+
+    #[test]
+    fn test_paint_vegetation_reads_back_per_tile() {
+        let mut world = build_test_world(4, 3);
+        plant(&mut world, &[(1, 1)]);
+        let wooded: Vec<bool> = world
+            .shape()
+            .coords()
+            .map(|coords| {
+                world
+                    .tile(coords)
+                    .unwrap()
+                    .natural()
+                    .vegetation()
+                    .is_forest()
+            })
+            .collect();
+        assert_eq!(wooded.iter().filter(|&&w| w).count(), 1);
+        assert!(wooded[5]);
     }
 
     #[test]

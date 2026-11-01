@@ -10,6 +10,7 @@ use project_x_core::{
         coordinates::{CubeCoords, OffsetCoords},
         shape::RectangularHexMapShape,
         terrain::TerrainKind,
+        vegetation::Vegetation,
     },
     simulation::{
         fog::TileVisibility,
@@ -37,6 +38,8 @@ struct Knowledge {
     visibility: Vec<TileVisibility>,
     /// Per tile, row-major; `None` where the nation has never looked.
     terrain: Vec<Option<TerrainKind>>,
+    /// Per tile, row-major; `None` where the nation has never looked.
+    vegetation: Vec<Option<Vegetation>>,
     /// Every unit of the nation: a controller plays a whole nation, for now. One playing only part
     /// of a human nation will be shown the units in its charge, and its orders for any other
     /// refused by the host.
@@ -80,6 +83,10 @@ impl ScriptView {
             .coords()
             .map(|coords| (view.visibility(coords), view.terrain(coords)))
             .unzip();
+        let vegetation = shape
+            .coords()
+            .map(|coords| view.vegetation(coords))
+            .collect();
         let units: Vec<OwnUnit> = view
             .own_units()
             .map(|(id, unit)| OwnUnit {
@@ -118,6 +125,7 @@ impl ScriptView {
             shape,
             visibility,
             terrain,
+            vegetation,
             units,
             settlements,
             foreign_units,
@@ -146,6 +154,10 @@ impl Knowledge {
 
     fn terrain(&self, coords: CubeCoords) -> Option<TerrainKind> {
         self.index(coords).and_then(|index| self.terrain[index])
+    }
+
+    fn vegetation(&self, coords: CubeCoords) -> Option<Vegetation> {
+        self.index(coords).and_then(|index| self.vegetation[index])
     }
 }
 
@@ -192,6 +204,12 @@ pub fn register(engine: &mut Engine) {
             "terrain",
             |view: &mut ScriptView, at: Map| -> ScriptResult<ImmutableString> {
                 Ok(terrain_name(view.0.terrain(coords::from_map(&at)?)).into())
+            },
+        )
+        .register_fn(
+            "vegetation",
+            |view: &mut ScriptView, at: Map| -> ScriptResult<ImmutableString> {
+                Ok(vegetation_name(view.0.vegetation(coords::from_map(&at)?)).into())
             },
         )
         .register_fn(
@@ -294,6 +312,14 @@ fn tile(coords: CubeCoords) -> Dynamic {
 fn template_name(template: &SimulationID) -> ImmutableString {
     match template {
         SimulationID::Abstract(name) | SimulationID::Property(name) => name.as_str().into(),
+    }
+}
+
+fn vegetation_name(vegetation: Option<Vegetation>) -> &'static str {
+    match vegetation {
+        None => "unknown",
+        Some(Vegetation::None) => "none",
+        Some(Vegetation::Forest) => "forest",
     }
 }
 

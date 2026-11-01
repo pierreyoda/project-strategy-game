@@ -55,8 +55,12 @@ pub struct NationsGeneratorSettings {
     elbow_room_radius: u32,
     /// Weight of that neighborhood mean in the final score, from 0.0 (ignored) to 1.0.
     elbow_room_weight: f64,
+    /// Factor on the score of a wooded tile: the land has to be cleared first.
+    forest_score: f64,
     /// Cost of entering each kind of land, for the spheres of influence.
     movement_costs: PerTerrain<u32>,
+    /// Cost a forest adds to entering its land, like it slows the units.
+    forest_cost: u32,
     /// Cost beyond which a sphere of influence stops reaching, if any.
     max_sphere_cost: Option<u32>,
     /// Habitable weight below which a landmass gets no nation at all.
@@ -89,12 +93,14 @@ impl Default for NationsGeneratorSettings {
             elevation_penalty_span: 2300.0,
             elbow_room_radius: 2,
             elbow_room_weight: 0.5,
+            forest_score: 0.8,
             movement_costs: PerTerrain {
                 flat: 1,
                 hills: 2,
                 mountains: 5,
                 ice: 4,
             },
+            forest_cost: 1,
             max_sphere_cost: None,
             min_landmass_weight: 15.0,
         }
@@ -146,6 +152,37 @@ impl NationsGeneratorSettings {
         }
     }
 
+    /// Weight of the neighborhood's mean score in a tile's own, from 0.0 (ignored) to 1.0.
+    pub fn with_elbow_room_weight(self, elbow_room_weight: f64) -> Self {
+        assert!(
+            (0.0..=1.0).contains(&elbow_room_weight),
+            "0.0 <= elbow_room_weight <= 1.0"
+        );
+        Self {
+            elbow_room_weight,
+            ..self
+        }
+    }
+
+    /// Factor on the score of a wooded tile, from 0.0 (never settled) to 1.0 (no matter).
+    pub fn with_forest_score(self, forest_score: f64) -> Self {
+        assert!(
+            (0.0..=1.0).contains(&forest_score),
+            "0.0 <= forest_score <= 1.0"
+        );
+        Self {
+            forest_score,
+            ..self
+        }
+    }
+
+    pub fn with_forest_cost(self, forest_cost: u32) -> Self {
+        Self {
+            forest_cost,
+            ..self
+        }
+    }
+
     pub fn with_max_sphere_cost(self, max_sphere_cost: Option<u32>) -> Self {
         Self {
             max_sphere_cost,
@@ -176,6 +213,8 @@ impl NationsGeneratorSettings {
         get_elbow_room_radius: elbow_room_radius, u32,
         get_elbow_room_weight: elbow_room_weight, f64,
         get_movement_costs: movement_costs, PerTerrain<u32>,
+        get_forest_score: forest_score, f64,
+        get_forest_cost: forest_cost, u32,
         get_max_sphere_cost: max_sphere_cost, Option<u32>,
         get_min_landmass_weight: min_landmass_weight, f64,
     }

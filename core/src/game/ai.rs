@@ -23,7 +23,7 @@ use std::fmt::Debug;
 
 use crate::{
     game::{commands::GameCommand, rng::GameRng, state::World, turn::StepBudget},
-    hex_map::{coordinates::CubeCoords, terrain::TerrainKind},
+    hex_map::{coordinates::CubeCoords, terrain::TerrainKind, vegetation::Vegetation},
     simulation::{
         fog::TileVisibility,
         ids::{EntityIndex, NationId, SettlementId, UnitId},
@@ -80,6 +80,17 @@ impl<'a> NationView<'a> {
             return None;
         }
         self.world.tile(coords).map(|tile| tile.natural().terrain())
+    }
+
+    /// What grows on a tile, or `None` while this nation has never explored it. Known once seen,
+    /// like the terrain.
+    pub fn vegetation(&self, coords: CubeCoords) -> Option<Vegetation> {
+        if self.visibility(coords) == TileVisibility::Unexplored {
+            return None;
+        }
+        self.world
+            .tile(coords)
+            .map(|tile| tile.natural().vegetation())
     }
 
     /// Where one of this nation's units can get to this turn, by the very rules its move order

@@ -5,7 +5,7 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 use project_x_core::{game::state::TileIndex, simulation::ids::NationId};
 
 use super::{capitals::Capital, settings::NationsGeneratorSettings};
-use crate::map::PlanetSurface;
+use crate::{forests::Forests, map::PlanetSurface};
 
 /// The spheres of influence: every land tile a capital can reach over land belongs to the
 /// capital that reaches it the cheapest.
@@ -26,6 +26,7 @@ impl Spheres {
         settings: &NationsGeneratorSettings,
     ) -> Self {
         let costs = settings.get_movement_costs();
+        let forests = Forests::grow(surface);
         let max_cost = settings.get_max_sphere_cost().unwrap_or(u32::MAX);
         let mut owner = vec![None; surface.tiles_count()];
         let mut cost = vec![u32::MAX; surface.tiles_count()];
@@ -47,6 +48,11 @@ impl Spheres {
                 }
                 let Some(step) = costs.of(surface.terrain_at(neighbor)) else {
                     continue;
+                };
+                let step = if forests.is_wooded(neighbor) {
+                    step + settings.get_forest_cost()
+                } else {
+                    step
                 };
                 if !surface.is_land(neighbor) {
                     continue;
@@ -122,7 +128,7 @@ mod tests {
     #[test]
     fn test_spheres_split_a_plain_between_two_capitals() {
         let surface = surface_from_art(".........|.........|.........");
-        let settings = NationsGeneratorSettings::default();
+        let settings = NationsGeneratorSettings::default().with_forest_cost(0);
         let capitals = [capital(0, 9, &surface), capital(1, 17, &surface)];
         let spheres = Spheres::carve(&surface, &capitals, &settings);
         assert_eq!(spheres.owner(9), Some(NationId::from_index(0)));
@@ -143,7 +149,7 @@ mod tests {
     fn test_spheres_never_cross_the_sea() {
         // an island to the east, water on both sides so that nothing wraps around
         let surface = surface_from_art("...~..~|...~..~|...~..~");
-        let settings = NationsGeneratorSettings::default();
+        let settings = NationsGeneratorSettings::default().with_forest_cost(0);
         let capitals = [capital(0, 8, &surface)];
         let spheres = Spheres::carve(&surface, &capitals, &settings);
         for row in 0..3 {
@@ -164,7 +170,7 @@ mod tests {
         // a mountain range right next to the first capital, water keeping the plain from
         // wrapping around
         let surface = surface_from_art(".^.......~|.^.......~|.^.......~");
-        let settings = NationsGeneratorSettings::default();
+        let settings = NationsGeneratorSettings::default().with_forest_cost(0);
         let capitals = [capital(0, 10, &surface), capital(1, 17, &surface)];
         let spheres = Spheres::carve(&surface, &capitals, &settings);
         // over the range costs 5 then 1: the second nation reaches the tile past it in 5
@@ -179,10 +185,35 @@ mod tests {
     #[test]
     fn test_spheres_stop_at_the_maximum_cost() {
         let surface = surface_from_art(".........");
-        let settings = NationsGeneratorSettings::default().with_max_sphere_cost(Some(2));
+        let settings = NationsGeneratorSettings::default()
+            .with_forest_cost(0)
+            .with_max_sphere_cost(Some(2));
         let capitals = [capital(0, 0, &surface)];
         let spheres = Spheres::carve(&surface, &capitals, &settings);
         assert_eq!(spheres.tiles_of(NationId::from_index(0)), [0, 1, 2, 7, 8]);
+    }
+
+    #[test]
+    fn test_spheres_pay_more_through_forest() {
+        let surface = surface_from_art(&[".........~"; 21].join("|"));
+        let forests = crate::forests::Forests::grow(&surface);
+        let wooded = (0..surface.tiles_count() as u32)
+            .find(|&index| forests.is_wooded(index) && index % 10 > 0 && index % 10 < 8)
+            .expect("some forest on the plain");
+        let start = wooded - 1;
+        let capitals = [capital(0, start, &surface)];
+        let bare = Spheres::carve(
+            &surface,
+            &capitals,
+            &NationsGeneratorSettings::default().with_forest_cost(0),
+        );
+        let slowed = Spheres::carve(
+            &surface,
+            &capitals,
+            &NationsGeneratorSettings::default().with_forest_cost(2),
+        );
+        assert_eq!(bare.cost(wooded), Some(1));
+        assert_eq!(slowed.cost(wooded), Some(3));
     }
 
     #[test]

@@ -72,6 +72,7 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     const { snapshot } = projection;
     return [
       snapshot.terrain.buffer,
+      snapshot.vegetation.buffer,
       snapshot.elevations.buffer,
       snapshot.visibility.buffer,
       snapshot.tileOwner.buffer,
@@ -84,6 +85,7 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
   return [
     delta.tileIndices.buffer,
     delta.terrain.buffer,
+    delta.vegetation.buffer,
     delta.elevations.buffer,
     delta.visibility.buffer,
     delta.tileOwner.buffer,
@@ -101,6 +103,7 @@ const readSnapshot = (view: {
   columns: number;
   rows: number;
   terrain: Uint8Array;
+  vegetation: Uint8Array;
   elevations: Int16Array;
   visibility: Uint8Array;
   tileOwner: Uint16Array;
@@ -127,6 +130,7 @@ const readSnapshot = (view: {
   columns: view.columns,
   rows: view.rows,
   terrain: view.terrain,
+  vegetation: view.vegetation,
   elevations: view.elevations,
   visibility: view.visibility,
   tileOwner: view.tileOwner,
@@ -176,6 +180,7 @@ const readDelta = (view: {
   meta: string;
   tileIndices: Uint32Array;
   terrain: Uint8Array;
+  vegetation: Uint8Array;
   elevations: Int16Array;
   visibility: Uint8Array;
   tileOwner: Uint16Array;
@@ -203,6 +208,7 @@ const readDelta = (view: {
   meta: parseMeta(view.meta),
   tileIndices: view.tileIndices,
   terrain: view.terrain,
+  vegetation: view.vegetation,
   elevations: view.elevations,
   visibility: view.visibility,
   tileOwner: view.tileOwner,

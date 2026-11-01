@@ -19,6 +19,8 @@ export type HexMapData = {
   elevations: Int16Array;
   /** `TerrainKind` values. */
   terrain: Uint8Array;
+  /** `Vegetation` values; a map without them draws no forest. */
+  vegetation?: Uint8Array;
 };
 
 export const tileIndex = (map: HexMapData, { col, row }: OffsetCoords): number => row * map.columns + col;

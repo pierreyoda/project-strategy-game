@@ -3,7 +3,10 @@
 use project_x_core::game::state::TileIndex;
 
 use super::settings::NationsGeneratorSettings;
-use crate::map::{Landmasses, PlanetSurface};
+use crate::{
+    forests::Forests,
+    map::{Landmasses, PlanetSurface},
+};
 
 /// A score per tile, roughly from 0.0 (nobody lives here, every water tile included) to 1.0.
 ///
@@ -18,8 +21,16 @@ pub struct Habitability {
 
 impl Habitability {
     pub fn compute(surface: &PlanetSurface, settings: &NationsGeneratorSettings) -> Self {
+        let forests = Forests::grow(surface);
         let own: Vec<f64> = (0..surface.tiles_count() as TileIndex)
-            .map(|index| own_score(surface, settings, index))
+            .map(|index| {
+                let own = own_score(surface, settings, index);
+                if forests.is_wooded(index) {
+                    own * settings.get_forest_score()
+                } else {
+                    own
+                }
+            })
             .collect();
 
         let radius = settings.get_elbow_room_radius();
@@ -152,6 +163,21 @@ mod tests {
         let tip = on_peninsula.score(3 * 14 + 10);
         assert!(tip > 0.0);
         assert!(inland > tip, "inland {inland} vs tip {tip}");
+    }
+
+    #[test]
+    fn test_habitability_marks_wooded_sites_down() {
+        let surface = surface_from_art(&[".........~"; 21].join("|"));
+        let forests = crate::forests::Forests::grow(&surface);
+        let wooded = (0..surface.tiles_count() as u32)
+            .find(|&index| forests.is_wooded(index))
+            .expect("some forest on the plain");
+        let settings = NationsGeneratorSettings::default()
+            .with_elbow_room_weight(0.0)
+            .with_coastal_bonus(0.0);
+        let cleared = Habitability::compute(&surface, &settings.clone().with_forest_score(1.0));
+        let wild = Habitability::compute(&surface, &settings.with_forest_score(0.5));
+        assert!((wild.score(wooded) - cleared.score(wooded) * 0.5).abs() < 1e-12);
     }
 
     #[test]

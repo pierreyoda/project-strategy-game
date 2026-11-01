@@ -19,7 +19,8 @@
     createPlanetGenerator,
     validatePlanetSettings,
   } from "../procgen/planetGenerator";
-  import { TERRAIN_NAMES, type TerrainKind } from "../terrain";
+  import type { TerrainKind } from "../terrain";
+  import { groundName, isForest } from "../vegetation";
 
   const generator = createPlanetGenerator();
   onDestroy(() => generator.dispose());
@@ -186,7 +187,10 @@
       {/if}
       {#if map && hoveredTile && hoveredTileIndex !== null}
         <span class="text-fg">
-          ({hoveredTile.col}, {hoveredTile.row}) · {TERRAIN_NAMES[map.terrain[hoveredTileIndex] as TerrainKind]} ·
+          ({hoveredTile.col}, {hoveredTile.row}) · {groundName(
+            map.terrain[hoveredTileIndex] as TerrainKind,
+            isForest(map.vegetation?.[hoveredTileIndex]),
+          )} ·
           {map.elevations[hoveredTileIndex]} m
           {#if nations && nations.tileOwner[hoveredTileIndex] !== NO_NATION}
             · Nation {nations.tileOwner[hoveredTileIndex] + 1}

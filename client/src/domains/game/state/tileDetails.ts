@@ -1,6 +1,7 @@
 import { BUILDING_TYPE_NAMES, SETTLEMENT_STAGE_NAMES, type SettlementStage } from "../../map/entities";
 import type { OffsetCoords } from "../../map/hexMap";
-import { TERRAIN_NAMES, TerrainKind, isExplored } from "../../map/terrain";
+import { TerrainKind, isExplored } from "../../map/terrain";
+import { groundName, isForest } from "../../map/vegetation";
 import { nationColor } from "../nations";
 import type { Resource } from "../resources";
 import { NO_NATION, TileFlags, TileVisibility } from "../session/protocol";
@@ -25,7 +26,10 @@ export type TileDetails = {
   coords: OffsetCoords;
   /** `null` while the tile is unexplored. */
   terrain: TerrainKind | null;
+  /** The terrain's name, or the forest's over it: "Forest", "Forested hills". */
   terrainName: string;
+  /** Whether a forest grows on the tile, as far as the viewer knows. */
+  forest?: boolean;
   /** In meters, as last seen. */
   elevation: number;
   visibility: TileVisibility;
@@ -77,6 +81,7 @@ export const buildingName = (type: string | null): string =>
 /** Gather what the projection says of the tile at `index`. */
 export const tileDetailsOf = (world: WorldState, index: number): TileDetails => {
   const terrain = world.terrain[index];
+  const forest = isForest(world.vegetation[index]);
   const flags = world.tileFlags[index];
   const building = [...world.buildings.values()].find(({ tile }) => tile === index);
   const settlement = [...world.settlements.values()].find(({ tile }) => tile === index);
@@ -84,7 +89,8 @@ export const tileDetailsOf = (world: WorldState, index: number): TileDetails => 
     index,
     coords: { col: index % world.columns, row: Math.floor(index / world.columns) },
     terrain: isExplored(terrain) ? terrain : null,
-    terrainName: isExplored(terrain) ? TERRAIN_NAMES[terrain] : "Unexplored",
+    terrainName: isExplored(terrain) ? groundName(terrain, forest) : "Unexplored",
+    forest,
     elevation: world.elevations[index],
     visibility: world.visibility[index] as TileVisibility,
     owner: nationOf(world, world.tileOwner[index]),

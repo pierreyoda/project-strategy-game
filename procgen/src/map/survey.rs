@@ -11,6 +11,7 @@ use std::{cmp::Reverse, collections::VecDeque, fmt};
 use project_x_core::game::state::TileIndex;
 
 use super::{TerrainKind, landmasses::Landmasses, surface::PlanetSurface};
+use crate::forests::{Forests, wind_towards};
 
 /// Share of the land a landmass needs to count as a continent.
 const CONTINENT_SHARE: f64 = 0.05;
@@ -22,6 +23,14 @@ const CHAIN_MIN: usize = 5;
 const SEA_SHARE: f64 = 0.01;
 /// Up to this many tiles, an enclosed water body is a puddle, whatever the map.
 const PUDDLE_MAX: usize = 3;
+/// Plains and hills this many hexes along the wind from a mountain are in its lee - or on its
+/// windward side, the other way.
+const SHADOW_REACH: i64 = 3;
+/// A forest counts as a stand from this many tiles.
+const STAND_MIN: usize = 5;
+/// The wet bands, in absolute latitude: the equatorial one, then the temperate one.
+const WET_BANDS: [(f64, f64); 2] = [(0.0, 0.15), (0.45, 0.65)];
+
 /// Hills this close to a mountain are its foothills.
 const FOOTHILLS_REACH: u32 = 2;
 
@@ -182,10 +191,37 @@ pub struct PlanetSurvey {
     // D: poles
     pub polar_sea_ice_share: f64,
     pub polar_continent: bool,
+    // G: forests
+    pub forest_share: f64,
+    /// Of the forests, the share in the subtropical dry belt.
+    pub dry_belt_forest_share: f64,
+    /// Of the plains and hills in the wet bands - equatorial and temperate - the share wooded.
+    pub wet_bands_wooded_share: f64,
+    /// Of the forests, the share in stands of `STAND_MIN` tiles or more.
+    pub forest_in_stands_share: f64,
+    /// Of the forests, the share in the largest stand.
+    pub largest_stand_share: f64,
+    /// Bare plains - flat land with no forest - over wooded tiles.
+    pub bare_plains_over_forest: f64,
+    /// Of the forests, the share of tiles with forest all around: how solid the stands are.
+    pub forest_interior_share: f64,
+    /// How much likelier a coastal plain or hill is wooded than any plain or hill: 1.0 when the
+    /// forests ignore the coast.
+    pub forest_coastal_bias: f64,
+    /// How much likelier a plain or hill in the lee of a range is wooded than one on its windward
+    /// side: under 1.0 when the ranges cast rain shadows.
+    pub rain_shadow_ratio: f64,
+    /// Mean size of a stand of forest, in tiles.
+    pub mean_stand: f64,
 }
 
 impl PlanetSurvey {
     pub fn of(surface: &PlanetSurface) -> Self {
+        Self::of_with_forests(surface, &Forests::grow(surface))
+    }
+
+    /// With forests grown some other way than by default, as when tuning them.
+    pub fn of_with_forests(surface: &PlanetSurface, forests: &Forests) -> Self {
         let tiles = surface.tiles_count() as f64;
         let landmasses = Landmasses::find(surface);
         let land = landmasses.land_tiles();
@@ -405,6 +441,7 @@ impl PlanetSurvey {
         } else {
             polar_sea_ice as f64 / polar_sea as f64
         };
+        let forests = ForestSurvey::of(surface, forests, land);
         let last_row = surface.shape().rows() as u32 - 1;
         let polar_continent = continent_ids.iter().any(|&id| {
             landmasses.tiles(id).iter().any(|&index| {
@@ -443,6 +480,16 @@ impl PlanetSurvey {
             circumnavigable,
             polar_sea_ice_share,
             polar_continent,
+            forest_share: forests.forest_share,
+            dry_belt_forest_share: forests.dry_belt_share,
+            wet_bands_wooded_share: forests.wet_bands_wooded_share,
+            forest_in_stands_share: forests.in_stands_share,
+            largest_stand_share: forests.largest_stand_share,
+            bare_plains_over_forest: forests.bare_plains_over_forest,
+            forest_interior_share: forests.interior_share,
+            forest_coastal_bias: forests.coastal_bias,
+            rain_shadow_ratio: forests.rain_shadow_ratio,
+            mean_stand: forests.mean_stand,
         }
     }
 
@@ -640,6 +687,76 @@ impl PlanetSurvey {
                 Flag,
                 Info,
             ),
+            criterion(
+                "G1",
+                "forests, of the land",
+                self.forest_share,
+                Share,
+                Within(0.20, 0.35),
+            ),
+            criterion(
+                "G2",
+                "forests in the dry belt",
+                self.dry_belt_forest_share,
+                Share,
+                Within(0.03, 0.15),
+            ),
+            criterion(
+                "G3",
+                "wet bands wooded",
+                self.wet_bands_wooded_share,
+                Share,
+                AtLeast(0.40),
+            ),
+            criterion(
+                "G4",
+                "forests in stands",
+                self.forest_in_stands_share,
+                Share,
+                AtLeast(0.70),
+            ),
+            criterion(
+                "G5",
+                "largest stand, of the forests",
+                self.largest_stand_share,
+                Share,
+                AtMost(0.15),
+            ),
+            criterion(
+                "G6",
+                "bare plains per forest tile",
+                self.bare_plains_over_forest,
+                Ratio,
+                AtLeast(1.5),
+            ),
+            criterion(
+                "G7",
+                "forest with forest all around",
+                self.forest_interior_share,
+                Share,
+                Within(0.02, 0.15),
+            ),
+            criterion(
+                "G8",
+                "coastal ground wooded, over all ground",
+                self.forest_coastal_bias,
+                Ratio,
+                Within(0.8, 1.2),
+            ),
+            criterion(
+                "G9",
+                "ground in a rain shadow wooded, over windward",
+                self.rain_shadow_ratio,
+                Ratio,
+                AtMost(0.7),
+            ),
+            criterion(
+                "G10",
+                "mean stand",
+                self.mean_stand,
+                Tiles,
+                Within(8.0, 40.0),
+            ),
         ]
     }
 
@@ -668,6 +785,182 @@ impl fmt::Display for PlanetSurvey {
         let (met, judged) = self.score();
         write!(f, "{met} of {judged} criteria met")
     }
+}
+
+/// The forests' part of the survey.
+struct ForestSurvey {
+    forest_share: f64,
+    dry_belt_share: f64,
+    wet_bands_wooded_share: f64,
+    in_stands_share: f64,
+    largest_stand_share: f64,
+    bare_plains_over_forest: f64,
+    interior_share: f64,
+    coastal_bias: f64,
+    rain_shadow_ratio: f64,
+    mean_stand: f64,
+}
+
+impl ForestSurvey {
+    fn of(surface: &PlanetSurface, forests: &Forests, land: usize) -> Self {
+        let wooded: Vec<TileIndex> = (0..surface.tiles_count() as TileIndex)
+            .filter(|&index| forests.is_wooded(index))
+            .collect();
+        let of_forests = |count: usize| {
+            if wooded.is_empty() {
+                f64::NAN
+            } else {
+                count as f64 / wooded.len() as f64
+            }
+        };
+        let in_wet_band = |index: TileIndex| {
+            let latitude = surface.latitude(index).abs();
+            WET_BANDS
+                .iter()
+                .any(|&(from, to)| (from..=to).contains(&latitude))
+        };
+        let wet_ground: Vec<TileIndex> = (0..surface.tiles_count() as TileIndex)
+            .filter(|&index| {
+                surface.is_land(index)
+                    && matches!(
+                        surface.terrain_at(index),
+                        TerrainKind::Flat | TerrainKind::Hills
+                    )
+                    && in_wet_band(index)
+            })
+            .collect();
+        let stands = components(surface, |index| forests.is_wooded(index));
+        Self {
+            forest_share: if land == 0 {
+                f64::NAN
+            } else {
+                wooded.len() as f64 / land as f64
+            },
+            dry_belt_share: of_forests(
+                wooded
+                    .iter()
+                    .filter(|&&index| crate::forests::is_dry(surface, index))
+                    .count(),
+            ),
+            wet_bands_wooded_share: if wet_ground.is_empty() {
+                f64::NAN
+            } else {
+                wet_ground
+                    .iter()
+                    .filter(|&&index| forests.is_wooded(index))
+                    .count() as f64
+                    / wet_ground.len() as f64
+            },
+            in_stands_share: of_forests(
+                stands
+                    .iter()
+                    .filter(|stand| stand.len() >= STAND_MIN)
+                    .map(Vec::len)
+                    .sum(),
+            ),
+            largest_stand_share: of_forests(stands.iter().map(Vec::len).max().unwrap_or(0)),
+            bare_plains_over_forest: if wooded.is_empty() {
+                f64::NAN
+            } else {
+                (0..surface.tiles_count() as TileIndex)
+                    .filter(|&index| {
+                        surface.is_land(index)
+                            && surface.terrain_at(index) == TerrainKind::Flat
+                            && !forests.is_wooded(index)
+                    })
+                    .count() as f64
+                    / wooded.len() as f64
+            },
+            interior_share: of_forests(
+                wooded
+                    .iter()
+                    .filter(|&&index| surface.neighbors(index).all(|n| forests.is_wooded(n)))
+                    .count(),
+            ),
+            coastal_bias: {
+                let ground: Vec<TileIndex> = (0..surface.tiles_count() as TileIndex)
+                    .filter(|&index| is_forest_ground(surface, index))
+                    .collect();
+                let coastal: Vec<TileIndex> = ground
+                    .iter()
+                    .copied()
+                    .filter(|&index| surface.is_coastal(index))
+                    .collect();
+                ratio(
+                    wooded_share(forests, &coastal),
+                    wooded_share(forests, &ground),
+                )
+            },
+            rain_shadow_ratio: {
+                let (windward, leeward) = rain_shadows(surface);
+                ratio(
+                    wooded_share(forests, &leeward),
+                    wooded_share(forests, &windward),
+                )
+            },
+            mean_stand: mean(stands.iter().map(|stand| stand.len() as f64)),
+        }
+    }
+}
+
+/// Plains and hills: the ground a forest may grow on.
+fn is_forest_ground(surface: &PlanetSurface, index: TileIndex) -> bool {
+    surface.is_land(index)
+        && matches!(
+            surface.terrain_at(index),
+            TerrainKind::Flat | TerrainKind::Hills
+        )
+}
+
+/// The share of the tiles that are wooded, `NaN` without any.
+fn wooded_share(forests: &Forests, tiles: &[TileIndex]) -> f64 {
+    if tiles.is_empty() {
+        return f64::NAN;
+    }
+    tiles
+        .iter()
+        .filter(|&&index| forests.is_wooded(index))
+        .count() as f64
+        / tiles.len() as f64
+}
+
+/// `a` over `b`, `NaN` when either is unknown or `b` is nothing.
+fn ratio(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() || b <= 0.0 {
+        f64::NAN
+    } else {
+        a / b
+    }
+}
+
+/// The plains and hills on either side of the mountains along the prevailing wind, within
+/// `SHADOW_REACH` hexes of a mountain: windward, then leeward, in row-major order. A tile on
+/// both sides of two ranges counts as leeward.
+fn rain_shadows(surface: &PlanetSurface) -> (Vec<TileIndex>, Vec<TileIndex>) {
+    let columns = surface.shape().columns() as i64;
+    let mut side = vec![0i8; surface.tiles_count()];
+    for index in 0..surface.tiles_count() as TileIndex {
+        if surface.terrain_at(index) != TerrainKind::Mountains {
+            continue;
+        }
+        let row = i64::from(index) / columns;
+        let col = i64::from(index) % columns;
+        let towards = i64::from(wind_towards(surface.latitude(index).abs()));
+        for step in 1..=SHADOW_REACH {
+            for (direction, mark) in [(towards, 2), (-towards, 1)] {
+                let tile = (row * columns + (col + direction * step).rem_euclid(columns)) as usize;
+                if is_forest_ground(surface, tile as TileIndex) {
+                    side[tile] = side[tile].max(mark);
+                }
+            }
+        }
+    }
+    let of = |mark: i8| {
+        (0..surface.tiles_count() as TileIndex)
+            .filter(|&index| side[index as usize] == mark)
+            .collect()
+    };
+    (of(1), of(2))
 }
 
 fn mean(values: impl Iterator<Item = f64>) -> f64 {

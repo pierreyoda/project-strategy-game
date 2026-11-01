@@ -55,6 +55,8 @@ export type WorldState = {
   rows: number;
   /** `TerrainKind` values, for the whole map. */
   terrain: Uint8Array;
+  /** `Vegetation` values, for the whole map, `UNKNOWN_VEGETATION` where never explored. */
+  vegetation: Uint8Array;
   /** In meters, zeroed on tiles the viewer has never explored. */
   elevations: Int16Array;
   /** `TileVisibility` values. */
@@ -87,6 +89,7 @@ export const toHexMapData = (state: WorldState): HexMapData => ({
   rows: state.rows,
   elevations: state.elevations,
   terrain: state.terrain,
+  vegetation: state.vegetation,
 });
 
 /** Fold a projection's units into a map of views, the kinds resolved against that projection's meta. */
@@ -143,6 +146,7 @@ const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
     columns: snapshot.columns,
     rows: snapshot.rows,
     terrain: snapshot.terrain,
+    vegetation: snapshot.vegetation,
     elevations: snapshot.elevations,
     visibility: snapshot.visibility,
     tileOwner: snapshot.tileOwner,
@@ -159,6 +163,7 @@ const patch = (state: WorldState, delta: WorldDeltaData): WorldState => {
   for (let index = 0; index < delta.tileIndices.length; index++) {
     const tile = delta.tileIndices[index];
     state.terrain[tile] = delta.terrain[index];
+    state.vegetation[tile] = delta.vegetation[index];
     state.elevations[tile] = delta.elevations[index];
     state.visibility[tile] = delta.visibility[index];
     state.tileOwner[tile] = delta.tileOwner[index];

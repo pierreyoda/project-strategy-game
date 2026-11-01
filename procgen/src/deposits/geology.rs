@@ -17,7 +17,10 @@ use std::collections::VecDeque;
 use project_x_core::game::state::TileIndex;
 
 use super::settings::{DepositKind, PerKind};
-use crate::map::{PlanetSurface, TerrainKind, survey::components};
+use crate::{
+    forests::Forests,
+    map::{PlanetSurface, TerrainKind, survey::components},
+};
 
 /// Mountains this close make a plain foothills.
 pub const FOOTHILLS_REACH: u32 = 2;
@@ -28,6 +31,8 @@ pub const SPRINGS_REACH: u32 = 3;
 /// The subtropical dry belt, in absolute latitude (0.0 the equator, 1.0 the poles): roughly 20°
 /// to 35° on Earth.
 pub const DRY_BELT: (f64, f64) = (0.22, 0.39);
+/// Factor on the water suitability of wooded ground, which marks wet ground; capped at 1.0.
+pub const FOREST_WATER_BONUS: f64 = 1.2;
 /// Inland from this many hexes off the coast, a plain counts as a plateau for uranium.
 pub const INLAND_REACH: u32 = 4;
 
@@ -43,6 +48,8 @@ pub struct Geology {
     coast_distance: Vec<u32>,
     /// Land next to a lake: water enclosed by land, apart from the world ocean.
     lakeshore: Vec<bool>,
+    /// Land under forest.
+    wooded: Vec<bool>,
     suitability: PerKind<Vec<f64>>,
 }
 
@@ -78,6 +85,7 @@ impl Geology {
             relief_distance,
             coast_distance,
             lakeshore,
+            wooded: Forests::grow(surface).wooded().to_vec(),
             suitability: PerKind::default(),
         };
         for kind in DepositKind::ALL {
@@ -170,7 +178,12 @@ impl Geology {
                 } else {
                     1.0
                 };
-                base * salty * dry
+                let forest = if self.wooded[index as usize] {
+                    FOREST_WATER_BONUS
+                } else {
+                    1.0
+                };
+                (base * salty * dry * forest).min(1.0)
             }
             DepositKind::Uranium => match terrain {
                 TerrainKind::Hills => 1.0,

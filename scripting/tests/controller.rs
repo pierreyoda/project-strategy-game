@@ -242,10 +242,10 @@ fn test_a_script_cannot_see_through_the_fog() {
     let script = r#"
         fn plan(view, orders, rng) {
             let own = view.units[0].tile;
-            print(`${view.terrain(own)} ${view.visibility(own)}`);
+            print(`${view.terrain(own)} ${view.visibility(own)} ${view.vegetation(own)}`);
             // where the player's scout stands, far out of sight
             let far = offset(1, 1);
-            print(`${view.terrain(far)} ${view.visibility(far)}`);
+            print(`${view.terrain(far)} ${view.visibility(far)} ${view.vegetation(far)}`);
             print(`${view.foreign_units.len()} foreign units`);
             // and beyond the pole, which is no error, only nothing to know
             print(`${view.terrain(offset(3, -1))} ${view.visibility(offset(3, -1))}`);
@@ -260,8 +260,8 @@ fn test_a_script_cannot_see_through_the_fog() {
     assert_eq!(
         logged_by(ai, &events),
         [
-            "flat visible",
-            "unknown unexplored",
+            "flat visible none",
+            "unknown unexplored unknown",
             "0 foreign units",
             "unknown unexplored"
         ]

@@ -209,6 +209,8 @@ export type WorldSnapshotData = {
   rows: number;
   /** `TerrainKind` values, `Unknown` wherever the viewer has never explored. */
   terrain: Uint8Array;
+  /** `Vegetation` values, `UNKNOWN_VEGETATION` wherever the viewer has never explored. */
+  vegetation: Uint8Array;
   /** In meters, zeroed on tiles the viewer has never explored. */
   elevations: Int16Array;
   /** `TileVisibility` values. */
@@ -236,6 +238,8 @@ export type WorldDeltaData = {
   tileIndices: Uint32Array;
   /** `TerrainKind` values of those tiles: a tile explored this turn stops being `Unknown`. */
   terrain: Uint8Array;
+  /** `Vegetation` values of those tiles, like `terrain`. */
+  vegetation: Uint8Array;
   elevations: Int16Array;
   visibility: Uint8Array;
   tileOwner: Uint16Array;

@@ -29,6 +29,11 @@ export type TerrainTiles = {
    * has nothing left to draw; one with a feature on it still does, until the features are decals.
    */
   feature: boolean;
+  /**
+   * Drawn instead of the others on a wooded tile of this terrain: trees, standing on the ground like
+   * a feature. Lit from the upper left like the ridges, so never mirrored. Empty where nothing grows.
+   */
+  forest: string[];
 };
 
 /** Whether the given tile draws one of its terrain's decorated tiles, see `pickTileVariant`. */
@@ -59,6 +64,10 @@ export const pickTileVariant = <T>(
   return variants[Math.floor(tileRandom(coords, 2) * variants.length)];
 };
 
+/** Variant of a terrain's forest tiles to draw on the given wooded tile, always the same one. */
+export const pickForestVariant = <T>(tiles: { forest: readonly T[] }, coords: OffsetCoords): T =>
+  tiles.forest[Math.floor(tileRandom(coords, 9) * tiles.forest.length)];
+
 /** Whether to mirror the tile drawn on the given tile along each axis, only ever for a `mirrorable` terrain. */
 export const pickTileFlip = (terrain: TerrainKind, coords: OffsetCoords): { x: boolean; y: boolean } =>
   TERRAIN_TILES[terrain].mirrorable
@@ -77,7 +86,7 @@ export const pickTileTint = (
 
 /*
  * Unused tiles:
- * - vegetation, until the map generator places some: nature 02 (forest), 07 and 12 (shrubs), 18 and 19 (forested peaks);
+ * - vegetation other than forests, until the map generator places some: nature 07 and 12 (shrubs);
  * - features, until the map generator places some: water 01 (island), 04 (rocky islet), 06 (rock formation),
  *   07 (sea cave); ice 06 (ice block), 09 (glacier plateau), 10 (ice hole), 14 (ice cave), 17 (frozen ponds);
  *   nature 09 (crystals), 15 (cave), 17 (crater);
@@ -87,6 +96,7 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
   [TerrainKind.DeepWater]: {
     feature: false,
     mirrorable: true,
+    forest: [],
     // ground only, see `feature`: the ground layer paints it
     base: [],
     decorated: [],
@@ -94,6 +104,7 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
   [TerrainKind.ShallowWater]: {
     feature: false,
     mirrorable: true,
+    forest: [],
     base: [],
     // scattered rocks
     decorated: ["water_tile_02.png"],
@@ -101,6 +112,8 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
   [TerrainKind.Flat]: {
     feature: false,
     mirrorable: true,
+    // a stand of trees
+    forest: ["nature_tile_02.png"],
     base: [],
     // stone slabs, scattered boulders, sand, a large flat rock
     decorated: [
@@ -114,6 +127,8 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
   [TerrainKind.Hills]: {
     feature: true,
     mirrorable: false,
+    // forested peaks
+    forest: ["nature_tile_18.png", "nature_tile_19.png"],
     // rocky outcrops, boulders, a grassy mound
     base: ["nature_tile_06.png", "nature_tile_13.png", "nature_tile_16.png", "nature_tile_21.png"],
     decorated: [],
@@ -121,18 +136,21 @@ export const TERRAIN_TILES: Record<TerrainKind, TerrainTiles> = {
   [TerrainKind.Mountains]: {
     feature: true,
     mirrorable: false,
+    forest: [],
     base: ["nature_tile_04.png", "nature_tile_05.png", "nature_tile_14.png"],
     decorated: [],
   },
   [TerrainKind.Ice]: {
     feature: false,
     mirrorable: true,
+    forest: [],
     base: [],
     decorated: [],
   },
   [TerrainKind.RoughIce]: {
     feature: true,
     mirrorable: false,
+    forest: [],
     // ridges, mounds, cliffs
     base: [
       "ice_tile_05.png",

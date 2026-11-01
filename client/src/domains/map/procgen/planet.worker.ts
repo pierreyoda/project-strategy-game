@@ -21,7 +21,13 @@ onmessage = async ({ data: { settings } }: MessageEvent<PlanetGeneratorRequest>)
     let map: HexMapData;
     let nations: PlanetNations;
     try {
-      map = { columns: planet.columns, rows: planet.rows, elevations: planet.elevations, terrain: planet.terrain };
+      map = {
+        columns: planet.columns,
+        rows: planet.rows,
+        elevations: planet.elevations,
+        terrain: planet.terrain,
+        vegetation: planet.vegetation,
+      };
       const settled = planet.nations(settings.seed, settings.nations);
       try {
         nations = {
@@ -41,6 +47,7 @@ onmessage = async ({ data: { settings } }: MessageEvent<PlanetGeneratorRequest>)
     respond({ type: "done", planet: { map, nations } }, [
       map.elevations.buffer,
       map.terrain.buffer,
+      ...(map.vegetation ? [map.vegetation.buffer] : []),
       nations.tileSphere.buffer,
       nations.tileOwner.buffer,
       nations.capitals.buffer,

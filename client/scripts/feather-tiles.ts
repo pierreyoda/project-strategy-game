@@ -21,7 +21,7 @@ const FEATHER = 0.12;
 
 /**
  * The frames with a feature on them, by tile set: the base tiles of the terrains whose `feature` is set
- * and the decorated tiles of the others. Kept in step with `TERRAIN_TILES` in `tileset.ts` by hand - the
+ * the decorated tiles of the others, and the forest tiles. Kept in step with `TERRAIN_TILES` in `tileset.ts` by hand - the
  * script runs under Node, where the client's modules are out of reach.
  */
 const FEATURE_FRAMES: Record<string, string[]> = {
@@ -42,6 +42,10 @@ const FEATURE_FRAMES: Record<string, string[]> = {
     "nature_tile_04.png",
     "nature_tile_05.png",
     "nature_tile_14.png",
+    // forests: on flat, on hills
+    "nature_tile_02.png",
+    "nature_tile_18.png",
+    "nature_tile_19.png",
   ],
   ice: [
     // rough ice

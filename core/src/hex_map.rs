@@ -7,6 +7,7 @@ pub mod layers;
 pub mod shape;
 pub mod terrain;
 pub mod tile;
+pub mod vegetation;
 
 pub type HexMapStorage = HashMap<CubeCoords, HexMapTile>;
 

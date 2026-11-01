@@ -348,7 +348,7 @@ impl GameSession {
                 .world
                 .unit_template(unit.template())
                 .map_or(1, |template| template.sight());
-            watched.extend(self.world.tiles_within(unit.position(), sight as u32));
+            watched.extend(self.world.tiles_in_sight(unit.position(), sight as u32));
         }
         for (_, settlement) in self.world.settlements().iter() {
             if settlement.owner() != nation {
@@ -356,7 +356,7 @@ impl GameSession {
             }
             watched.extend(
                 self.world
-                    .tiles_within(settlement.position(), SETTLEMENT_SIGHT),
+                    .tiles_in_sight(settlement.position(), SETTLEMENT_SIGHT),
             );
         }
 

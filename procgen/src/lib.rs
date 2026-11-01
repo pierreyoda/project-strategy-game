@@ -30,6 +30,7 @@
 mod macros;
 
 pub mod deposits;
+pub mod forests;
 pub mod map;
 pub mod nations;
 pub mod survey;

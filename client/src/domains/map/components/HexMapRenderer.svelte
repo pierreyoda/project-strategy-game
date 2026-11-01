@@ -23,7 +23,15 @@
   import { DEFAULT_MAP_LOOK, type MapLook } from "../mapLook";
   import { TERRAIN_COLORS, isExplored } from "../terrain";
   import { type TerrainTextures, loadTerrainTextures } from "../terrainTextures";
-  import { TERRAIN_TILES, pickTileFlip, pickTileIsDecorated, pickTileTint, pickTileVariant } from "../tileset";
+  import {
+    TERRAIN_TILES,
+    pickForestVariant,
+    pickTileFlip,
+    pickTileIsDecorated,
+    pickTileTint,
+    pickTileVariant,
+  } from "../tileset";
+  import { isForest } from "../vegetation";
 
   /** Heights of a hex on screen, in pixels, over which the textured tiles fade in over the flat colors. */
   const TEXTURES_FADE_IN = { from: 16, to: 32 };
@@ -32,6 +40,8 @@
    * would otherwise let the flat colors show between them.
    */
   const TEXTURED_TILE_SCALE = 1.02;
+  /** Flat color of a wooded tile, darker than the plains, for the far zoomed out views. */
+  const FOREST_COLOR = 0x4a7a3c;
   /** The map draws under everything the game puts over it, see `GameView`. */
   const MAP_Z_INDEX = 0;
 
@@ -77,9 +87,10 @@
         continue;
       }
       const { x, y } = hexCenter(layout, { col, row });
+      const wooded = isForest(map.vegetation?.[row * map.columns + col]);
       context
         .poly(corners.map((corner, i) => corner + (i % 2 === 0 ? x : y)))
-        .fill(TERRAIN_COLORS[terrain])
+        .fill(wooded ? FOREST_COLOR : TERRAIN_COLORS[terrain])
         .stroke({ width: 1, color: 0x000000, alpha: 0.15 });
     }
   };
@@ -95,20 +106,24 @@
     const terrain = map.terrain[index];
     const coords = { col: index % map.columns, row: Math.floor(index / map.columns) };
     const explored = textures !== null && isExplored(terrain);
+    // trees stand over whatever the terrain's own tile would have shown
+    const wooded = explored && isForest(map.vegetation?.[index]) && textures[terrain].forest.length > 0;
     // the ground layer paints the ground: a tile with nothing standing on it has nothing left to draw
     const visible =
-      explored && (TERRAIN_TILES[terrain].feature || pickTileIsDecorated(textures[terrain], coords, look));
+      explored && (wooded || TERRAIN_TILES[terrain].feature || pickTileIsDecorated(textures[terrain], coords, look));
     for (const sprites of drawn.tileSprites) {
       const sprite = sprites[index];
       sprite.visible = visible;
       if (!visible) {
         continue;
       }
-      sprite.texture = pickTileVariant(textures[terrain], coords, look);
+      sprite.texture = wooded
+        ? pickForestVariant(textures[terrain], coords)
+        : pickTileVariant(textures[terrain], coords, look);
       // after the texture, which resets the sprite to the texture's own size...
       sprite.setSize(layout.width * TEXTURED_TILE_SCALE, 2 * layout.size * TEXTURED_TILE_SCALE);
       // ...and leaves the scale positive, which the flips are the sign of
-      const flip = pickTileFlip(terrain, coords);
+      const flip = wooded ? { x: false, y: false } : pickTileFlip(terrain, coords);
       sprite.scale.x = Math.abs(sprite.scale.x) * (flip.x ? -1 : 1);
       sprite.scale.y = Math.abs(sprite.scale.y) * (flip.y ? -1 : 1);
       sprite.tint = pickTileTint(coords, look);
