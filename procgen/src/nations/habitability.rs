@@ -130,12 +130,23 @@ mod tests {
         let mut peninsula_map = [PLAIN; 7];
         peninsula_map[3] = "...........~~~";
         let peninsula_map = peninsula_map.join("|");
-        let settings = NationsGeneratorSettings::default();
+        // a bonus big enough to outweigh the water in the shore's elbow room: the default's
+        // only lifts the shore above what it would score without
+        let settings = NationsGeneratorSettings::default().with_coastal_bonus(0.5);
 
         let on_shore = Habitability::compute(&surface_from_art(&shore_map), &settings);
         let inland = on_shore.score(3 * 14 + 3);
         let shore = on_shore.score(3 * 14 + 6);
         assert!(shore > inland, "shore {shore} vs inland {inland}");
+        let without = Habitability::compute(
+            &surface_from_art(&shore_map),
+            &NationsGeneratorSettings::default().with_coastal_bonus(0.0),
+        );
+        let default = Habitability::compute(
+            &surface_from_art(&shore_map),
+            &NationsGeneratorSettings::default(),
+        );
+        assert!(default.score(3 * 14 + 6) > without.score(3 * 14 + 6));
 
         let on_peninsula = Habitability::compute(&surface_from_art(&peninsula_map), &settings);
         let tip = on_peninsula.score(3 * 14 + 10);

@@ -70,21 +70,23 @@ impl Default for NationsGeneratorSettings {
             nations: 8,
             capital_spacing: None,
             spacing_floor: 3,
-            spacing_relaxation: 0.75,
+            spacing_relaxation: 0.65,
             site_jitter: 3,
-            // the capital and two rings, about 19 hexes before the sphere and the sea clip it:
-            // a homeland to grow out of, not an empire
-            border_radius: 2,
+            // the capital and one ring, 7 hexes before the sea clips it: a homeland to grow out
+            // of, not an empire, leaving the scarce deposits around it to be claimed
+            border_radius: 1,
             terrain_scores: PerTerrain {
                 flat: 1.0,
-                hills: 0.6,
+                hills: 0.65,
                 mountains: 0.1,
                 ice: 0.0,
             },
-            coastal_bonus: 0.5,
+            // a shore helps, but capitals also settle inland, nearer the metals and the springs
+            // that follow the relief
+            coastal_bonus: 0.3,
             latitude_falloff: 0.5,
             elevation_penalty_from: 1500.0,
-            elevation_penalty_span: 2000.0,
+            elevation_penalty_span: 2300.0,
             elbow_room_radius: 2,
             elbow_room_weight: 0.5,
             movement_costs: PerTerrain {
@@ -94,7 +96,7 @@ impl Default for NationsGeneratorSettings {
                 ice: 4,
             },
             max_sphere_cost: None,
-            min_landmass_weight: 12.0,
+            min_landmass_weight: 15.0,
         }
     }
 }
@@ -107,6 +109,10 @@ impl NationsGeneratorSettings {
             nations,
             ..Self::default()
         }
+    }
+
+    pub fn with_seed(self, seed: GameSeed) -> Self {
+        Self { seed, ..self }
     }
 
     pub fn with_capital_spacing(self, capital_spacing: Option<u32>) -> Self {
@@ -127,6 +133,15 @@ impl NationsGeneratorSettings {
     pub fn with_border_radius(self, border_radius: u32) -> Self {
         Self {
             border_radius,
+            ..self
+        }
+    }
+
+    /// Bonus on the score of a tile adjacent to the sea, as a share of it.
+    pub fn with_coastal_bonus(self, coastal_bonus: f64) -> Self {
+        assert!(coastal_bonus >= 0.0, "coastal_bonus >= 0.0");
+        Self {
+            coastal_bonus,
             ..self
         }
     }

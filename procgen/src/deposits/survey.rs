@@ -271,6 +271,7 @@ impl DepositsSurvey {
             value,
             unit,
             target,
+            mandatory: false,
         };
         vec![
             criterion(
@@ -322,7 +323,7 @@ impl DepositsSurvey {
                 Ratio,
                 Within(0.3, 0.85),
             ),
-            criterion("E7", "deposits on ice", self.on_ice, Share, AtMost(0.05)),
+            criterion("E7", "deposits on ice", self.on_ice, Share, AtMost(0.05)).mandatory(),
             criterion(
                 "E8",
                 "deposits per 100 land tiles",
@@ -350,7 +351,8 @@ impl DepositsSurvey {
                 self.guarantees_met,
                 Share,
                 AtLeast(1.0),
-            ),
+            )
+            .mandatory(),
             criterion(
                 "F2",
                 "spread of the distance to metals",
@@ -518,7 +520,7 @@ mod tests {
             settings::DepositKind,
             tests::{planet, settle},
         },
-        map::{Criterion, Target, survey::tests::tabulate},
+        map::Target,
     };
 
     fn deposits_on(tiles: &[TileIndex]) -> GeneratedDeposits {
@@ -534,25 +536,6 @@ mod tests {
                 .collect(),
             report: Default::default(),
         }
-    }
-
-    /// Surveys the deposits of the default planet over many seeds, with 8 nations. Run with:
-    /// `cargo test -p project_x_procgen view_survey --release -- --ignored --nocapture`
-    #[test]
-    #[ignore]
-    fn view_survey_of_deposits() {
-        let seeds: Vec<u32> = (0..32).map(|i| i * 7919 + 3).collect();
-        let surveys: Vec<Vec<Criterion>> = seeds
-            .iter()
-            .map(|&seed| {
-                let surface = planet(seed, 80, 52);
-                let (nations, deposits) = settle(&surface, u64::from(seed), 8);
-                let settings = DepositsGeneratorSettings::new(u64::from(seed));
-                DepositsSurvey::of(&surface, &nations, &deposits, &settings).criteria()
-            })
-            .collect();
-        println!("deposits: {} seeds, 80 x 52, 8 nations\n", seeds.len());
-        print!("{}", tabulate(&surveys));
     }
 
     #[test]

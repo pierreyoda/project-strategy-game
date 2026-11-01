@@ -106,30 +106,31 @@ pub struct MapGeneratorSettings {
 }
 
 impl Default for MapGeneratorSettings {
-    /// Tuned against `PlanetSurvey`, the Earth-like criteria: a coordinate descent over every
-    /// setting the survey can feel, then checked on seeds it never saw. On a holdout of 48
-    /// planets at 80 × 52 these defaults meet about 63% of the criteria, against 59% for the
-    /// hand-tuned ones before them. Where a value strays from the original example, the
-    /// comment says why; `view_survey` shows the criteria one by one.
+    /// Tuned against the `WorldSurvey` - the planet's Earth-like criteria and its settlement's,
+    /// half and half - jointly with the nations' and the deposits' defaults: a coordinate descent
+    /// over every setting the survey can feel, every mandatory criterion held on every seed, then
+    /// checked on 80 seeds it never saw. There the terrain meets about 72% of its criteria,
+    /// against 70% for the planet-only tuning before. Where a value strays from the original
+    /// example, the comment says why; `view_survey` shows the criteria one by one.
     fn default() -> Self {
         Self {
             seed: 0,
             columns: 80,
             rows: 52,
-            // a little above the original example's 1.0: a few big continents with open ocean
-            // in between. Lower and the land, at 42% of the map, fuses into one
-            continent_frequency: 1.0625,
+            // the original example's: a few big continents with open ocean in between. Lower
+            // and the land, at 42% of the map, fuses into one
+            continent_frequency: 1.0,
             // below the example's "close to 2.0": the continent noise's octaves sit closer
             // together, which rounds the continents off - more interior, fewer fringes - and
             // scored best on all three seed sets pooled (1.7 against 1.8 and 1.6)
             continent_lacunarity: 1.7,
-            mountain_lacunarity: 1.90625,
+            mountain_lacunarity: 1.8,
             hills_lacunarity: 2.0,
-            plains_lacunarity: 2.314453125,
+            plains_lacunarity: 2.6,
             badlands_lacunarity: 2.212890625,
             // twistier ranges read as chains rather than knots
             mountains_twist: 1.625,
-            hills_twist: 1.0,
+            hills_twist: 0.75,
             badlands_twist: 1.0,
             sea_level: 0.0,
             // 57.5% sea: Earth has 71%, but a game wants more land to play on. At 50% the
@@ -142,14 +143,16 @@ impl Default for MapGeneratorSettings {
             lowland_flattening: 0.087890625,
             // one tile of shallow water along every coast, like Earth's shelves at this scale
             coastal_shelf_width: 1,
-            shelf_level: -0.375,
+            shelf_level: -0.5,
             // 0.65 rather than the original example's 0.5: raising the water line sinks the
             // land by about 800 m and the flattening above takes the plateaus down with the
             // ranges, so the ranges need a little more to start from
             mountains_amount: 0.65,
-            badlands_amount: 0.3125,
-            // rough terrain only where the land is high: the lowlands stay plains
-            terrain_offset: 0.5,
+            // no badlands: their broken relief walled the plains in
+            badlands_amount: 0.0,
+            // rough terrain only where the land is high: the lowlands stay plains, the ranges
+            // gather on the high ground
+            terrain_offset: 1.25,
             mountain_glaciation: 1.5,
             river_depth: 0.0234375,
             // left at the example's range: it scales every elevation and every band of the
@@ -175,6 +178,11 @@ impl MapGeneratorSettings {
             rows,
             ..Self::default()
         }
+    }
+
+    pub fn with_seed(self, seed: MapGeneratorSeedScalar) -> Self {
+        assert!(seed <= MAX_SEED, "seed <= MAX_SEED");
+        Self { seed, ..self }
     }
 
     /// Share of the map that the seas should cover, from 0.0 (no sea) to 1.0 (no land).

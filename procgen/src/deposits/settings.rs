@@ -102,28 +102,29 @@ pub struct DepositsGeneratorSettings {
     top_ups_per_nation: usize,
 }
 
-/// Tuned against the `DepositsSurvey` on the 80 × 52 planet with 8 nations: about 86% of the
-/// criteria met on the tuning seeds, 84% on a holdout of 48 others, every guarantee kept on both.
+/// Tuned against the `WorldSurvey`, jointly with the map's and the nations' defaults, every
+/// mandatory criterion held on every seed: on 80 seeds the tuning never saw, at 80 × 52 with 8
+/// nations, the settlement meets about 90% of its criteria and the world about 81%.
 impl Default for DepositsGeneratorSettings {
     fn default() -> Self {
         Self {
             seed: 0,
             kinds: PerKind {
                 water: KindSettings {
-                    density: 5.0,
+                    density: 4.0,
                     cluster_min: 1,
                     cluster_max: 2,
                     cluster_reach: 1,
-                    seed_spacing: 2,
+                    seed_spacing: 5,
                     richness_min: 4,
                     richness_max: 12,
                 },
                 metals: KindSettings {
-                    density: 5.0,
+                    density: 4.0,
                     cluster_min: 1,
                     cluster_max: 3,
                     cluster_reach: 1,
-                    seed_spacing: 3,
+                    seed_spacing: 5,
                     richness_min: 200,
                     richness_max: 800,
                 },
@@ -137,8 +138,8 @@ impl Default for DepositsGeneratorSettings {
                     richness_max: 600,
                 },
                 uranium: KindSettings {
-                    density: 0.9,
-                    cluster_min: 2,
+                    density: 0.75,
+                    cluster_min: 3,
                     cluster_max: 4,
                     cluster_reach: 1,
                     seed_spacing: 12,
@@ -146,11 +147,13 @@ impl Default for DepositsGeneratorSettings {
                     richness_max: 200,
                 },
             },
-            selectivity: 2,
-            min_suitability: 0.05,
+            selectivity: 3,
+            // only fair ground draws a deposit naturally: no oil in the foothills, no metals
+            // on the coastal plains
+            min_suitability: 0.2,
             spacing_relaxation: 0.75,
-            balance_floor: 0.95,
-            top_ups_per_nation: 6,
+            balance_floor: 0.875,
+            top_ups_per_nation: 8,
         }
     }
 }
@@ -161,6 +164,10 @@ impl DepositsGeneratorSettings {
             seed,
             ..Self::default()
         }
+    }
+
+    pub fn with_seed(self, seed: GameSeed) -> Self {
+        Self { seed, ..self }
     }
 
     pub fn with_kind(mut self, kind: DepositKind, settings: KindSettings) -> Self {

@@ -97,9 +97,20 @@ pub struct Criterion {
     pub value: f64,
     pub unit: Unit,
     pub target: Target,
+    /// Whether missing it fails the planet outright, whatever else it meets. Marked `!` after
+    /// its number.
+    pub mandatory: bool,
 }
 
 impl Criterion {
+    /// The same criterion, made mandatory.
+    pub fn mandatory(self) -> Self {
+        Self {
+            mandatory: true,
+            ..self
+        }
+    }
+
     /// `None` when there was nothing to measure.
     pub fn met(&self) -> Option<bool> {
         (!self.value.is_nan()).then(|| self.target.met_by(self.value))
@@ -119,7 +130,8 @@ impl fmt::Display for Criterion {
         } else {
             self.unit.format(self.value)
         };
-        write!(f, "[{mark}] {} {}: {value}", self.id, self.name)?;
+        let mandatory = if self.mandatory { "!" } else { "" };
+        write!(f, "[{mark}] {}{mandatory} {}: {value}", self.id, self.name)?;
         let target = self.unit.format_target(self.target);
         if !target.is_empty() {
             write!(f, " ({target})")?;
@@ -445,6 +457,7 @@ impl PlanetSurvey {
             value,
             unit,
             target,
+            mandatory: false,
         };
         vec![
             criterion("A1", "land", self.land_share, Share, Within(0.40, 0.50)),
@@ -618,7 +631,8 @@ impl PlanetSurvey {
                 self.polar_sea_ice_share,
                 Share,
                 AtMost(0.0),
-            ),
+            )
+            .mandatory(),
             criterion(
                 "D2",
                 "a polar continent",
@@ -807,79 +821,9 @@ fn wraps_around(surface: &PlanetSurface, group: &[TileIndex]) -> bool {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use super::{Criterion, PlanetSurvey, Target, score};
-    use crate::map::{
-        MapGenerator, MapGeneratorSettings, PlanetSurface, surface::tests::surface_from_art,
-    };
-
-    /// Surveys the default planet over many seeds, criterion by criterion. Run with:
-    /// `cargo test -p project_x_procgen view_survey --release -- --ignored --nocapture`
-    #[test]
-    #[ignore]
-    fn view_survey() {
-        let seeds: Vec<u32> = (0..32).map(|i| i * 7919 + 3).collect();
-        let surveys: Vec<PlanetSurvey> = seeds
-            .iter()
-            .map(|&seed| {
-                let settings = MapGeneratorSettings::new(seed, 80, 52);
-                let map = MapGenerator::from_settings(MapGeneratorSettings::new(seed, 80, 52))
-                    .generate(|_| {});
-                PlanetSurvey::of(&PlanetSurface::classify(&map, &settings))
-            })
-            .collect();
-        let criteria: Vec<Vec<Criterion>> = surveys.iter().map(PlanetSurvey::criteria).collect();
-        println!("{} seeds, 80 x 52\n", seeds.len());
-        print!("{}", tabulate(&criteria));
-    }
-
-    /// The criteria of many surveys, one line per criterion: how often it was met, and the spread
-    /// of its values; then the spread of the criteria met per survey.
-    pub(crate) fn tabulate(surveys: &[Vec<Criterion>]) -> String {
-        let mut text = String::new();
-        for (position, criterion) in surveys[0].iter().enumerate() {
-            let mut values: Vec<f64> = surveys
-                .iter()
-                .map(|criteria| criteria[position].value)
-                .filter(|value| !value.is_nan())
-                .collect();
-            values.sort_by(f64::total_cmp);
-            let met = surveys
-                .iter()
-                .filter(|criteria| criteria[position].met() == Some(true))
-                .count();
-            let (min, median, max) = if values.is_empty() {
-                (f64::NAN, f64::NAN, f64::NAN)
-            } else {
-                (
-                    values[0],
-                    values[values.len() / 2],
-                    values[values.len() - 1],
-                )
-            };
-            let unit = criterion.unit;
-            text.push_str(&format!(
-                "{:>3}% met  {} {} ({}): min {} median {} max {}\n",
-                met * 100 / surveys.len(),
-                criterion.id,
-                criterion.name,
-                unit.format_target(criterion.target),
-                unit.format(min),
-                unit.format(median),
-                unit.format(max),
-            ));
-        }
-        let mut scores: Vec<usize> = surveys.iter().map(|criteria| score(criteria).0).collect();
-        scores.sort_unstable();
-        text.push_str(&format!(
-            "\ncriteria met per seed: min {} median {} max {} of {}\n",
-            scores[0],
-            scores[scores.len() / 2],
-            scores[scores.len() - 1],
-            score(&surveys[0]).1
-        ));
-        text
-    }
+mod tests {
+    use super::{PlanetSurvey, Target};
+    use crate::map::surface::tests::surface_from_art;
 
     #[test]
     fn test_survey_counts_continents_islands_and_islets() {
@@ -1055,14 +999,20 @@ pub(crate) mod tests {
             value: 1.0,
             unit: super::Unit::Flag,
             target: Target::AtLeast(1.0),
+            mandatory: false,
         };
         assert_eq!(criterion.to_string(), "[+] C5 circumnavigable: yes (>= 1)");
+        assert_eq!(
+            criterion.clone().mandatory().to_string(),
+            "[+] C5! circumnavigable: yes (>= 1)"
+        );
         let info = super::Criterion {
             id: "D2",
             name: "a polar continent",
             value: 0.0,
             unit: super::Unit::Flag,
             target: Target::Info,
+            mandatory: false,
         };
         assert_eq!(info.to_string(), "[ ] D2 a polar continent: no");
     }
