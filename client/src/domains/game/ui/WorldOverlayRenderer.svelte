@@ -68,6 +68,8 @@
   /** What the player is doing with a unit: the selection, where it can go, where the pointer would send it. */
   type Orders = {
     selectedTile: number | null;
+    /** The tile of the focus view, outlined in the accent: distinct from the selection's white. */
+    focusedTile: number | null;
     reach: ReachableData | null;
     previewPath: readonly number[] | null;
     /** The viewer's nation, whose colour tints the reach. */
@@ -99,6 +101,15 @@
     }
     if (orders.selectedTile !== null) {
       hexAt(orders.selectedTile).stroke({ width: Math.max(layout.size * 0.1, 2), color: 0xffffff });
+    }
+    if (orders.focusedTile !== null) {
+      // a soft glow under a crisp line, like the construction overlay's border
+      const accent = parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim().replace("#", ""),
+        16,
+      );
+      hexAt(orders.focusedTile).stroke({ width: Math.max(layout.size * 0.3, 4), color: accent, alpha: 0.25 });
+      hexAt(orders.focusedTile).stroke({ width: Math.max(layout.size * 0.08, 2), color: accent });
     }
     if (orders.selectedTile !== null && orders.previewPath && orders.previewPath.length > 0) {
       const { x, y } = centerOf(orders.selectedTile);
@@ -153,6 +164,8 @@
     dirtyTiles?: Uint32Array | null;
     /** Row-major index of the tile to outline, if any. */
     selectedTile?: number | null;
+    /** Row-major index of the focus view's tile, outlined in the accent. */
+    focusedTile?: number | null;
     /** Where the selected unit can get to, tinted in the viewer's colour. */
     reach?: ReachableData | null;
     /** The steps to the hovered tile, drawn as a line from the selected tile. */
@@ -166,6 +179,7 @@
     layout,
     dirtyTiles = null,
     selectedTile = null,
+    focusedTile = null,
     reach = null,
     previewPath = null,
     viewer = null,
@@ -190,7 +204,7 @@
   // and row by row when a delta says which tiles moved
   $effect(() => {
     const changed = dirtyTiles;
-    const orders: Orders = { selectedTile, reach, previewPath, viewer };
+    const orders: Orders = { selectedTile, focusedTile, reach, previewPath, viewer };
     const currentDrawn = drawn;
     if (!currentDrawn) {
       return;

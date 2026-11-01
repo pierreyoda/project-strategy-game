@@ -50,6 +50,15 @@
     onTileHover?: (tile: OffsetCoords | null) => void;
     /** Called when a tile is clicked. */
     onTileClick?: (tile: OffsetCoords) => void;
+    /** Called when a tile is right-clicked: an order to whatever is selected. */
+    onTileOrder?: (tile: OffsetCoords) => void;
+    /**
+     * Frame a tile in the room right of a panel docked on the left, `insetLeft` pixels wide, zooming
+     * in to `minZoom` if the camera is further out - never out. A new object frames again.
+     */
+    framing?: { tile: number; minZoom: number; insetLeft: number } | null;
+    /** Row-major index of the focus view's tile, outlined in the accent. */
+    focusedTile?: number | null;
     /** Row-major index of the tile whose unit is selected, outlined over the map. */
     selectedTile?: number | null;
     /** Where the selected unit can get to, as the simulation answered; tinted over the map. */
@@ -75,6 +84,9 @@
     look,
     onTileHover,
     onTileClick,
+    onTileOrder,
+    framing = null,
+    focusedTile = null,
     selectedTile = null,
     reach = null,
     previewPath = null,
@@ -116,7 +128,8 @@
           screenHeight: app.screen.height,
           events: app.renderer.events,
         });
-        viewport.drag().pinch().wheel().decelerate();
+        // the left button pans, the right one gives orders
+        viewport.drag({ mouseButtons: "left" }).pinch().wheel().decelerate();
         app.stage.addChild(viewport);
         screenWidth = app.screen.width;
         app.renderer.on("resize", (width, height) => {
@@ -179,6 +192,25 @@
     camera.setZoom(1).moveCenter(x, y);
   });
 
+  // the focus view's tile, in the room its panel leaves: the panel covers the left of the screen
+  $effect(() => {
+    const frame = framing;
+    if (!camera || !frame) {
+      return;
+    }
+    const viewport = camera;
+    const { x, y } = hexCenter(layout, { col: frame.tile % map.columns, row: Math.floor(frame.tile / map.columns) });
+    const zoom = Math.max(viewport.scale.x, frame.minZoom);
+    viewport.setZoom(zoom).moveCenter(x - frame.insetLeft / (2 * zoom), y);
+    // moved by hand rather than by the player, so the wrapping around east-west is not triggered
+    const { period, minLeft } = wrapBounds(layout, map);
+    if (viewport.left < minLeft) {
+      viewport.left += period;
+    } else if (viewport.left >= minLeft + period) {
+      viewport.left -= period;
+    }
+  });
+
   // zoomed out, the camera shows the whole height of the map at most
   $effect(() => {
     if (!camera) {
@@ -194,13 +226,24 @@
 </script>
 
 <div bind:this={host} class="size-full overflow-hidden">
-  <canvas bind:this={canvas} class="block"></canvas>
+  <!-- the right button gives orders on the map: its menu would cover them -->
+  <canvas bind:this={canvas} class="block" oncontextmenu={(event) => event.preventDefault()}></canvas>
   {#if pixi}
-    <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {look} {onTileHover} {onTileClick} />
+    <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {look} {onTileHover} {onTileClick} {onTileOrder} />
     <MapEntityRenderer {pixi} {map} {layout} {entities} />
     <TileConstructionTurnsOverlay {pixi} {map} {layout} {constructions} />
     {#if world}
-      <WorldOverlayRenderer {pixi} {world} {layout} {dirtyTiles} {selectedTile} {reach} {previewPath} {viewer} />
+      <WorldOverlayRenderer
+        {pixi}
+        {world}
+        {layout}
+        {dirtyTiles}
+        {selectedTile}
+        {focusedTile}
+        {reach}
+        {previewPath}
+        {viewer}
+      />
     {/if}
     {#if nations}
       <NationsOverlayRenderer {pixi} {map} {nations} {layout} />

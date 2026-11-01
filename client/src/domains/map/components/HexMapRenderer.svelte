@@ -228,6 +228,8 @@
     onTileHover?: (tile: OffsetCoords | null) => void;
     /** Called when a tile is clicked. */
     onTileClick?: (tile: OffsetCoords) => void;
+    /** Called when a tile is right-clicked: an order to whatever is selected. */
+    onTileOrder?: (tile: OffsetCoords) => void;
   };
   const {
     pixi,
@@ -238,6 +240,7 @@
     look = DEFAULT_MAP_LOOK,
     onTileHover,
     onTileClick,
+    onTileOrder,
   }: HexMapRendererProps = $props();
 
   let textures = $state.raw<TerrainTextures | null>(null);
@@ -293,17 +296,37 @@
       hoverMarker.visible = false;
       hover(null);
     };
+    const tileUnder = (event: FederatedPointerEvent) =>
+      wrapHex(currentMap, hexAt(layout, event.getLocalPosition(currentDrawn.layer)));
     const onPointerTap = (event: FederatedPointerEvent) => {
-      const tile = wrapHex(currentMap, hexAt(layout, event.getLocalPosition(currentDrawn.layer)));
+      // a right click taps as well: it is an order, and only that
+      if (event.button !== 0) {
+        return;
+      }
+      const tile = tileUnder(event);
       if (tile) {
         onTileClick?.(tile);
       }
     };
-    pixi.world.on("pointermove", onPointerMove).on("pointerleave", onPointerLeave).on("pointertap", onPointerTap);
+    const onRightClick = (event: FederatedPointerEvent) => {
+      const tile = tileUnder(event);
+      if (tile) {
+        onTileOrder?.(tile);
+      }
+    };
+    pixi.world
+      .on("pointermove", onPointerMove)
+      .on("pointerleave", onPointerLeave)
+      .on("pointertap", onPointerTap)
+      .on("rightclick", onRightClick);
 
     return () => {
       pixi.app.ticker.remove(updateTexturesOpacity);
-      pixi.world.off("pointermove", onPointerMove).off("pointerleave", onPointerLeave).off("pointertap", onPointerTap);
+      pixi.world
+        .off("pointermove", onPointerMove)
+        .off("pointerleave", onPointerLeave)
+        .off("pointertap", onPointerTap)
+        .off("rightclick", onRightClick);
       drawn = null;
       // the textures are shared, cached by PixiJS's `Assets`; the noise is this map's own
       currentDrawn.layer.destroy({ children: true });

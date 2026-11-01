@@ -1,5 +1,6 @@
 import type { MapEntity } from "../../map/entities";
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
+import { isExplored } from "../../map/terrain";
 import { SvelteSet } from "svelte/reactivity";
 
 import { MAX_SEED } from "../../map/procgen/planetGenerator";
@@ -16,6 +17,7 @@ import type {
   WorldProjection,
 } from "../session/protocol";
 import { mapEntitiesOf } from "./mapEntities";
+import { type SlotView, type TileDetails, slotOf, tileDetailsOf } from "./tileDetails";
 import { type UnitView, type WorldState, applyProjection, toHexMapData } from "./worldState";
 
 /** How many entries of the turn log are kept. */
@@ -131,8 +133,28 @@ export type ActiveGame = {
   endTurn: () => Promise<void>;
   /** Stop the turn in progress between two phases. */
   cancelTurn: () => void;
-  /** Select one of the viewer's units, or move the selected one onto the tile. */
-  clickTile: (tile: OffsetCoords) => Promise<void>;
+  /**
+   * What a left click does: select one of the viewer's units on the tile, or inspect the tile. With
+   * the focus view open, the focus follows the click.
+   */
+  selectOrInspect: (tile: OffsetCoords) => Promise<void>;
+  /** What a right click does: order the selected unit onto the tile. Nothing without one selected. */
+  orderMove: (tile: OffsetCoords) => Promise<void>;
+  /** The tile the tile panels describe, `null` when none is inspected. */
+  readonly inspected: TileDetails | null;
+  /** Its building slot, as the panels draw it. */
+  readonly inspectedSlot: SlotView | null;
+  /** Whether the inspected tile is shown in the docked focus view rather than the compact panel. */
+  readonly focusOpen: boolean;
+  /** Show the inspected tile in the focus view. Nothing for a tile never explored. */
+  openFocus: () => void;
+  /** Back to the compact panel. */
+  closeFocus: () => void;
+  /** Stop inspecting: both panels close. */
+  closeInspection: () => void;
+  deselectUnit: () => void;
+  /** What Escape does: close the focus view, else the compact panel, else deselect the unit. */
+  escape: () => void;
   /** The tile under the pointer, `null` once it leaves the map: what the path preview follows. */
   hoverTile: (tile: OffsetCoords | null) => void;
   /** Set the selected unit aside for this turn and go to the next one that can still act. */
@@ -173,6 +195,8 @@ export const createActiveGame = (): ActiveGame => {
   let error = $state<string | null>(null);
   let log = $state<GameLogEntry[]>([]);
   let selectedUnit = $state<number | null>(null);
+  let inspectedTile = $state<number | null>(null);
+  let focusOpen = $state(false);
   let focusTile = $state<number | null>(null);
   let reach = $state.raw<ReachableData | null>(null);
   let hoveredIndex = $state<number | null>(null);
@@ -293,6 +317,8 @@ export const createActiveGame = (): ActiveGame => {
     hoveredIndex = null;
     skipped.clear();
     focusTile = null;
+    inspectedTile = null;
+    focusOpen = false;
     try {
       const ready = await session.start(settings);
       viewer = ready.localPlayer;
@@ -363,6 +389,22 @@ export const createActiveGame = (): ActiveGame => {
     get focusTile() {
       return focusTile;
     },
+    get inspected() {
+      // read `meta` for the same reason as `selected`: a delta may have changed the tile in place
+      if (inspectedTile === null || !world || !meta) {
+        return null;
+      }
+      return tileDetailsOf(world, inspectedTile);
+    },
+    get inspectedSlot() {
+      if (inspectedTile === null || !world || !meta) {
+        return null;
+      }
+      return slotOf(tileDetailsOf(world, inspectedTile), viewer);
+    },
+    get focusOpen() {
+      return focusOpen;
+    },
     get phase() {
       return phase;
     },
@@ -411,20 +453,30 @@ export const createActiveGame = (): ActiveGame => {
 
     cancelTurn: () => session.cancelTurn(),
 
-    clickTile: async (tile: OffsetCoords) => {
-      if (!world || !meta || resolving) {
+    selectOrInspect: async (tile: OffsetCoords) => {
+      if (!world) {
         return;
       }
       const index = tile.row * world.columns + tile.col;
+      // the focus view only ever shows a tile something is known of: a click into the dark leaves it be
+      if (focusOpen && !isExplored(world.terrain[index])) {
+        return;
+      }
       const own = [...world.units.values()].find((unit) => unit.tile === index && unit.owner === viewer);
-      if (own) {
+      // with the focus view open, the focus follows every click; otherwise selecting a unit replaces
+      // the tile panel with the unit's
+      inspectedTile = own && !focusOpen ? null : index;
+      if (own && !resolving) {
         selectedUnit = own.id;
         await refreshReach();
+      }
+    },
+
+    orderMove: async (tile: OffsetCoords) => {
+      if (!world || !meta || resolving || selectedUnit === null) {
         return;
       }
-      if (selectedUnit === null) {
-        return;
-      }
+      const index = tile.row * world.columns + tile.col;
       // the path the simulation itself offered, when it offered one; a tile it did not (never
       // explored, say) still gets the single step it always got, and the simulation's verdict on
       // it. No rule is checked here either way.
@@ -444,6 +496,31 @@ export const createActiveGame = (): ActiveGame => {
         return;
       }
       await catchUp(meta.version);
+    },
+
+    openFocus: () => {
+      if (world && inspectedTile !== null && isExplored(world.terrain[inspectedTile])) {
+        focusOpen = true;
+      }
+    },
+    closeFocus: () => (focusOpen = false),
+    closeInspection: () => {
+      inspectedTile = null;
+      focusOpen = false;
+    },
+    deselectUnit: () => {
+      selectedUnit = null;
+      reach = null;
+    },
+    escape: () => {
+      if (focusOpen) {
+        focusOpen = false;
+      } else if (inspectedTile !== null) {
+        inspectedTile = null;
+      } else {
+        selectedUnit = null;
+        reach = null;
+      }
     },
 
     hoverTile: (tile: OffsetCoords | null) => {

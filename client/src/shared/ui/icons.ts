@@ -1,4 +1,7 @@
 import Anvil from "@lucide/svelte/icons/anvil";
+import ArrowUp from "@lucide/svelte/icons/arrow-up";
+import Ban from "@lucide/svelte/icons/ban";
+import Eye from "@lucide/svelte/icons/eye";
 import Bell from "@lucide/svelte/icons/bell";
 import Building from "@lucide/svelte/icons/building";
 import Check from "@lucide/svelte/icons/check";
@@ -12,14 +15,18 @@ import Fuel from "@lucide/svelte/icons/fuel";
 import Heart from "@lucide/svelte/icons/heart";
 import Hourglass from "@lucide/svelte/icons/hourglass";
 import Info from "@lucide/svelte/icons/info";
+import LocateFixed from "@lucide/svelte/icons/locate-fixed";
 import Lock from "@lucide/svelte/icons/lock";
 import MapIcon from "@lucide/svelte/icons/map";
 import Minus from "@lucide/svelte/icons/minus";
+import Mountain from "@lucide/svelte/icons/mountain";
 import Plus from "@lucide/svelte/icons/plus";
 import Radiation from "@lucide/svelte/icons/radiation";
+import Route from "@lucide/svelte/icons/route";
 import Settings from "@lucide/svelte/icons/settings";
 import Shield from "@lucide/svelte/icons/shield";
 import Swords from "@lucide/svelte/icons/swords";
+import Trash2 from "@lucide/svelte/icons/trash-2";
 import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
 import Users from "@lucide/svelte/icons/users";
 import Wheat from "@lucide/svelte/icons/wheat";
@@ -50,6 +57,11 @@ export const icons = {
   health: Heart,
   turn: Hourglass,
   map: MapIcon,
+  elevation: Mountain,
+  visibility: Eye,
+  supply: Route,
+  upgrade: ArrowUp,
+  demolish: Trash2,
   // interface
   close: X,
   "chevron-down": ChevronDown,
@@ -60,6 +72,8 @@ export const icons = {
   info: Info,
   warning: TriangleAlert,
   lock: Lock,
+  unavailable: Ban,
+  locate: LocateFixed,
   notifications: Bell,
   settings: Settings,
 };
