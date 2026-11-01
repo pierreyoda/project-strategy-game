@@ -788,7 +788,7 @@ fn to_js_error(error: serde_json::Error) -> JsError {
 
 #[cfg(test)]
 mod tests {
-    use project_x_core::simulation::fog::TileVisibility;
+    use project_x_core::{game::session::LoggedCommand, simulation::fog::TileVisibility};
 
     use super::{GameSession, UNKNOWN_TERRAIN};
 
@@ -834,6 +834,56 @@ mod tests {
         panic!("the turn never finished");
     }
 
+    /// The scout AI, as the client sends it.
+    fn scout_ai() -> serde_json::Value {
+        serde_json::json!({
+            "name": "scout",
+            "kind": "ai",
+            "source": include_str!("../../scripts/ai/scout.rhai"),
+        })
+    }
+
+    /// A game on `seed` with the client's default scripts, played for `turns` turns by its AI
+    /// nations alone: every order they gave, and where every unit ended up.
+    fn scripted_game(seed: u32, turns: usize) -> (Vec<LoggedCommand>, String) {
+        let mut session = GameSession::new_game(&settings(serde_json::json!({
+            "seed": seed,
+            "nations": 3,
+            "scripts": [default_scenario(), scout_ai()],
+        })))
+        .expect("the settings are valid");
+        for _ in 0..turns {
+            resolve_turn(&mut session);
+        }
+        let world = session.inner.world();
+        (
+            session.inner.command_log().to_vec(),
+            format!("{:?}", world.units()),
+        )
+    }
+
+    /// `seed + scripts + command log` must replay a game exactly: the scripts draw their numbers
+    /// from their nation's own stream, read no clock, and iterate nothing in an unstable order.
+    ///
+    /// Also run in WASM, by `wasm-pack test --node wasm_bridge`: the client only ever runs there.
+    #[cfg_attr(not(target_arch = "wasm32"), test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn test_a_scripted_game_replays_from_its_seed_and_its_scripts() {
+        let (orders, units) = scripted_game(7, 5);
+        // two scripted nations of three units each, five turns: enough for a divergence to show
+        assert!(orders.len() >= 20, "only {} orders", orders.len());
+
+        let (replayed_orders, replayed_units) = scripted_game(7, 5);
+        assert_eq!(
+            replayed_orders, orders,
+            "same seed, same scripts: same orders"
+        );
+        assert_eq!(replayed_units, units, "and the same world after them");
+
+        let (other_orders, _) = scripted_game(8, 5);
+        assert_ne!(other_orders, orders, "another seed is another game");
+    }
+
     #[test]
     fn test_a_game_sent_no_scenario_is_refused() {
         use project_x_scripting::ScriptEngine;
@@ -852,11 +902,7 @@ mod tests {
         };
 
         let settings = settings(serde_json::json!({
-            "scripts": [default_scenario(), {
-                "name": "scout",
-                "kind": "ai",
-                "source": include_str!("../../scripts/ai/scout.rhai"),
-            }],
+            "scripts": [default_scenario(), scout_ai()],
         }));
         let mut session = GameSession::new_game(&settings).expect("the settings are valid");
         let ai = NationId::from_index(1);
