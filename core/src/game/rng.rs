@@ -44,12 +44,12 @@ impl RngPurpose {
     fn stream(self) -> u64 {
         let (purpose, nation): (u32, u32) = match self {
             Self::WorldGeneration => (0, 0),
-            Self::DepositGeneration => (1, 0),
-            Self::Economy => (2, 0),
-            Self::Logistics => (3, 0),
-            Self::Military => (4, 0),
-            Self::Population => (5, 0),
-            Self::Ai(nation) => (6, nation.index() as u32),
+            Self::Economy => (1, 0),
+            Self::Logistics => (2, 0),
+            Self::Military => (3, 0),
+            Self::Population => (4, 0),
+            Self::Ai(nation) => (5, nation.index() as u32),
+            Self::DepositGeneration => (6, 0),
         };
         (u64::from(purpose) << 32) | u64::from(nation)
     }
