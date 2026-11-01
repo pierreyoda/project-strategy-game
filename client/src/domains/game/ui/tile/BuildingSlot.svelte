@@ -5,6 +5,7 @@
   import type { IconName } from "../../../../shared/ui/icons";
   import Tooltip from "../../../../shared/ui/Tooltip.svelte";
   import EntityPortrait from "../../../map/components/EntityPortrait.svelte";
+  import { constructionProgress } from "../../../map/constructions";
   import { BUILDING_LEVELS, BUILDING_TYPES, type BuildingType, buildingDrawing } from "../../../map/entities";
   import { type Resource, formatChange } from "../../resources";
   import { type SlotView, buildingName } from "../../state/tileDetails";
@@ -64,6 +65,8 @@
         : null,
   );
   const drawing = $derived(building && buildingDrawing(building.type, building.level));
+  /** The share done, as the map's construction overlay computes it. */
+  const progress = $derived(slot.state === "construction" ? constructionProgress(slot) : 0);
   const options = $derived(
     figures.options ?? BUILDING_TYPES.map((type) => ({ type, cost: undefined, turns: undefined, favoured: undefined })),
   );
@@ -110,12 +113,7 @@
         {:else if slot.state === "construction"}
           <polygon points={HEX} class="busy" />
           <polygon points={HEX} class="track" />
-          <polygon
-            points={HEX}
-            class="ring"
-            pathLength="100"
-            stroke-dasharray="{(100 * (slot.turnsTotal - slot.turnsLeft)) / slot.turnsTotal} 100"
-          />
+          <polygon points={HEX} class="ring" pathLength="100" stroke-dasharray="{100 * progress} 100" />
         {:else if slot.state === "built"}
           <polygon points={HEX} class="built" />
         {:else}
@@ -226,10 +224,7 @@
           <span>Turns left</span><span class="num text-fg">{slot.turnsLeft} of {slot.turnsTotal}</span>
         </div>
         <div class="h-1 bg-line">
-          <i
-            class="block h-full bg-linear-to-r from-[#8ea2ff] to-accent"
-            style:width="{(100 * (slot.turnsTotal - slot.turnsLeft)) / slot.turnsTotal}%"
-          ></i>
+          <i class="block h-full bg-linear-to-r from-[#8ea2ff] to-accent" style:width="{100 * progress}%"></i>
         </div>
         {#if figures.spent !== undefined}
           <div class="flex justify-between gap-4">

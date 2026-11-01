@@ -14,6 +14,12 @@ export type MapConstruction = {
   turnsTotal: number;
 };
 
-/** The share of a construction done, in [0, 1]. */
-export const constructionProgress = ({ turnsLeft, turnsTotal }: MapConstruction): number =>
+/**
+ * The share of a construction done, in [0, 1]: what every drawing of its progress shows, the map's
+ * border as the tile panel's ring, so that the two never disagree.
+ */
+export const constructionProgress = ({
+  turnsLeft,
+  turnsTotal,
+}: Pick<MapConstruction, "turnsLeft" | "turnsTotal">): number =>
   turnsTotal > 0 ? Math.min(Math.max((turnsTotal - turnsLeft) / turnsTotal, 0), 1) : 0;
