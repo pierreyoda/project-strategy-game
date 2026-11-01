@@ -3,11 +3,13 @@
   import { Application } from "pixi.js";
   import { onMount } from "svelte";
 
+  import DepositRenderer from "../../map/components/DepositRenderer.svelte";
   import HexMapRenderer from "../../map/components/HexMapRenderer.svelte";
   import MapEntityRenderer from "../../map/components/MapEntityRenderer.svelte";
   import NationsOverlayRenderer from "../../map/components/NationsOverlayRenderer.svelte";
   import TileConstructionTurnsOverlay from "../../map/components/TileConstructionTurnsOverlay.svelte";
   import type { MapConstruction } from "../../map/constructions";
+  import type { MapDeposit } from "../../map/deposits";
   import type { MapEntity } from "../../map/entities";
   import { createHexLayout, hexCenter, mapHeight, wrapBounds } from "../../map/hexLayout";
   import type { HexMapData, OffsetCoords } from "../../map/hexMap";
@@ -40,6 +42,8 @@
      * own are not derived here: which stage a settlement is at is the simulation's to say.
      */
     entities?: readonly MapEntity[];
+    /** Deposits drawn on the ground of their tiles, under everything standing on them. */
+    deposits?: readonly MapDeposit[];
     /** Buildings going up, each tile showing the turns it has left. Nothing in a game has any yet. */
     constructions?: readonly MapConstruction[];
     /** Draws the flat colors of the terrains only, without the textures of their tiles. */
@@ -79,6 +83,7 @@
     nations = null,
     dirtyTiles = null,
     entities = [],
+    deposits = [],
     constructions = [],
     flatColors = false,
     look,
@@ -230,6 +235,7 @@
   <canvas bind:this={canvas} class="block" oncontextmenu={(event) => event.preventDefault()}></canvas>
   {#if pixi}
     <HexMapRenderer {pixi} {map} {layout} {dirtyTiles} {flatColors} {look} {onTileHover} {onTileClick} {onTileOrder} />
+    <DepositRenderer {pixi} {map} {layout} {deposits} />
     <MapEntityRenderer {pixi} {map} {layout} {entities} />
     <TileConstructionTurnsOverlay {pixi} {map} {layout} {constructions} />
     {#if world}

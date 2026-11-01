@@ -3,6 +3,7 @@
   import Button from "../../../../shared/ui/Button.svelte";
   import Icon from "../../../../shared/ui/Icon.svelte";
   import Panel from "../../../../shared/ui/Panel.svelte";
+  import { RESOURCE_NAMES } from "../../resources";
   import { TileVisibility } from "../../session/protocol";
   import type { TileDetails } from "../../state/tileDetails";
   import type { ConceptChain } from "../concepts/chain.svelte";
@@ -49,7 +50,16 @@
       <dl class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 text-sm">
         <dt class="flex items-center gap-2 text-fg-muted"><Icon name="elevation" size="sm" />Elevation</dt>
         <dd class="text-right font-display font-semibold tabular-nums">{details.elevation} m</dd>
-        {#if details.hasDeposit}
+        {#if details.deposit}
+          <dt class="flex items-center gap-2 text-fg-muted">
+            <Icon
+              name={details.deposit.resource}
+              size="sm"
+              style="color: var(--color-resource-{details.deposit.resource})"
+            /><ConceptTerm id="deposit" {chain} />
+          </dt>
+          <dd class="text-right font-display font-semibold">{RESOURCE_NAMES[details.deposit.resource]}</dd>
+        {:else if details.hasDeposit}
           <dt class="flex items-center gap-2 text-fg-muted">
             <Icon name="metals" size="sm" /><ConceptTerm id="deposit" {chain} />
           </dt>

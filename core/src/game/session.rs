@@ -1099,6 +1099,53 @@ mod tests {
     }
 
     #[test]
+    fn test_a_deposit_is_projected_once_its_tile_is_explored() {
+        use crate::{
+            game::projection::NO_TURNS_LEFT,
+            simulation::resources::{
+                Resource, ResourceDataStorage, ResourceDataStore, ResourceDeposit,
+            },
+        };
+
+        let (mut world, first, second, own, _) = two_nation_world();
+        let mut held = ResourceDataStorage::new();
+        held.replenish(Resource::Oil, 340);
+        let deposit = world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_oil"),
+            at(3, 1),
+            held,
+            600,
+        ));
+        let mut session = GameSession::new(world, SEED, first);
+        fill_with_stub_ai(&mut session);
+
+        // two tiles off: the scout sees one, so the deposit is not known yet
+        assert!(session.snapshot(first).deposits.ids.is_empty());
+        let version = session.version();
+        session
+            .submit(GameCommand::MoveUnit {
+                unit: own,
+                path: vec![at(2, 1)],
+            })
+            .expect("a legal move");
+
+        let Projection::Delta(delta) = session.project(first, version) else {
+            panic!("a step must not cost a full snapshot");
+        };
+        assert_eq!(delta.deposits.ids, vec![deposit.raw()]);
+        assert_eq!(delta.deposits.resources, vec![Resource::Oil as u8]);
+        // 340 of a kind that comes 600 at most: the middle step
+        assert_eq!(delta.deposits.levels, vec![2]);
+        assert_eq!(delta.deposits.quantities, vec![340]);
+        assert_eq!(delta.deposits.recharges, vec![0]);
+        assert_eq!(delta.deposits.turns_left, vec![NO_TURNS_LEFT]);
+
+        // from then on the snapshot carries it, while the other nation still knows nothing of it
+        assert_eq!(session.snapshot(first).deposits.ids, vec![deposit.raw()]);
+        assert!(session.snapshot(second).deposits.ids.is_empty());
+    }
+
+    #[test]
     fn test_units_are_projected_with_their_kind_and_points_left() {
         let (mut session, first, _, own, _) = two_nation_session();
         let snapshot = session.snapshot(first);

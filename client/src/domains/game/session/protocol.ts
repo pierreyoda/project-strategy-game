@@ -202,6 +202,29 @@ export type BuildingsBuffers = {
 /** A building whose template is unknown, like `projection::UNKNOWN_BUILDING_KIND` in the `core` crate. */
 export const UNKNOWN_BUILDING_KIND = 0xff;
 
+/** The deposits the viewer knows of, like `projection::DepositsBuffers` in the `core` crate. */
+export type DepositsBuffers = {
+  ids: Uint32Array;
+  tiles: Uint32Array;
+  /** Indices into `RESOURCES`, `UNKNOWN_RESOURCE` for a deposit holding nothing. */
+  resources: Uint8Array;
+  /** 1 to `DEPOSIT_LEVELS`, 0 once exhausted. */
+  levels: Uint8Array;
+  /** The stock left, 0 for a deposit that springs back instead. */
+  quantities: Uint16Array;
+  /** What it recharges per turn, 0 for a stock. */
+  recharges: Uint16Array;
+  /** Turns its stock lasts at the rate it is drawn from, `NO_TURNS_LEFT` while nothing draws on it. */
+  turnsLeft: Uint16Array;
+};
+
+/** Like `projection::UNKNOWN_RESOURCE` in the `core` crate. */
+export const UNKNOWN_RESOURCE = 0xff;
+/** Like `projection::NO_TURNS_LEFT` in the `core` crate. */
+export const NO_TURNS_LEFT = 0xffff;
+/** Like `resources::DEPOSIT_LEVELS` in the `core` crate: trace, deposit, rich. */
+export const DEPOSIT_LEVELS = 3;
+
 /** Everything the viewer can see, like `WorldSnapshot` in the `core` crate. */
 export type WorldSnapshotData = {
   meta: ProjectionMeta;
@@ -225,6 +248,7 @@ export type WorldSnapshotData = {
   units: UnitsBuffers;
   settlements: SettlementsBuffers;
   buildings: BuildingsBuffers;
+  deposits: DepositsBuffers;
 };
 
 /**
@@ -256,6 +280,8 @@ export type WorldDeltaData = {
   settlementsRemoved: Uint32Array;
   buildings: BuildingsBuffers;
   buildingsRemoved: Uint32Array;
+  /** Deposits on the changed tiles the viewer knows, those just explored mostly. None is ever removed. */
+  deposits: DepositsBuffers;
 };
 
 /**

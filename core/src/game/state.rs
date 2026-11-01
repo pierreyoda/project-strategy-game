@@ -343,6 +343,17 @@ impl World {
         self.units.insert(unit)
     }
 
+    /// Lay a deposit in the ground, referenced by its tile. Setup only, like `place_unit`: deposits
+    /// come from the planet's generation, before anything has a version to catch up from.
+    pub fn place_deposit(&mut self, deposit: ResourceDeposit) -> DepositId {
+        let position = self.shape.wrap(deposit.position());
+        let id = self.deposits.insert(deposit);
+        if let Some(tile) = position.and_then(|coords| self.map.tile_mut(&coords)) {
+            tile.natural_mut().add_deposit(id);
+        }
+        id
+    }
+
     /// Record how the world was generated. Setup only, like `register_nation`: the genesis never
     /// changes afterwards, so there is nothing for the journal to track.
     pub fn set_genesis(&mut self, genesis: WorldGenesis) {
@@ -484,10 +495,36 @@ mod tests {
             ids::{EntityIndex, NationId, SimulationID},
             military::Unit,
             nations::Nation,
+            resources::{Resource, ResourceDataStorage, ResourceDataStore, ResourceDeposit},
         },
     };
 
     use super::{World, WorldMut};
+
+    #[test]
+    fn test_a_placed_deposit_is_found_from_its_tile() {
+        let mut world = build_test_world(6, 4);
+        let at = OffsetCoords::new(2, 1).into();
+        let mut stock = ResourceDataStorage::new();
+        stock.replenish(Resource::Metals, 340);
+        let id = world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_metals"),
+            at,
+            stock,
+            800,
+        ));
+
+        assert_eq!(world.tile(at).unwrap().natural().deposits(), &[id]);
+        let deposit = world.deposits().get(id).expect("in the store");
+        assert_eq!(deposit.resources().quantity_of(Resource::Metals), 340);
+        // and no other tile has heard of it
+        let elsewhere = world
+            .shape()
+            .coords()
+            .filter(|&coords| coords != at)
+            .all(|coords| world.tile(coords).unwrap().natural().deposits().is_empty());
+        assert!(elsewhere);
+    }
 
     pub(crate) fn build_test_world(columns: i16, rows: i16) -> World {
         let shape = RectangularHexMapShape::new(columns, rows);

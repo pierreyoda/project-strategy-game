@@ -45,8 +45,20 @@ export type TileDetails = {
   movementCost?: number;
   /** As a share: 0.25 is +25%. */
   defense?: number;
-  deposit?: { resource: Resource; left: number; turnsLeft: number | null };
+  deposit?: TileDeposit;
   yields?: Partial<Record<Resource, number>>;
+};
+
+/** A deposit as the tile panels show it. */
+export type TileDeposit = {
+  resource: Resource;
+  /** The stock left, 0 for a deposit that springs back instead. */
+  left: number;
+  /** What it recharges per turn, 0 for a stock: water's figure in place of a stock. */
+  recharge?: number;
+  /** 1 to 3, the simulation's reading of what is left. */
+  level?: number;
+  turnsLeft: number | null;
 };
 
 /**
@@ -84,6 +96,10 @@ export const tileDetailsOf = (world: WorldState, index: number): TileDetails => 
   const forest = isForest(world.vegetation[index]);
   const flags = world.tileFlags[index];
   const building = [...world.buildings.values()].find(({ tile }) => tile === index);
+  // the richer one, on the rare tile a guarantee laid a second deposit on
+  const deposit = [...world.deposits.values()]
+    .filter(({ tile, resource }) => tile === index && resource !== null)
+    .sort((first, second) => second.level - first.level)[0];
   const settlement = [...world.settlements.values()].find(({ tile }) => tile === index);
   return {
     index,
@@ -99,6 +115,16 @@ export const tileDetailsOf = (world: WorldState, index: number): TileDetails => 
     supplyNode: (flags & TileFlags.SupplyNode) !== 0,
     infrastructure: (flags & TileFlags.Infrastructure) !== 0,
     hasDeposit: (flags & TileFlags.Deposit) !== 0,
+    deposit:
+      deposit && deposit.resource
+        ? {
+            resource: deposit.resource,
+            left: deposit.quantity,
+            recharge: deposit.recharge,
+            level: deposit.level,
+            turnsLeft: deposit.turnsLeft,
+          }
+        : undefined,
     building: building ? { type: building.type, name: buildingName(building.type), level: building.level } : null,
   };
 };

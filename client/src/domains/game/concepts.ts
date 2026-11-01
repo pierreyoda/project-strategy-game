@@ -195,7 +195,7 @@ export const GAME_CONCEPTS: Record<GameConceptId, GameConcept> = {
     title: "Deposit",
     kind: "World",
     summary: conceptText(
-      "A tile's hoard of [[metals]] or [[uranium]], mined down a little every turn until it is gone.",
+      "A tile's hoard of [[water]], [[metals]], [[oil]] or [[uranium]], mined down a little every turn until it is gone.",
     ),
   },
   "fog-of-war": {

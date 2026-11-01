@@ -152,9 +152,13 @@
                 {#if details.deposit.turnsLeft !== null}<Badge tone="warning" size="sm">Depleting</Badge>{/if}
               </div>
               <div class="mt-0.5 text-xs text-fg-subtle">
-                {formatQuantity(details.deposit.left)} left{details.deposit.turnsLeft !== null
-                  ? ` · runs out in ${details.deposit.turnsLeft} turns`
-                  : ""}
+                {#if details.deposit.recharge}
+                  {formatChange(details.deposit.recharge)} per turn, springs back
+                {:else}
+                  {formatQuantity(details.deposit.left)} left{details.deposit.turnsLeft !== null
+                    ? ` · runs out in ${details.deposit.turnsLeft} turns`
+                    : ""}
+                {/if}
               </div>
             </div>
           </div>

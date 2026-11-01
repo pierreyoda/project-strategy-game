@@ -17,9 +17,9 @@ use crate::{
     simulation::{
         buildings::Building,
         fog::TileVisibility,
-        ids::{BuildingId, NationId, SettlementId, SimulationID, UnitId},
+        ids::{BuildingId, DepositId, NationId, SettlementId, SimulationID, UnitId},
         military::Unit,
-        resources::{Resource, ResourceData},
+        resources::{Resource, ResourceData, ResourceDeposit},
         settlements::{Settlement, SettlementStage},
     },
 };
@@ -33,6 +33,12 @@ pub const UNKNOWN_BUILDING_KIND: u8 = u8::MAX;
 
 /// The kind of a unit whose template is not registered, likewise.
 pub const UNKNOWN_UNIT_KIND: u8 = u8::MAX;
+
+/// The resource of a deposit holding none, which only a corrupt world produces.
+pub const UNKNOWN_RESOURCE: u8 = u8::MAX;
+
+/// The turns-left value of a deposit nothing draws on.
+pub const NO_TURNS_LEFT: u16 = u16::MAX;
 
 /// What a unit template tells the client: enough to name a unit and to show its figures.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,6 +130,44 @@ pub struct WorldSnapshot {
     pub building_kinds: Vec<u8>,
     /// `Building::level`, from 1.
     pub building_levels: Vec<u8>,
+    pub deposits: DepositsBuffers,
+}
+
+/// The deposits the viewer knows of, as parallel arrays: every deposit on an explored tile.
+///
+/// Known rather than watched, like settlements: a deposit does not walk away, and the ground the
+/// viewer has explored is the ground it has surveyed. TODO: a survey of its own, once there is one.
+#[derive(Clone, Debug, Default)]
+pub struct DepositsBuffers {
+    pub ids: Vec<u32>,
+    pub tiles: Vec<u32>,
+    /// `Resource` discriminants, in the order of the client's `RESOURCES`, or `UNKNOWN_RESOURCE`.
+    pub resources: Vec<u8>,
+    /// `ResourceDeposit::level`: 1 to `DEPOSIT_LEVELS`, 0 once exhausted.
+    pub levels: Vec<u8>,
+    /// The stock left, zero for a deposit that springs back instead.
+    pub quantities: Vec<u16>,
+    /// What it recharges per turn, zero for a stock.
+    pub recharges: Vec<u16>,
+    /// `ResourceDeposit::turns_left`, or `NO_TURNS_LEFT`.
+    pub turns_left: Vec<u16>,
+}
+
+impl DepositsBuffers {
+    fn push(&mut self, id: DepositId, tile: TileIndex, deposit: &ResourceDeposit) {
+        let resource = deposit.resource();
+        let data = resource.and_then(|resource| deposit.resources().get(&resource));
+        self.ids.push(id.raw());
+        self.tiles.push(tile);
+        self.resources
+            .push(resource.map_or(UNKNOWN_RESOURCE, |resource| resource as u8));
+        self.levels.push(deposit.level());
+        self.quantities.push(data.map_or(0, ResourceData::quantity));
+        self.recharges
+            .push(data.and_then(ResourceData::income).unwrap_or(0));
+        self.turns_left
+            .push(deposit.turns_left().unwrap_or(NO_TURNS_LEFT));
+    }
 }
 
 /// What changed for the viewer since a given version.
@@ -162,6 +206,9 @@ pub struct WorldDelta {
     /// `Building::level`, from 1.
     pub building_levels: Vec<u8>,
     pub buildings_removed: Vec<u32>,
+    /// Deposits on the tiles that changed and that the viewer knows: those just explored, mostly.
+    /// Nothing works a deposit yet, so nothing else changes one, and none is ever removed.
+    pub deposits: DepositsBuffers,
 }
 
 /// Either a catch-up, or an order to start over.
@@ -201,6 +248,7 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         building_owners: Vec::new(),
         building_kinds: Vec::new(),
         building_levels: Vec::new(),
+        deposits: DepositsBuffers::default(),
     };
 
     for (index, coords) in shape.coords().enumerate() {
@@ -270,6 +318,15 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         snapshot.building_levels.push(building.level());
     }
 
+    for (id, deposit) in world.deposits().iter() {
+        let Some(index) = world.tile_index(deposit.position()) else {
+            continue;
+        };
+        if visibility_of(world, viewer, index as usize) != TileVisibility::Unexplored {
+            snapshot.deposits.push(id, index, deposit);
+        }
+    }
+
     snapshot
 }
 
@@ -301,6 +358,7 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         building_kinds: Vec::new(),
         building_levels: Vec::new(),
         buildings_removed: Vec::new(),
+        deposits: DepositsBuffers::default(),
     };
 
     let dirty_tiles: Vec<TileIndex> = changes.tiles().collect();
@@ -356,6 +414,23 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
     units.sort_unstable();
     settlements.sort_unstable();
     buildings.sort_unstable();
+
+    for &index in &dirty_tiles {
+        if visibility_of(world, viewer, index as usize) == TileVisibility::Unexplored {
+            continue;
+        }
+        let Some(tile) = world
+            .tile_coords(index)
+            .and_then(|coords| world.tile(coords))
+        else {
+            continue;
+        };
+        for &id in tile.natural().deposits() {
+            if let Some(deposit) = world.deposits().get(id) {
+                delta.deposits.push(id, index, deposit);
+            }
+        }
+    }
 
     let unit_kinds = unit_kinds(world);
     for id in units {

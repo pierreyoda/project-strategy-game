@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 1280" width="1110" height="1280">
+<g transform="translate(555 690) scale(1.9) translate(-555 -690)">
+<ellipse cx="525" cy="706" rx="67.5" ry="19.5" fill="#0e2a3e" opacity="0.4"/>
+<ellipse cx="495" cy="700" rx="56.3" ry="18" fill="#2a6aa6"/>
+<ellipse cx="492" cy="697.8" rx="48" ry="13.5" fill="#5cc0e6"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#24609e" transform="translate(495 697) scale(6.9) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#3f8fe6" transform="translate(490.9 692.9) scale(6.4) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#6fbaf5" transform="translate(482.6 686) scale(4.3) translate(-12 -22)"/>
+<ellipse cx="471.5" cy="628" rx="9" ry="16.6" fill="#ffffff" opacity="0.9" transform="rotate(27 471.5 628)"/>
+<circle cx="519.8" cy="666" r="6.2" fill="#d6f1ff" opacity="0.7"/>
+<ellipse cx="646.6" cy="734.3" rx="48.6" ry="14" fill="#0e2a3e" opacity="0.4"/>
+<ellipse cx="625" cy="730" rx="40.5" ry="13" fill="#2a6aa6"/>
+<ellipse cx="622.8" cy="728.4" rx="34.6" ry="9.7" fill="#5cc0e6"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#24609e" transform="translate(625 727.8) scale(5) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#3f8fe6" transform="translate(622 724.9) scale(4.6) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#6fbaf5" transform="translate(616.1 719.9) scale(3.1) translate(-12 -22)"/>
+<ellipse cx="608.1" cy="678.2" rx="6.5" ry="11.9" fill="#ffffff" opacity="0.9" transform="rotate(27 608.1 678.2)"/>
+<circle cx="642.9" cy="705.5" r="4.5" fill="#d6f1ff" opacity="0.7"/>
+</g>
+</svg>

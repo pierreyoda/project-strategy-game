@@ -1,5 +1,6 @@
 import type {
   BuildingsBuffers,
+  DepositsBuffers,
   GameEvent,
   GameSessionRequest,
   GameSessionResponse,
@@ -51,7 +52,12 @@ const parseMeta = (json: string): ProjectionMeta => JSON.parse(json) as Projecti
 
 /** Every buffer of a projection, so that they are moved to the main thread rather than copied. */
 const buffersOf = (projection: WorldProjection): Transferable[] => {
-  const entities = (units: UnitsBuffers, settlements: SettlementsBuffers, buildings: BuildingsBuffers) => [
+  const entities = (
+    units: UnitsBuffers,
+    settlements: SettlementsBuffers,
+    buildings: BuildingsBuffers,
+    deposits: DepositsBuffers,
+  ) => [
     units.ids.buffer,
     units.tiles.buffer,
     units.owners.buffer,
@@ -67,6 +73,13 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     buildings.owners.buffer,
     buildings.kinds.buffer,
     buildings.levels.buffer,
+    deposits.ids.buffer,
+    deposits.tiles.buffer,
+    deposits.resources.buffer,
+    deposits.levels.buffer,
+    deposits.quantities.buffer,
+    deposits.recharges.buffer,
+    deposits.turnsLeft.buffer,
   ];
   if (projection.kind === "full") {
     const { snapshot } = projection;
@@ -78,7 +91,7 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
       snapshot.tileOwner.buffer,
       snapshot.tileSphere.buffer,
       snapshot.tileFlags.buffer,
-      ...entities(snapshot.units, snapshot.settlements, snapshot.buildings),
+      ...entities(snapshot.units, snapshot.settlements, snapshot.buildings, snapshot.deposits),
     ];
   }
   const { delta } = projection;
@@ -94,7 +107,7 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     delta.unitsRemoved.buffer,
     delta.settlementsRemoved.buffer,
     delta.buildingsRemoved.buffer,
-    ...entities(delta.units, delta.settlements, delta.buildings),
+    ...entities(delta.units, delta.settlements, delta.buildings, delta.deposits),
   ];
 };
 
@@ -124,6 +137,13 @@ const readSnapshot = (view: {
   buildingOwners: Uint16Array;
   buildingKinds: Uint8Array;
   buildingLevels: Uint8Array;
+  depositIds: Uint32Array;
+  depositTiles: Uint32Array;
+  depositResources: Uint8Array;
+  depositLevels: Uint8Array;
+  depositQuantities: Uint16Array;
+  depositRecharges: Uint16Array;
+  depositTurnsLeft: Uint16Array;
 }): WorldSnapshotData => ({
   // every getter copies out of the WASM memory: read each one exactly once
   meta: parseMeta(view.meta),
@@ -144,6 +164,7 @@ const readSnapshot = (view: {
     stages: view.settlementStages,
   },
   buildings: readBuildings(view),
+  deposits: readDeposits(view),
 });
 
 const readUnits = (view: {
@@ -176,6 +197,24 @@ const readBuildings = (view: {
   levels: view.buildingLevels,
 });
 
+const readDeposits = (view: {
+  depositIds: Uint32Array;
+  depositTiles: Uint32Array;
+  depositResources: Uint8Array;
+  depositLevels: Uint8Array;
+  depositQuantities: Uint16Array;
+  depositRecharges: Uint16Array;
+  depositTurnsLeft: Uint16Array;
+}): DepositsBuffers => ({
+  ids: view.depositIds,
+  tiles: view.depositTiles,
+  resources: view.depositResources,
+  levels: view.depositLevels,
+  quantities: view.depositQuantities,
+  recharges: view.depositRecharges,
+  turnsLeft: view.depositTurnsLeft,
+});
+
 const readDelta = (view: {
   meta: string;
   tileIndices: Uint32Array;
@@ -204,6 +243,13 @@ const readDelta = (view: {
   buildingKinds: Uint8Array;
   buildingLevels: Uint8Array;
   buildingsRemoved: Uint32Array;
+  depositIds: Uint32Array;
+  depositTiles: Uint32Array;
+  depositResources: Uint8Array;
+  depositLevels: Uint8Array;
+  depositQuantities: Uint16Array;
+  depositRecharges: Uint16Array;
+  depositTurnsLeft: Uint16Array;
 }): WorldDeltaData => ({
   meta: parseMeta(view.meta),
   tileIndices: view.tileIndices,
@@ -225,6 +271,7 @@ const readDelta = (view: {
   settlementsRemoved: view.settlementsRemoved,
   buildings: readBuildings(view),
   buildingsRemoved: view.buildingsRemoved,
+  deposits: readDeposits(view),
 });
 
 /** Hand over everything the simulation buffered, so the UI log never lags behind the turn. */

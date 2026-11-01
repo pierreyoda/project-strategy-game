@@ -30,6 +30,15 @@ const noSettlements = () => ({
   owners: new Uint16Array(),
   stages: new Uint8Array(),
 });
+const noDeposits = () => ({
+  ids: new Uint32Array(),
+  tiles: new Uint32Array(),
+  resources: new Uint8Array(),
+  levels: new Uint8Array(),
+  quantities: new Uint16Array(),
+  recharges: new Uint16Array(),
+  turnsLeft: new Uint16Array(),
+});
 const noBuildings = () => ({
   ids: new Uint32Array(),
   tiles: new Uint32Array(),
@@ -53,6 +62,7 @@ const snapshot = (): WorldSnapshotData => ({
   units: noUnits(),
   settlements: noSettlements(),
   buildings: noBuildings(),
+  deposits: noDeposits(),
 });
 
 describe("vegetation in the world state", () => {
@@ -80,6 +90,7 @@ describe("vegetation in the world state", () => {
       settlementsRemoved: new Uint32Array(),
       buildings: noBuildings(),
       buildingsRemoved: new Uint32Array(),
+      deposits: noDeposits(),
     };
     const patched = applyProjection(state, { kind: "delta", delta });
     expect(patched.state.vegetation[2]).toBe(Vegetation.Forest);

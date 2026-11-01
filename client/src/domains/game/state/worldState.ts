@@ -1,6 +1,9 @@
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
+import { RESOURCES, type Resource } from "../resources";
 import {
   type BuildingsBuffers,
+  type DepositsBuffers,
+  NO_TURNS_LEFT,
   type ProjectionMeta,
   type SettlementStage,
   UNKNOWN_BUILDING_KIND,
@@ -43,6 +46,21 @@ export type BuildingView = {
   level: number;
 };
 
+export type DepositView = {
+  id: number;
+  tile: number;
+  /** What it holds, `null` for a deposit the simulation could not name. */
+  resource: Resource | null;
+  /** 1 to `DEPOSIT_LEVELS` as the simulation reads it from what is left, 0 once exhausted. */
+  level: number;
+  /** The stock left, 0 for a deposit that springs back instead. */
+  quantity: number;
+  /** What it recharges per turn, 0 for a stock. */
+  recharge: number;
+  /** Turns its stock lasts at the rate it is drawn from, `null` while nothing draws on it. */
+  turnsLeft: number | null;
+};
+
 /**
  * What the client holds of the world: a *projection*, never the truth.
  *
@@ -68,6 +86,8 @@ export type WorldState = {
   units: Map<number, UnitView>;
   settlements: Map<number, SettlementView>;
   buildings: Map<number, BuildingView>;
+  /** Every deposit the viewer has explored. None is ever removed: a deposit does not move. */
+  deposits: Map<number, DepositView>;
 };
 
 export type AppliedProjection = {
@@ -111,6 +131,23 @@ const readUnits = (into: Map<number, UnitView>, buffers: UnitsBuffers, meta: Pro
   }
 };
 
+/** Fold a projection's deposits into a map of views. */
+const readDeposits = (into: Map<number, DepositView>, buffers: DepositsBuffers) => {
+  for (let index = 0; index < buffers.ids.length; index++) {
+    const id = buffers.ids[index];
+    const turnsLeft = buffers.turnsLeft[index];
+    into.set(id, {
+      id,
+      tile: buffers.tiles[index],
+      resource: RESOURCES[buffers.resources[index]] ?? null,
+      level: buffers.levels[index],
+      quantity: buffers.quantities[index],
+      recharge: buffers.recharges[index],
+      turnsLeft: turnsLeft === NO_TURNS_LEFT ? null : turnsLeft,
+    });
+  }
+};
+
 /** Fold a projection's buildings into a map of views, the kinds resolved against that projection's meta. */
 const readBuildings = (into: Map<number, BuildingView>, buffers: BuildingsBuffers, meta: ProjectionMeta) => {
   for (let index = 0; index < buffers.ids.length; index++) {
@@ -141,6 +178,8 @@ const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
   }
   const buildings = new Map<number, BuildingView>();
   readBuildings(buildings, snapshot.buildings, snapshot.meta);
+  const deposits = new Map<number, DepositView>();
+  readDeposits(deposits, snapshot.deposits);
   return {
     meta: snapshot.meta,
     columns: snapshot.columns,
@@ -155,6 +194,7 @@ const fromSnapshot = (snapshot: WorldSnapshotData): WorldState => {
     units,
     settlements,
     buildings,
+    deposits,
   };
 };
 
@@ -193,6 +233,7 @@ const patch = (state: WorldState, delta: WorldDeltaData): WorldState => {
     state.buildings.delete(id);
   }
   readBuildings(state.buildings, delta.buildings, delta.meta);
+  readDeposits(state.deposits, delta.deposits);
 
   state.meta = delta.meta;
   return state;

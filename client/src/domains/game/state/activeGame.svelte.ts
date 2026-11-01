@@ -1,3 +1,4 @@
+import type { MapDeposit } from "../../map/deposits";
 import type { MapEntity } from "../../map/entities";
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
 import { isExplored } from "../../map/terrain";
@@ -16,6 +17,7 @@ import type {
   TurnPhase,
   WorldProjection,
 } from "../session/protocol";
+import { mapDepositsOf } from "./mapDeposits";
 import { mapEntitiesOf } from "./mapEntities";
 import { type SlotView, type TileDetails, slotOf, tileDetailsOf } from "./tileDetails";
 import { type UnitView, type WorldState, applyProjection, toHexMapData } from "./worldState";
@@ -104,6 +106,8 @@ export type ActiveGame = {
    * identity would ever re-run.
    */
   readonly entities: readonly MapEntity[];
+  /** The deposits the map draws on the ground, rebuilt on every projection for the same reason. */
+  readonly deposits: readonly MapDeposit[];
   /** The nation being played, whose eyes everything is seen through. */
   readonly viewer: number;
   readonly turn: number;
@@ -186,6 +190,7 @@ export const createActiveGame = (): ActiveGame => {
   let map = $state.raw<HexMapData | null>(null);
   let dirtyTiles = $state.raw<Uint32Array | null>(null);
   let entities = $state.raw<readonly MapEntity[]>([]);
+  let deposits = $state.raw<readonly MapDeposit[]>([]);
   let viewer = $state(0);
 
   let phase = $state<TurnPhase | null>(null);
@@ -263,6 +268,7 @@ export const createActiveGame = (): ActiveGame => {
     dirtyTiles = applied.dirtyTiles;
     // settlements are sparse: rebuilding the list costs less than tracking which ones moved
     entities = mapEntitiesOf(applied.state);
+    deposits = mapDepositsOf(applied.state);
   };
 
   /**
@@ -312,6 +318,7 @@ export const createActiveGame = (): ActiveGame => {
     map = null;
     dirtyTiles = null;
     entities = [];
+    deposits = [];
     selectedUnit = null;
     reach = null;
     hoveredIndex = null;
@@ -342,6 +349,9 @@ export const createActiveGame = (): ActiveGame => {
     },
     get entities() {
       return entities;
+    },
+    get deposits() {
+      return deposits;
     },
     get viewer() {
       return viewer;

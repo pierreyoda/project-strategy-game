@@ -25,13 +25,15 @@ use project_x_core::{
     simulation::{
         buildings::BuildingTemplate,
         fog::TileVisibility,
-        ids::{EntityIndex, NationId, UnitId},
+        ids::{EntityIndex, NationId, SimulationID, UnitId},
         military::{Unit, UnitTemplate},
         movement::{self, Reachable},
+        resources::{ResourceDataStorage, ResourceDataStore, ResourceDeposit},
         settlements::Settlement,
     },
 };
 use project_x_procgen::{
+    deposits::{DepositKind, DepositsGenerator, DepositsGeneratorSettings, GeneratedDeposits},
     forests::Forests,
     map::{MAX_SEED, MapGenerator, MapGeneratorSettings},
     nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings, PlanetSurface},
@@ -140,10 +142,15 @@ impl GameSession {
         ))
         .generate(&surface);
 
+        let deposit_settings = DepositsGeneratorSettings::new(u64::from(settings.seed));
+        let deposits = DepositsGenerator::from_settings(deposit_settings.clone())
+            .generate(&surface, Some(&nations));
+
         let mut world = World::new(shape, map);
         // the simulation reads the ground for its rules; the client gets the same kinds from `terrain`
         world.paint_terrain(surface.terrain());
         world.paint_vegetation(&vegetation);
+        lay_deposits(&mut world, &deposits, &deposit_settings);
         set_up_world(&mut world, &nations, content);
 
         let local_player = NationId::from_index(0);
@@ -485,6 +492,44 @@ impl WorldSnapshotView {
     pub fn building_levels(&self) -> Vec<u8> {
         self.inner.building_levels.clone()
     }
+
+    #[wasm_bindgen(getter, js_name = depositIds)]
+    pub fn deposit_ids(&self) -> Vec<u32> {
+        self.inner.deposits.ids.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = depositTiles)]
+    pub fn deposit_tiles(&self) -> Vec<u32> {
+        self.inner.deposits.tiles.clone()
+    }
+
+    /// `Resource` discriminants, in the order of the client's `RESOURCES`.
+    #[wasm_bindgen(getter, js_name = depositResources)]
+    pub fn deposit_resources(&self) -> Vec<u8> {
+        self.inner.deposits.resources.clone()
+    }
+
+    /// 1 to 3, 0 once exhausted.
+    #[wasm_bindgen(getter, js_name = depositLevels)]
+    pub fn deposit_levels(&self) -> Vec<u8> {
+        self.inner.deposits.levels.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = depositQuantities)]
+    pub fn deposit_quantities(&self) -> Vec<u16> {
+        self.inner.deposits.quantities.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = depositRecharges)]
+    pub fn deposit_recharges(&self) -> Vec<u16> {
+        self.inner.deposits.recharges.clone()
+    }
+
+    /// `0xFFFF` while nothing draws on the deposit.
+    #[wasm_bindgen(getter, js_name = depositTurnsLeft)]
+    pub fn deposit_turns_left(&self) -> Vec<u16> {
+        self.inner.deposits.turns_left.clone()
+    }
 }
 
 impl WorldSnapshotView {
@@ -683,6 +728,44 @@ impl WorldDeltaView {
         self.inner.building_levels.clone()
     }
 
+    #[wasm_bindgen(getter, js_name = depositIds)]
+    pub fn deposit_ids(&self) -> Vec<u32> {
+        self.inner.deposits.ids.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = depositTiles)]
+    pub fn deposit_tiles(&self) -> Vec<u32> {
+        self.inner.deposits.tiles.clone()
+    }
+
+    /// `Resource` discriminants, in the order of the client's `RESOURCES`.
+    #[wasm_bindgen(getter, js_name = depositResources)]
+    pub fn deposit_resources(&self) -> Vec<u8> {
+        self.inner.deposits.resources.clone()
+    }
+
+    /// 1 to 3, 0 once exhausted.
+    #[wasm_bindgen(getter, js_name = depositLevels)]
+    pub fn deposit_levels(&self) -> Vec<u8> {
+        self.inner.deposits.levels.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = depositQuantities)]
+    pub fn deposit_quantities(&self) -> Vec<u16> {
+        self.inner.deposits.quantities.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = depositRecharges)]
+    pub fn deposit_recharges(&self) -> Vec<u16> {
+        self.inner.deposits.recharges.clone()
+    }
+
+    /// `0xFFFF` while nothing draws on the deposit.
+    #[wasm_bindgen(getter, js_name = depositTurnsLeft)]
+    pub fn deposit_turns_left(&self) -> Vec<u16> {
+        self.inner.deposits.turns_left.clone()
+    }
+
     #[wasm_bindgen(getter, js_name = buildingsRemoved)]
     pub fn buildings_removed(&self) -> Vec<u32> {
         self.inner.buildings_removed.clone()
@@ -811,6 +894,48 @@ fn set_up_world(world: &mut World, generated: &GeneratedNations, content: Starti
         for (template, site) in setup.starting_units.into_iter().zip(sites) {
             world.place_unit(Unit::recruit(template, nation, site));
         }
+    }
+}
+
+/// Write the generated deposits into the world, each on its tile.
+///
+/// A deposit's richness is its stock, except water's: water springs back, so its richness is what
+/// it recharges per turn, an income on an empty stock rather than a quantity to run down. Its scale,
+/// what its level is read against, is the richest its kind is generated at.
+fn lay_deposits(
+    world: &mut World,
+    deposits: &GeneratedDeposits,
+    settings: &DepositsGeneratorSettings,
+) {
+    for generated in deposits.deposits() {
+        let Some(position) = world.tile_coords(generated.tile()) else {
+            continue;
+        };
+        let kind = generated.kind();
+        let resource = kind.resource();
+        let mut held = ResourceDataStorage::new();
+        if kind == DepositKind::Water {
+            held.replenish(resource, 0);
+            held.set_income(resource, generated.richness());
+        } else {
+            held.replenish(resource, generated.richness());
+        }
+        world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id(deposit_definition(kind)),
+            position,
+            held,
+            settings.kind(kind).richness_max,
+        ));
+    }
+}
+
+/// The definition a deposit of this kind is recorded under. TODO: deposit definitions from scripts.
+fn deposit_definition(kind: DepositKind) -> &'static str {
+    match kind {
+        DepositKind::Water => "deposit_water",
+        DepositKind::Metals => "deposit_metals",
+        DepositKind::Oil => "deposit_oil",
+        DepositKind::Uranium => "deposit_uranium",
     }
 }
 
@@ -1106,6 +1231,99 @@ mod tests {
             // and the other nation gets nothing about it
             assert!(session.reachable(1, unit).is_none());
         }
+    }
+
+    #[test]
+    fn test_a_new_game_lays_the_generated_deposits_on_their_tiles() {
+        let session = start_game();
+        let world = session.inner.world();
+        assert!(
+            !world.deposits().is_empty(),
+            "a planet with land has deposits"
+        );
+        let mut kinds = std::collections::BTreeSet::new();
+        for (id, deposit) in world.deposits().iter() {
+            let tile = world.tile(deposit.position()).expect("on the map");
+            assert!(
+                tile.natural().deposits().contains(&id),
+                "{id} is listed on its tile"
+            );
+            assert!(!tile.natural().terrain().is_water(), "{id} is on land");
+            // one resource each, and something of it: a stock, or water's recharge
+            let held: Vec<_> = deposit.resources().iter().collect();
+            assert_eq!(held.len(), 1, "{id} holds one resource");
+            let (resource, data) = held[0];
+            assert!(data.quantity() > 0 || data.income().is_some_and(|recharge| recharge > 0));
+            kinds.insert(*resource);
+        }
+        // every nation is guaranteed water and metals, so both are always there
+        assert!(kinds.contains(&project_x_core::simulation::resources::Resource::Water));
+        assert!(kinds.contains(&project_x_core::simulation::resources::Resource::Metals));
+
+        // and the viewer's tile flags say so wherever it has looked
+        let snapshot = session.snapshot(0);
+        let (flags, visibility) = (snapshot.tile_flags(), snapshot.visibility());
+        for (index, coords) in world.shape().coords().enumerate() {
+            let has = !world.tile(coords).unwrap().natural().deposits().is_empty();
+            let seen = visibility[index] != TileVisibility::Unexplored as u8;
+            let flagged = flags[index] & project_x_core::game::projection::tile_flags::DEPOSIT != 0;
+            assert_eq!(flagged, has && seen, "tile {index}");
+        }
+    }
+
+    #[test]
+    fn test_a_new_games_snapshot_carries_the_deposits_the_viewer_has_explored() {
+        use project_x_core::simulation::resources::Resource;
+
+        let session = start_game();
+        let world = session.inner.world();
+        let snapshot = session.snapshot(0);
+        let (ids, tiles, resources, levels) = (
+            snapshot.deposit_ids(),
+            snapshot.deposit_tiles(),
+            snapshot.deposit_resources(),
+            snapshot.deposit_levels(),
+        );
+        let (quantities, recharges) = (snapshot.deposit_quantities(), snapshot.deposit_recharges());
+        let visibility = snapshot.visibility();
+        let explored = world
+            .deposits()
+            .iter()
+            .filter(|(_, deposit)| {
+                let index = world.tile_index(deposit.position()).unwrap() as usize;
+                visibility[index] != TileVisibility::Unexplored as u8
+            })
+            .count();
+        assert_eq!(
+            ids.len(),
+            explored,
+            "every deposit the viewer has explored, and only those"
+        );
+        assert!(
+            explored > 0,
+            "a capital's surroundings are guaranteed water and metals"
+        );
+        for (k, &tile) in tiles.iter().enumerate() {
+            assert!(
+                (1..=3).contains(&levels[k]),
+                "a fresh deposit is not exhausted"
+            );
+            assert_ne!(visibility[tile as usize], TileVisibility::Unexplored as u8);
+            // water springs back: no stock, a recharge; every other kind the reverse
+            if resources[k] == Resource::Water as u8 {
+                assert_eq!(quantities[k], 0);
+                assert!(recharges[k] > 0);
+            } else {
+                assert!(quantities[k] > 0);
+                assert_eq!(recharges[k], 0);
+            }
+        }
+        assert!(
+            snapshot
+                .deposit_turns_left()
+                .iter()
+                .all(|&left| left == u16::MAX)
+        );
     }
 
     #[test]

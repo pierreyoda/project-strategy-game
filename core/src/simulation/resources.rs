@@ -121,6 +121,9 @@ impl ResourceDataStore for ResourceDataStorage {
     }
 }
 
+/// How many levels of richness a deposit is shown at: trace, deposit, rich.
+pub const DEPOSIT_LEVELS: u8 = 3;
+
 /// A natural resource deposit on a tile, referenced by the tile through its `DepositId`.
 #[derive(Debug)]
 pub struct ResourceDeposit {
@@ -128,9 +131,64 @@ pub struct ResourceDeposit {
     definition: SimulationID,
     position: CubeCoords,
     resources: ResourceDataStorage,
+    /// The richest a deposit of its kind comes: the yardstick its level is read against, so that
+    /// a rich deposit starts rich and becomes a trace as it is worked.
+    scale: ResourceQuantity,
 }
 
 impl ResourceDeposit {
+    pub fn new(
+        definition: SimulationID,
+        position: CubeCoords,
+        resources: ResourceDataStorage,
+        scale: ResourceQuantity,
+    ) -> Self {
+        assert!(matches!(definition, SimulationID::Abstract(_)));
+        assert!(scale > 0, "a deposit's scale is what its level divides by");
+        Self {
+            definition,
+            position,
+            resources,
+            scale,
+        }
+    }
+
+    /// The resource it holds: deposits hold one, so the first.
+    pub fn resource(&self) -> Option<Resource> {
+        self.resources.keys().next().copied()
+    }
+
+    /// What its level is read from: its stock, or for a deposit that springs back - an income
+    /// and no stock, like water - what it recharges per turn.
+    pub fn amount(&self) -> ResourceQuantity {
+        self.resources.values().next().map_or(0, |data| {
+            if data.quantity() == 0 {
+                data.income().unwrap_or(0)
+            } else {
+                data.quantity()
+            }
+        })
+    }
+
+    /// From 1 to `DEPOSIT_LEVELS`, its amount against its scale in equal steps; 0 once exhausted.
+    pub fn level(&self) -> u8 {
+        let amount = u32::from(self.amount());
+        if amount == 0 {
+            return 0;
+        }
+        let steps = u32::from(DEPOSIT_LEVELS);
+        (amount * steps)
+            .div_ceil(u32::from(self.scale))
+            .clamp(1, steps) as u8
+    }
+
+    /// How many turns its stock lasts at the rate it is drawn from, `None` while nothing draws on it.
+    pub fn turns_left(&self) -> Option<u16> {
+        let data = self.resources.values().next()?;
+        let depletion = data.depletion().filter(|&rate| rate > 0)?;
+        Some(data.quantity() / depletion)
+    }
+
     pub fn definition(&self) -> &SimulationID {
         &self.definition
     }
@@ -153,6 +211,66 @@ mod tests {
     use crate::simulation::resources::Resource;
 
     use super::{ResourceDataStorage, ResourceDataStore};
+
+    #[test]
+    fn test_a_deposit_level_is_read_against_its_scale_and_falls_as_it_is_worked() {
+        use super::{DEPOSIT_LEVELS, ResourceDeposit};
+        use crate::{hex_map::coordinates::OffsetCoords, simulation::ids::SimulationID};
+
+        let deposit = |quantity, income| {
+            let mut held = ResourceDataStorage::new();
+            held.replenish(Resource::Metals, quantity);
+            if let Some(income) = income {
+                held.set_income(Resource::Metals, income);
+            }
+            ResourceDeposit::new(
+                SimulationID::new_abstract_id("deposit_metals"),
+                OffsetCoords::new(0, 0).into(),
+                held,
+                800,
+            )
+        };
+        assert_eq!(
+            deposit(800, None).level(),
+            DEPOSIT_LEVELS,
+            "as rich as its kind comes"
+        );
+        assert_eq!(deposit(600, None).level(), 3);
+        assert_eq!(deposit(500, None).level(), 2);
+        assert_eq!(
+            deposit(200, None).level(),
+            1,
+            "the poorest its kind is generated at"
+        );
+        assert_eq!(
+            deposit(1, None).level(),
+            1,
+            "the last unit is still a trace"
+        );
+        assert_eq!(deposit(0, None).level(), 0, "exhausted");
+        // a deposit that springs back is read from its recharge
+        assert_eq!(deposit(0, Some(700)).level(), 3);
+        assert_eq!(deposit(0, Some(700)).amount(), 700);
+        assert_eq!(deposit(500, None).resource(), Some(Resource::Metals));
+    }
+
+    #[test]
+    fn test_a_deposit_counts_its_turns_left_only_while_it_is_drawn_on() {
+        use super::ResourceDeposit;
+        use crate::{hex_map::coordinates::OffsetCoords, simulation::ids::SimulationID};
+
+        let mut held = ResourceDataStorage::new();
+        held.replenish(Resource::Oil, 340);
+        let mut deposit = ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_oil"),
+            OffsetCoords::new(0, 0).into(),
+            held,
+            600,
+        );
+        assert_eq!(deposit.turns_left(), None);
+        deposit.resources_mut().set_depletion(Resource::Oil, 3);
+        assert_eq!(deposit.turns_left(), Some(113));
+    }
 
     fn build_mock_data_storage() -> ResourceDataStorage {
         let mut resources = ResourceDataStorage::new();

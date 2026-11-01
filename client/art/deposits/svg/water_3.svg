@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 1280" width="1110" height="1280">
+<g transform="translate(555 690) scale(1.9) translate(-555 -690)">
+<ellipse cx="516.5" cy="696.3" rx="70.9" ry="20.5" fill="#0e2a3e" opacity="0.4"/>
+<ellipse cx="485" cy="690" rx="59.1" ry="18.9" fill="#2a6aa6"/>
+<ellipse cx="481.9" cy="687.6" rx="50.4" ry="14.2" fill="#5cc0e6"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#24609e" transform="translate(485 686.9) scale(7.2) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#3f8fe6" transform="translate(480.7 682.5) scale(6.7) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#6fbaf5" transform="translate(472 675.3) scale(4.5) translate(-12 -22)"/>
+<ellipse cx="460.4" cy="614.4" rx="9.4" ry="17.4" fill="#ffffff" opacity="0.9" transform="rotate(27 460.4 614.4)"/>
+<circle cx="511.1" cy="654.2" r="6.5" fill="#d6f1ff" opacity="0.7"/>
+<ellipse cx="659" cy="719.8" rx="54" ry="15.6" fill="#0e2a3e" opacity="0.4"/>
+<ellipse cx="635" cy="715" rx="45" ry="14.4" fill="#2a6aa6"/>
+<ellipse cx="632.6" cy="713.2" rx="38.4" ry="10.8" fill="#5cc0e6"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#24609e" transform="translate(635 712.6) scale(5.5) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#3f8fe6" transform="translate(631.7 709.3) scale(5.1) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#6fbaf5" transform="translate(625.1 703.8) scale(3.4) translate(-12 -22)"/>
+<ellipse cx="616.2" cy="657.4" rx="7.2" ry="13.2" fill="#ffffff" opacity="0.9" transform="rotate(27 616.2 657.4)"/>
+<circle cx="654.9" cy="687.8" r="5" fill="#d6f1ff" opacity="0.7"/>
+<ellipse cx="573.6" cy="788.7" rx="41.9" ry="12.1" fill="#0e2a3e" opacity="0.4"/>
+<ellipse cx="555" cy="785" rx="34.9" ry="11.2" fill="#2a6aa6"/>
+<ellipse cx="553.1" cy="783.6" rx="29.8" ry="8.4" fill="#5cc0e6"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#24609e" transform="translate(555 783.1) scale(4.3) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#3f8fe6" transform="translate(552.4 780.6) scale(4) translate(-12 -22)"/>
+<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z" fill="#6fbaf5" transform="translate(547.3 776.3) scale(2.7) translate(-12 -22)"/>
+<ellipse cx="540.5" cy="740.4" rx="5.6" ry="10.3" fill="#ffffff" opacity="0.9" transform="rotate(27 540.5 740.4)"/>
+<circle cx="570.4" cy="763.9" r="3.9" fill="#d6f1ff" opacity="0.7"/>
+</g>
+</svg>

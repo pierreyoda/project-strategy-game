@@ -146,6 +146,7 @@
         world={game.world}
         dirtyTiles={game.dirtyTiles}
         entities={game.entities}
+        deposits={game.deposits}
         focusTile={game.focusTile}
         selectedTile={game.selected?.tile ?? null}
         reach={game.reach}
