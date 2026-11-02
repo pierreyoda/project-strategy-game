@@ -54,8 +54,10 @@
         return event.message;
       case "settlementFounded":
         return `Nation ${event.nation + 1} founded a settlement.`;
-      case "buildingConstructed":
-        return `A building was completed.`;
+      case "constructionStarted":
+        return `A construction was started.`;
+      case "upgradeStarted":
+        return `An upgrade to level ${event.level} was started.`;
       case "resourceShortage":
         return `Nation ${event.nation + 1} has run out of ${event.resource}.`;
       case "commandRejected":

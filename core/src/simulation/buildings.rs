@@ -148,23 +148,6 @@ pub struct Building {
 }
 
 impl Building {
-    /// A building finished on the spot, at level 1.
-    ///
-    /// TODO: what the construct order still builds, until it orders buildings that take their
-    /// level-1 turns instead (step 2 of `docs/architecture/buildings.md`).
-    pub fn construct(
-        template: SimulationID,
-        owner: NationId,
-        settlement: SettlementId,
-        position: CubeCoords,
-    ) -> Self {
-        Self {
-            level: 1,
-            works: None,
-            ..Self::order(template, owner, settlement, position, 1)
-        }
-    }
-
     /// A building just ordered: level 0, its construction under way for `turns`.
     pub fn order(
         template: SimulationID,
@@ -355,18 +338,5 @@ mod tests {
         }
         assert!(building.advance_works());
         assert_eq!(building.level(), 2);
-    }
-
-    #[test]
-    fn test_a_building_constructed_on_the_spot_is_level_one() {
-        let building = Building::construct(
-            SimulationID::new_abstract_id("mine"),
-            NationId::from_index(0),
-            SettlementId::from_index(0),
-            OffsetCoords::new(1, 1).into(),
-        );
-        assert_eq!(building.level(), 1);
-        assert_eq!(building.works(), None);
-        assert!(!building.halted());
     }
 }

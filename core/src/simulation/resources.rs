@@ -92,7 +92,7 @@ impl ResourceDataStore for ResourceDataStorage {
 
     fn consume(&mut self, resource: Resource, amount: ResourceQuantity) -> bool {
         if let Some(resource_datum) = self.get_mut(&resource) {
-            if resource_datum.quantity > amount {
+            if resource_datum.quantity >= amount {
                 resource_datum.quantity -= amount;
                 true
             } else {
@@ -289,6 +289,11 @@ mod tests {
         assert_eq!(resources.get(&Resource::Water).unwrap().quantity, 50);
         assert!(!resources.consume(Resource::Food, 300));
         assert_eq!(resources.get(&Resource::Food).unwrap().quantity, 250);
+        assert!(
+            resources.consume(Resource::Food, 250),
+            "all of it is affordable"
+        );
+        assert_eq!(resources.quantity_of(Resource::Food), 0);
         assert_eq!(resources.quantity_of(Resource::Water), 50);
         assert_eq!(resources.quantity_of(Resource::Uranium), 0);
     }

@@ -1,5 +1,5 @@
 /**
- * Generates the building sprites (mine, solar plant; three levels each) in the settlements' grammar:
+ * Generates the building sprites (mine, solar plant, water pump; three levels each) in the settlements' grammar:
  * 1110x1280 frame, hex centre (555, 640), light from the upper left, iso slope ~0.53, top faces `st-hi`,
  * lower-left faces `st-lit`, lower-right faces `st-mid`, no outlines. The one nation-coloured surface per
  * level goes to a separate white `mark` frame, as for the settlements (see `domains/map/entities.ts`).
@@ -28,6 +28,7 @@ const LIT = {
   "st-deep": "#2b353f",
   accent: "#3ec6e8",
   metals: "#a9b6c4",
+  water: "#4d9bf5",
   nation: "#e85d9a",
   black: "#000",
   wallA: "#273039",
@@ -648,10 +649,257 @@ function solar(d, level) {
   }
 }
 
+// ---------- WATER PUMP ----------
+// a pipe run along the ground or on low supports: dark casing, body, a highlight along its top
+function pipe(d, pts, w = 12, legs = 0) {
+  const c = d.c.bind(d);
+  const dpath = pts.map((p, i) => `${i ? "L" : "M"}${r(p[0])} ${r(p[1])}`).join(" ");
+  if (legs)
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [a, b] = [pts[i], pts[i + 1]];
+      for (let k = 1; k <= legs; k++) {
+        const t = k / (legs + 1),
+          x = a[0] + (b[0] - a[0]) * t,
+          y = a[1] + (b[1] - a[1]) * t;
+        d.line([x, y], [x, y + 22], { stroke: c("st-dark"), "stroke-width": 5 });
+      }
+    }
+  const o = { fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
+  d.path(dpath, { ...o, stroke: c("st-deep"), "stroke-width": w + 6 });
+  d.path(dpath, { ...o, stroke: c("st-mid"), "stroke-width": w });
+  d.path(dpath, {
+    ...o,
+    stroke: c("st-hi"),
+    "stroke-width": Math.max(2, w * 0.28),
+    opacity: 0.55,
+    transform: `translate(0 ${r(-w * 0.22)})`,
+  });
+}
+// the front half of a band around a cylinder whose base centre is (x, y), between heights h0 and h1
+function cylBand(d, x, y, rx, h0, h1, o = {}, nation = false) {
+  const ry = rx * SL;
+  d.path(
+    `M${r(x - rx)} ${r(y - h1)} A${r(rx)} ${r(ry)} 0 0 0 ${r(x + rx)} ${r(y - h1)} L${r(x + rx)} ${r(y - h0)} A${r(rx)} ${r(ry)} 0 0 1 ${r(x - rx)} ${r(y - h0)} Z`,
+    o,
+    nation,
+  );
+}
+// a borehole: concrete apron, wet ring in the yield colour, casing, motor head, discharge stub to the right
+function wellhead(d, x, y, s = 1) {
+  const c = d.c.bind(d);
+  shadow(d, x + 12 * s, y + 8 * s, 64 * s, 24 * s, 0.22);
+  d.ellipse(x, y, 50 * s, 50 * s * SL, { fill: c("st-dark"), opacity: 0.6 });
+  d.ellipse(x, y, 34 * s, 34 * s * SL, { fill: c("water"), opacity: 0.45 });
+  cylinder(d, x, y, 15 * s, 30 * s, { top: "st-mid" });
+  cylinder(d, x, y - 30 * s, 24 * s, 30 * s, { top: "st-hi", bands: [0.5] });
+  d.line([x + 18 * s, y - 44 * s], [x + 46 * s, y - 44 * s], {
+    stroke: c("st-mid"),
+    "stroke-width": 11 * s,
+    "stroke-linecap": "round",
+  });
+  light(d, x - 24 * s, y - 44 * s, 5 * s, 0.85);
+}
+// an elevated tank: braced legs up to the tank's floor at height H, the tank, its cap, a riser and a beacon
+function waterTower(d, x, yb, H, rx, tankH, o = {}) {
+  const c = d.c.bind(d);
+  const yt = yb - H;
+  shadow(d, x + rx * 0.5, yb + 10, rx * 1.9, rx * 0.7, 0.24);
+  lattice(d, x, yb, yt + 6, rx * 0.95, rx * 0.62, Math.max(3, Math.round(H / 80)), o.legW || 11);
+  // riser
+  d.line([x + rx * 0.12, yb - 6], [x + rx * 0.12, yt + 4], { stroke: c("st-dark"), "stroke-width": 9, opacity: 0.9 });
+  // tank floor ring
+  d.ellipse(x, yt + 4, rx * 0.9, rx * 0.9 * SL, { fill: c("st-deep"), opacity: 0.85 });
+  cylinder(d, x, yt, rx, tankH, { bands: o.bands || [0.55] });
+  if (o.nation) cylBand(d, x, yt, rx, tankH * 0.18, tankH * 0.36, { fill: c("nation") }, true);
+  // conical cap and walkway rail
+  const top = yt - tankH,
+    ry = rx * SL;
+  d.path(
+    `M${r(x - rx)} ${r(top)} L${r(x)} ${r(top - rx * 0.42)} L${r(x + rx)} ${r(top)} A${r(rx)} ${r(ry)} 0 0 1 ${r(x - rx)} ${r(top)} Z`,
+    { fill: c("st-hi") },
+  );
+  d.path(
+    `M${r(x + rx * 0.2)} ${r(top - rx * 0.34)} L${r(x)} ${r(top - rx * 0.42)} L${r(x + rx)} ${r(top)} A${r(rx)} ${r(ry)} 0 0 1 ${r(x + rx * 0.3)} ${r(top + ry * 0.95)} Z`,
+    { fill: c("st-lit"), opacity: 0.7 },
+  );
+  d.path(`M${r(x - rx - 6)} ${r(yt + 2)} A${r(rx + 6)} ${r((rx + 6) * SL)} 0 0 0 ${r(x + rx + 6)} ${r(yt + 2)}`, {
+    stroke: c("st-dark"),
+    "stroke-width": 4,
+    fill: "none",
+    opacity: 0.8,
+  });
+  // a level gauge in the yield colour
+  d.line([x - rx * 0.55, yt - tankH * 0.12], [x - rx * 0.55, yt - tankH * 0.82], {
+    stroke: c("st-deep"),
+    "stroke-width": 7,
+    opacity: 0.6,
+  });
+  d.line([x - rx * 0.55, yt - tankH * 0.12], [x - rx * 0.55, yt - tankH * 0.6], {
+    stroke: c("water"),
+    "stroke-width": 5,
+  });
+  beacon(d, x, top - rx * 0.42 - 14, 10);
+  return { top: top - rx * 0.42 };
+}
+// an open, lined reservoir: the rectangle u..u+w, v..v+dp cut into the ground, water standing below the coping
+function basin(d, u, v, w, dp, depth = 46, id = "b") {
+  const c = d.c.bind(d);
+  const A = P(u, v),
+    B = P(u + w, v),
+    C = P(u + w, v + dp),
+    D = P(u, v + dp);
+  const wl = depth * 0.45;
+  // coping, slightly proud of the ground
+  d.poly([P(u - 14, v - 14), P(u + w + 14, v - 14), P(u + w + 14, v + dp + 14), P(u - 14, v + dp + 14)], {
+    fill: c("st-mid"),
+    opacity: 0.9,
+  });
+  d.poly([P(u - 14, v - 14), P(u + w + 14, v - 14), P(u + w + 14, v + dp + 14), P(u - 14, v + dp + 14)], {
+    fill: c("st-lit"),
+    opacity: 0.35,
+  });
+  d.emit(
+    `<clipPath id="basin-${id}"><path d="M${r(A[0])} ${r(A[1])} L${r(B[0])} ${r(B[1])} L${r(C[0])} ${r(C[1])} L${r(D[0])} ${r(D[1])} Z"></path></clipPath><g clip-path="url(#basin-${id})">`,
+  );
+  // far walls: the back-right one faces lower-left (lit), the back-left one lower-right (shade)
+  d.poly([A, B, P(u + w, v, -depth), P(u, v, -depth)], { fill: c("st-lit") });
+  d.poly([A, D, P(u, v + dp, -depth), P(u, v, -depth)], { fill: c("st-mid") });
+  // the water, standing a little below the coping
+  const W = [P(u, v, -wl), P(u + w, v, -wl), P(u + w, v + dp, -wl), P(u, v + dp, -wl)];
+  d.poly(W, { fill: c("st-deep") });
+  d.poly(W, { fill: c("water"), opacity: 0.78 });
+  // the waterline along the far walls, and a few ripples catching the light
+  d.line(W[0], W[1], { stroke: c("st-hi"), "stroke-width": 4, opacity: 0.55 });
+  d.line(W[0], W[3], { stroke: c("st-hi"), "stroke-width": 3, opacity: 0.35 });
+  for (const [a, b, t] of [
+    [0.22, 0.3, 0.35],
+    [0.5, 0.55, 0.62],
+    [0.3, 0.72, 0.4],
+  ]) {
+    const p0 = P(u + w * a, v + dp * b, -wl),
+      p1 = P(u + w * (a + 0.22), v + dp * b, -wl);
+    d.line(p0, p1, { stroke: c("st-hi"), "stroke-width": 4, opacity: t, "stroke-linecap": "round" });
+  }
+  d.emit(`</g>`);
+  // the coping's inner edge
+  d.poly([A, B, C, D], { fill: "none", stroke: c("st-hi"), "stroke-width": 4, opacity: 0.6 });
+}
+// an open treatment tank: a squat ring wall holding water, a centre column and a skimmer bridge
+function clarifier(d, x, y, rx, h = 34) {
+  const c = d.c.bind(d),
+    ry = rx * SL;
+  shadow(d, x + rx * 0.25, y + 8, rx * 1.15, ry * 1.1, 0.22);
+  cylinder(d, x, y, rx, h, { bands: [0.5] });
+  d.ellipse(x, y - h, rx * 0.86, ry * 0.86, { fill: c("st-deep") });
+  d.ellipse(x, y - h + 3, rx * 0.86, ry * 0.8, { fill: c("water"), opacity: 0.7 });
+  d.line([x - rx * 0.86, y - h], [x + rx * 0.86, y - h], { stroke: c("st-mid"), "stroke-width": 6 });
+  d.circle(x, y - h, rx * 0.16, { fill: c("st-hi") });
+}
+
+function pump(d, level) {
+  const c = d.c.bind(d);
+  if (level === 1) {
+    // scrape, a borehole at the centre, a ground tank, the outpost's pod as pump shack, a mast
+    d.ellipse(CX, 752, 290, 110, { fill: c("st-deep"), opacity: 0.26 });
+    d.ellipse(CX + 60, 790, 150, 56, { fill: c("st-deep"), opacity: 0.16 });
+    d.path(`M${CX + 150} 930 C 700 960 820 975 960 980`, {
+      stroke: c("st-deep"),
+      "stroke-width": 9,
+      fill: "none",
+      opacity: 0.28,
+      "stroke-dasharray": "26 18",
+    });
+    // the pump shack (the outpost's pod) with its window strip
+    box(d, -150, 60, 96, 72, 56, 0, { seams: 2 });
+    stripL(d, -150, 60, 96, 72, 22, 38, 0.14, 0.5);
+    stripR(d, -150, 60, 96, 72, 22, 36, 0.2, 0.5, { opacity: 0.4 });
+    // the line from the bore to the tank
+    pipe(d, [P(70, 90, 10), P(150, 90, 10), P(150, -10, 10)], 11);
+    wellhead(d, ...P(40, 90), 1.15);
+    // the ground tank
+    const t = P(200, -40);
+    shadow(d, t[0] + 30, t[1] + 10, 92, 34, 0.24);
+    cylinder(d, t[0], t[1], 62, 118, { bands: [0.3, 0.66] });
+    cylBand(d, t[0], t[1], 62, 50, 58, { fill: c("water"), opacity: 0.8 });
+    // mast with the pennant beside the shack
+    const m = P(-150, 50, 0);
+    mast(d, m[0], m[1], 470, [[66, 40]]);
+    d.line([m[0], 560], [m[0] - 50, m[1] + 6], { stroke: c("st-dark"), "stroke-width": 3, opacity: 0.45 });
+    d.line([m[0], 560], [m[0] + 50, m[1] + 6], { stroke: c("st-dark"), "stroke-width": 3, opacity: 0.45 });
+    pennant(d, m[0], 476, 72);
+    beacon(d, m[0], 462, 12);
+    light(d, 470, 900, 6, 0.8);
+    light(d, 760, 905, 6, 0.7);
+  }
+  if (level === 2) {
+    pad(d, 330, CY + 40, 26, 0.32);
+    // two boreholes at the back, piped to the pump house
+    pipe(d, [P(-70, -60, 10), P(-70, 40, 10)], 11);
+    pipe(d, [P(10, -110, 10), P(70, -110, 10), P(70, 30, 10)], 11);
+    wellhead(d, ...P(-90, -80), 1);
+    wellhead(d, ...P(-10, -130), 1);
+    // the pump house, nation band, windows
+    box(d, -40, 30, 140, 110, 96, 0, { seams: 3 });
+    stripL(d, -40, 30, 140, 110, 56, 70, 0.12, 0.74, { color: "nation", nation: true, opacity: 1 });
+    stripL(d, -40, 30, 140, 110, 24, 40, 0.12, 0.74);
+    stripR(d, -40, 30, 140, 110, 24, 40, 0.16, 0.6, { opacity: 0.4 });
+    box(d, 0, 50, 60, 60, 26, 96, { top: "st-lit" });
+    // rising main to the tower at the back-right
+    pipe(d, [P(100, 60, 14), P(150, 60, 14), P(150, -60, 14)], 13);
+    const t = P(170, -90);
+    waterTower(d, t[0], t[1], 250, 66, 96);
+    // the shack from level 1, kept at the front
+    box(d, 120, 190, 96, 72, 56, 0, { seams: 2 });
+    stripL(d, 120, 190, 96, 72, 22, 38, 0.14, 0.5);
+    rimLights(d, CY + 40, 330, true);
+    light(d, ...P(100, 150, 0), 6, 0.8);
+  }
+  if (level === 3) {
+    pad(d, 380, CY + 40, 32, 0.4);
+    // the reservoir across the front-left of the pad
+    basin(d, -150, 60, 170, 160, 48, "p3");
+    // three boreholes along the back, a header pipe to the clarifiers
+    pipe(d, [P(-130, -130, 10), P(40, -130, 10)], 11, 1);
+    wellhead(d, ...P(-150, -150), 1);
+    wellhead(d, ...P(-60, -160), 1);
+    wellhead(d, ...P(30, -170), 1);
+    // treatment: two clarifiers in the middle, outfall to the reservoir
+    pipe(d, [P(40, -130, 10), P(40, -100, 10)], 11);
+    clarifier(d, ...P(-50, -50), 56, 34);
+    clarifier(d, ...P(55, -65), 48, 30);
+    pipe(d, [P(-50, -10, 8), P(-50, 64, 8)], 10);
+    // the pumping station with its nation band, and the rising main to the tower
+    box(d, 90, 60, 150, 120, 110, 0, { seams: 3 });
+    stripL(d, 90, 60, 150, 120, 66, 80, 0.12, 0.76, { color: "nation", nation: true, opacity: 1 });
+    stripL(d, 90, 60, 150, 120, 36, 52, 0.12, 0.76);
+    stripR(d, 90, 60, 150, 120, 36, 52, 0.14, 0.62, { opacity: 0.36 });
+    box(d, 130, 80, 70, 70, 30, 110, { top: "st-lit" });
+    pipe(d, [P(240, 80, 16), P(270, 80, 16), P(270, -180, 16), P(200, -180, 16)], 15);
+    const t = P(170, -180);
+    waterTower(d, t[0], t[1], 290, 74, 104);
+    // the shack from level 1, off the pad's front edge
+    box(d, 60, 250, 96, 72, 56, 0, { seams: 2 });
+    stripL(d, 60, 250, 96, 72, 22, 38, 0.14, 0.5);
+    rimLights(d, CY + 40, 380, true);
+    // the reservoir's coping, the clarifiers' rims and the station's front
+    for (const [u, v] of [
+      [-164, 100],
+      [-164, 180],
+      [-60, 234],
+      [10, 234],
+    ])
+      light(d, ...P(u, v, 0), 6, 0.8);
+    light(d, ...P(-50, -50, 34), 5, 0.8);
+    light(d, ...P(55, -65, 30), 5, 0.8);
+    light(d, ...P(120, 190, 0), 6, 0.8);
+    light(d, ...P(210, 190, 0), 6, 0.8);
+  }
+}
+
 // ---------- output ----------
 const OUT = process.argv[2] || "out";
 mkdirSync(OUT, { recursive: true });
-const builders = { mine, solar_plant: solar };
+const builders = { mine, solar_plant: solar, water_pump: pump };
 for (const [name, fn] of Object.entries(builders)) {
   for (const level of [1, 2, 3]) {
     for (const mode of ["full", "base", "mark"]) {

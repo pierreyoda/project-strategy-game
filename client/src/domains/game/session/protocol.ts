@@ -46,7 +46,10 @@ export type ScriptSource = {
 export type GameCommand =
   | { type: "moveUnit"; unit: number; path: readonly OffsetCoordsWire[] }
   | { type: "foundSettlement"; founder: number; name: string }
-  | { type: "constructBuilding"; settlement: number; template: string };
+  /** On a tile of the nation's own land; the building belongs to its nearest settlement. */
+  | { type: "constructBuilding"; template: string; tile: OffsetCoordsWire }
+  /** The building's next level, one at a time. */
+  | { type: "upgradeBuilding"; building: number };
 
 /** Why an order was refused, like `CommandRejection` in the `core` crate. */
 export type CommandRejection = {
@@ -58,6 +61,11 @@ export type CommandRejection = {
     | "illegalMove"
     | "tileOccupied"
     | "insufficientResources"
+    | "illegalPlacement"
+    | "missingDeposit"
+    | "noSettlement"
+    | "atMaxLevel"
+    | "worksUnderWay"
     | "notImplemented";
   message: string;
 };
@@ -68,7 +76,8 @@ export type GameEvent =
   | { type: "log"; nation: number | null; message: string }
   | { type: "unitMoved"; unit: number; from: number; to: number }
   | { type: "settlementFounded"; settlement: number; nation: number; tile: number }
-  | { type: "buildingConstructed"; building: number; settlement: number }
+  | { type: "constructionStarted"; building: number; settlement: number }
+  | { type: "upgradeStarted"; building: number; level: number }
   | { type: "resourceShortage"; nation: number; resource: Resource }
   | { type: "commandRejected"; nation: number; reason: string }
   /** What a controller said while planning for a nation, like `ControllerLog`: not narrative. */

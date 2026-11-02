@@ -17,6 +17,7 @@ use project_x_core::{
         tile::HexMapTile,
     },
     simulation::{
+        buildings::{BuildingLevel, BuildingTemplate},
         ids::{NationId, SimulationID, UnitId},
         military::{Unit, UnitTemplate},
         nations::Nation,
@@ -50,6 +51,19 @@ fn game(script: &str, limits: ScriptLimits) -> Game {
     let mut world = World::new(shape, HexMap::from_tiles(tiles));
     let scout = SimulationID::new_abstract_id("scout");
     world.register_unit_template(UnitTemplate::new(scout.clone(), "scout".to_string(), 2, 1));
+    // free and quick, for the scripts that build
+    world.register_building_template(BuildingTemplate::new(
+        SimulationID::new_abstract_id("hut"),
+        "hut".to_string(),
+        None,
+        vec![BuildingLevel {
+            cost: Default::default(),
+            turns: 1,
+            maintenance: Default::default(),
+            production: Default::default(),
+            sprite: "hut_1".to_string(),
+        }],
+    ));
 
     let player = world.register_nation(Nation::new(
         SimulationID::new_abstract_id("player"),
@@ -269,6 +283,51 @@ fn test_a_script_cannot_see_through_the_fog() {
 }
 
 #[test]
+fn test_a_script_builds_by_the_rules_a_player_builds_by() {
+    let script = r#"
+        fn plan(view, orders, rng) {
+            let scout = view.units[0];
+            orders.found_settlement(scout.id, "Camp");
+            // the founding claims the ground the scout stood on: it is the nation's land now
+            orders.construct_building("hut", scout.tile);
+            // and the player's corner is not
+            orders.construct_building("hut", offset(1, 1));
+        }
+    "#;
+    let Game {
+        mut session,
+        ai,
+        scouts,
+        ..
+    } = game(script, ScriptLimits::default());
+    let tile = position(&session, scouts[0]);
+
+    let events = end_turn(&mut session);
+
+    let world = session.world();
+    let built = world.tile(tile).unwrap().artificial().buildings();
+    assert_eq!(built.len(), 1, "{events:?}");
+    let hut = world.buildings().get(built[0]).unwrap();
+    assert_eq!(
+        (hut.owner(), hut.level()),
+        (ai, 0),
+        "ordered, under construction"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, GameEvent::ConstructionStarted { .. }))
+    );
+    assert_eq!(
+        rejections(&events),
+        [&GameEvent::CommandRejected {
+            nation: ai,
+            reason: "cannot build here: the tile is not the nation's land".to_string(),
+        }]
+    );
+}
+
+#[test]
 fn test_numbers_a_script_makes_up_are_errors_not_panics() {
     // each of these reaches a `core` constructor that asserts on what it is given, unless checked
     for (call, expected) in [
@@ -277,9 +336,10 @@ fn test_numbers_a_script_makes_up_are_errors_not_panics() {
             "orders.move_unit(99999999999, [])",
             "99999999999 is not a unit ID",
         ),
+        ("orders.upgrade_building(-4)", "-4 is not a building ID"),
         (
-            "orders.construct_building(-4, \"farm\")",
-            "-4 is not a settlement ID",
+            "orders.construct_building(\"farm\", #{ q: 1 })",
+            "coordinates need an integer `r`",
         ),
         (
             "orders.move_unit(0, [#{ q: \"east\", r: 0 }])",

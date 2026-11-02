@@ -401,9 +401,10 @@ mod tests {
             commands::{CommandRejection, GameCommand},
             events::GameEvent,
             genesis::{Homeland, WorldGenesis},
+            journal::TurnChanges,
             projection::{NO_NATION, Projection},
             rng::GameSeed,
-            state::World,
+            state::{World, WorldMut},
             turn::{StepBudget, TurnProgress},
         },
         hex_map::{
@@ -414,11 +415,15 @@ mod tests {
             tile::HexMapTile,
         },
         simulation::{
+            buildings::{Building, BuildingTemplate},
             fog::TileVisibility,
-            ids::{NationId, SimulationID, UnitId},
+            ids::{
+                BuildingId, EntityIndex, EntityRef, NationId, SettlementId, SimulationID, UnitId,
+            },
             military::{Unit, UnitTemplate},
             movement,
             nations::Nation,
+            resources::{Resource, ResourceDataStorage, ResourceDataStore, ResourceDeposit},
         },
     };
 
@@ -1181,7 +1186,7 @@ mod tests {
     }
 
     #[test]
-    fn test_a_constructed_building_is_projected_with_its_kind_and_level() {
+    fn test_an_ordered_building_is_projected_with_its_kind_and_level() {
         use crate::simulation::ids::{EntityIndex, SettlementId};
 
         let (mut session, first, second, own, _) = two_nation_session();
@@ -1197,10 +1202,25 @@ mod tests {
 
         session
             .submit(GameCommand::ConstructBuilding {
-                settlement,
                 template: SimulationID::new_abstract_id(MINE),
+                tile: at(1, 1),
             })
             .expect("a legal construction");
+        let building = session
+            .world()
+            .tile(at(1, 1))
+            .unwrap()
+            .artificial()
+            .buildings()[0];
+        assert_eq!(
+            session
+                .world()
+                .buildings()
+                .get(building)
+                .unwrap()
+                .settlement(),
+            settlement
+        );
 
         let snapshot = session.snapshot(first);
         let tile = session.world().tile_index(at(1, 1)).unwrap();
@@ -1210,7 +1230,7 @@ mod tests {
         // its kind names a type of the meta, which is how the client tells a mine from a plant
         assert_eq!(snapshot.meta.building_types, vec!["mine".to_string()]);
         assert_eq!(snapshot.building_kinds, vec![0]);
-        assert_eq!(snapshot.building_levels, vec![1]);
+        assert_eq!(snapshot.building_levels, vec![0], "under construction");
 
         // the order applied at once, so a client one version behind gets it as a delta
         let Projection::Delta(delta) = session.project(first, version) else {
@@ -1222,6 +1242,400 @@ mod tests {
 
         // and a nation that never saw the tile knows nothing of it
         assert!(session.snapshot(second).building_ids.is_empty());
+    }
+
+    const PLANT: &str = "plant";
+    const DRILL: &str = "drill";
+
+    fn level(credits: u16, turns: u16, metals: u16) -> crate::simulation::buildings::BuildingLevel {
+        crate::simulation::buildings::BuildingLevel {
+            cost: [(Resource::Credits, credits)]
+                .into_iter()
+                .filter(|&(_, n)| n > 0)
+                .collect(),
+            turns,
+            maintenance: Default::default(),
+            production: [(Resource::Metals, metals)]
+                .into_iter()
+                .filter(|&(_, n)| n > 0)
+                .collect(),
+            sprite: String::new(),
+        }
+    }
+
+    /// Two levels, paid in credits: 40 and 2 turns for the first, 60 and 3 for the second.
+    fn plant_template() -> BuildingTemplate {
+        BuildingTemplate::new(
+            SimulationID::new_abstract_id(PLANT),
+            PLANT.to_string(),
+            None,
+            vec![level(40, 2, 0), level(60, 3, 0)],
+        )
+    }
+
+    /// An extractor of metals: free, a turn per level.
+    fn drill_template() -> BuildingTemplate {
+        BuildingTemplate::new(
+            SimulationID::new_abstract_id(DRILL),
+            DRILL.to_string(),
+            Some(Resource::Metals),
+            vec![level(0, 1, 4)],
+        )
+    }
+
+    /// The first nation settled at (1, 1) - which claims the ring around it - holding `credits`. In
+    /// that ring: water at (0, 1), metals at (2, 2), metals run dry at (1, 2), oil at (2, 0); (2, 1)
+    /// and (1, 0) are plain land.
+    fn builders_session(credits: u16) -> (GameSession, NationId, NationId, SettlementId) {
+        let (mut world, first, second, own, _) = two_nation_world();
+        world.register_building_template(plant_template());
+        world.register_building_template(drill_template());
+        let kinds: Vec<TerrainKind> = world
+            .shape()
+            .coords()
+            .map(|coords| {
+                if coords == at(0, 1) {
+                    TerrainKind::ShallowWater
+                } else {
+                    TerrainKind::Flat
+                }
+            })
+            .collect();
+        world.paint_terrain(&kinds);
+        for (resource, stock, col, row) in [
+            (Resource::Metals, 300, 2, 2),
+            (Resource::Metals, 0, 1, 2),
+            (Resource::Oil, 300, 2, 0),
+        ] {
+            let mut held = ResourceDataStorage::new();
+            held.replenish(resource, stock);
+            world.place_deposit(ResourceDeposit::new(
+                SimulationID::new_abstract_id("deposit"),
+                at(col, row),
+                held,
+                600,
+            ));
+        }
+        let mut changes = TurnChanges::new();
+        WorldMut::new(&mut world, &mut changes)
+            .nation_mut(first)
+            .unwrap()
+            .resources_mut()
+            .replenish(Resource::Credits, credits);
+
+        let mut session = GameSession::new(world, SEED, first);
+        fill_with_stub_ai(&mut session);
+        session
+            .submit(GameCommand::FoundSettlement {
+                founder: own,
+                name: "Landfall".to_string(),
+            })
+            .expect("a legal founding");
+        let settlement = session.world().settlements().ids().next().unwrap();
+        session.drain_events();
+        (session, first, second, settlement)
+    }
+
+    fn construct(
+        session: &mut GameSession,
+        template: &str,
+        col: i16,
+        row: i16,
+    ) -> Result<(), CommandRejection> {
+        session.submit(GameCommand::ConstructBuilding {
+            template: SimulationID::new_abstract_id(template),
+            tile: at(col, row),
+        })
+    }
+
+    fn upgrade(session: &mut GameSession, building: BuildingId) -> Result<(), CommandRejection> {
+        session.submit(GameCommand::UpgradeBuilding { building })
+    }
+
+    fn building_at(session: &GameSession, col: i16, row: i16) -> BuildingId {
+        session
+            .world()
+            .tile(at(col, row))
+            .unwrap()
+            .artificial()
+            .buildings()[0]
+    }
+
+    fn credits(session: &GameSession, nation: NationId) -> u16 {
+        session
+            .world()
+            .nations()
+            .get(nation)
+            .unwrap()
+            .resources()
+            .quantity_of(Resource::Credits)
+    }
+
+    /// Run a building's works to completion, as the Economy phase does once it advances them.
+    fn finish_works(session: &mut GameSession, building: BuildingId) {
+        let mut changes = TurnChanges::new();
+        let mut world = WorldMut::new(&mut session.world, &mut changes);
+        let target = world.building_mut(building).unwrap();
+        while target.works().is_some() {
+            target.advance_works();
+        }
+    }
+
+    #[test]
+    fn test_a_building_is_ordered_on_the_nations_own_land() {
+        let (mut session, first, _, settlement) = builders_session(100);
+
+        construct(&mut session, PLANT, 2, 1).expect("own land, free, affordable");
+
+        let building = building_at(&session, 2, 1);
+        let ordered = session.world().buildings().get(building).unwrap();
+        assert_eq!(ordered.level(), 0, "under construction");
+        assert_eq!(
+            ordered
+                .works()
+                .map(|works| (works.turns_left(), works.turns_total())),
+            Some((2, 2)),
+            "level 1's turns"
+        );
+        assert_eq!((ordered.owner(), ordered.settlement()), (first, settlement));
+        assert_eq!(credits(&session, first), 60, "level 1's 40, paid at once");
+        let started = session.drain_events().into_iter().any(|event| {
+            event
+                == GameEvent::ConstructionStarted {
+                    building,
+                    settlement,
+                }
+        });
+        assert!(started);
+    }
+
+    #[test]
+    fn test_a_building_needs_free_land_the_nation_owns() {
+        let (mut session, ..) = builders_session(1000);
+        let refused = |reason| Err(CommandRejection::IllegalPlacement { reason });
+
+        assert_eq!(
+            construct(&mut session, PLANT, 5, 5),
+            refused("the tile is not the nation's land")
+        );
+        assert_eq!(
+            construct(&mut session, PLANT, 1, -1),
+            refused("the tile is off the map")
+        );
+        assert_eq!(
+            construct(&mut session, PLANT, 0, 1),
+            refused("a building cannot stand on water")
+        );
+        construct(&mut session, PLANT, 2, 1).expect("plain land");
+        assert_eq!(
+            construct(&mut session, PLANT, 2, 1),
+            refused("the tile is already built on"),
+            "one building per tile"
+        );
+        construct(&mut session, PLANT, 1, 1).expect("the settlement's own tile is land like any");
+        assert_eq!(
+            construct(&mut session, "nothing", 1, 0),
+            Err(CommandRejection::UnknownDefinition(
+                SimulationID::new_abstract_id("nothing")
+            ))
+        );
+    }
+
+    #[test]
+    fn test_an_extractor_stands_on_a_deposit_of_its_resource_with_something_left() {
+        let (mut session, ..) = builders_session(0);
+        let missing = Err(CommandRejection::MissingDeposit {
+            resource: Resource::Metals,
+        });
+
+        assert_eq!(
+            construct(&mut session, DRILL, 2, 1),
+            missing,
+            "no deposit at all"
+        );
+        assert_eq!(
+            construct(&mut session, DRILL, 2, 0),
+            missing,
+            "oil is no metals"
+        );
+        assert_eq!(
+            construct(&mut session, DRILL, 1, 2),
+            missing,
+            "metals run dry"
+        );
+        construct(&mut session, DRILL, 2, 2).expect("on its deposit");
+
+        // it draws once it works: ordering it took nothing out
+        let deposit = session.world().tile(at(2, 2)).unwrap().natural().deposits()[0];
+        let held = session.world().deposits().get(deposit).unwrap().amount();
+        assert_eq!(held, 300);
+    }
+
+    #[test]
+    fn test_a_building_belongs_to_the_nearest_settlement() {
+        let (mut session, first, _, landfall) = builders_session(1000);
+        let mut changes = TurnChanges::new();
+        let scout = WorldMut::new(&mut session.world, &mut changes).insert_unit(Unit::recruit(
+            SimulationID::new_abstract_id(SCOUT),
+            first,
+            at(5, 1),
+        ));
+        session
+            .submit(GameCommand::FoundSettlement {
+                founder: scout,
+                name: "Outpost".to_string(),
+            })
+            .expect("a legal founding");
+        let outpost = session
+            .world()
+            .settlements()
+            .ids()
+            .find(|&id| id != landfall)
+            .unwrap();
+
+        construct(&mut session, PLANT, 2, 1).unwrap();
+        construct(&mut session, PLANT, 4, 1).unwrap();
+
+        let settlement_of = |col, row| {
+            let building = building_at(&session, col, row);
+            session
+                .world()
+                .buildings()
+                .get(building)
+                .unwrap()
+                .settlement()
+        };
+        assert_eq!(
+            settlement_of(2, 1),
+            landfall,
+            "one tile from Landfall, three from Outpost"
+        );
+        assert_eq!(settlement_of(4, 1), outpost, "and the other way round");
+    }
+
+    #[test]
+    fn test_a_nation_without_a_settlement_cannot_build() {
+        let (mut world, first, ..) = two_nation_world();
+        world.register_building_template(plant_template());
+        let mut changes = TurnChanges::new();
+        let mut gate = WorldMut::new(&mut world, &mut changes);
+        // land of its own, handed over rather than claimed by a founding
+        gate.tile_mut(at(2, 1))
+            .unwrap()
+            .artificial_mut()
+            .set_owner(Some(first));
+        gate.nation_mut(first)
+            .unwrap()
+            .resources_mut()
+            .replenish(Resource::Credits, 100);
+        let mut session = GameSession::new(world, SEED, first);
+
+        assert_eq!(
+            construct(&mut session, PLANT, 2, 1),
+            Err(CommandRejection::NoSettlement)
+        );
+    }
+
+    #[test]
+    fn test_a_building_is_paid_in_full_or_not_at_all() {
+        let (mut session, first, ..) = builders_session(39);
+
+        assert_eq!(
+            construct(&mut session, PLANT, 2, 1),
+            Err(CommandRejection::InsufficientResources {
+                resource: Resource::Credits,
+                missing: 1,
+            })
+        );
+        assert_eq!(credits(&session, first), 39, "nothing taken");
+        assert!(
+            session
+                .world()
+                .tile(at(2, 1))
+                .unwrap()
+                .artificial()
+                .buildings()
+                .is_empty()
+        );
+
+        // exactly what it costs is enough, and all of it goes
+        let mut changes = TurnChanges::new();
+        WorldMut::new(&mut session.world, &mut changes)
+            .nation_mut(first)
+            .unwrap()
+            .resources_mut()
+            .replenish(Resource::Credits, 1);
+        construct(&mut session, PLANT, 2, 1).expect("40 for 40");
+        assert_eq!(credits(&session, first), 0);
+    }
+
+    #[test]
+    fn test_a_building_is_raised_one_level_at_a_time() {
+        let (mut session, first, second, _) = builders_session(1000);
+        construct(&mut session, PLANT, 2, 1).unwrap();
+        let building = building_at(&session, 2, 1);
+
+        assert_eq!(
+            upgrade(&mut session, building),
+            Err(CommandRejection::WorksUnderWay),
+            "it is still being built"
+        );
+
+        finish_works(&mut session, building);
+        session.drain_events();
+        upgrade(&mut session, building).expect("level 1 stands, level 2 to go");
+        let raised = session.world().buildings().get(building).unwrap();
+        assert_eq!(raised.level(), 1, "it works at level 1 while it is raised");
+        assert_eq!(
+            raised
+                .works()
+                .map(|works| (works.turns_left(), works.turns_total())),
+            Some((3, 3)),
+            "level 2's turns"
+        );
+        assert_eq!(credits(&session, first), 1000 - 40 - 60);
+        assert!(
+            session
+                .drain_events()
+                .contains(&GameEvent::UpgradeStarted { building, level: 2 })
+        );
+
+        assert_eq!(
+            upgrade(&mut session, building),
+            Err(CommandRejection::WorksUnderWay),
+            "one level at a time"
+        );
+        finish_works(&mut session, building);
+        assert_eq!(
+            session.world().buildings().get(building).unwrap().level(),
+            2
+        );
+        assert_eq!(
+            upgrade(&mut session, building),
+            Err(CommandRejection::AtMaxLevel)
+        );
+        assert_eq!(credits(&session, first), 900, "and refusals cost nothing");
+
+        let mut changes = TurnChanges::new();
+        let rivals =
+            WorldMut::new(&mut session.world, &mut changes).insert_building(Building::order(
+                SimulationID::new_abstract_id(PLANT),
+                second,
+                SettlementId::from_index(0),
+                at(8, 6),
+                1,
+            ));
+        assert_eq!(
+            upgrade(&mut session, rivals),
+            Err(CommandRejection::NotYours(EntityRef::Building(rivals)))
+        );
+        let nowhere = BuildingId::from_index(99);
+        assert_eq!(
+            upgrade(&mut session, nowhere),
+            Err(CommandRejection::UnknownEntity(EntityRef::Building(
+                nowhere
+            )))
+        );
     }
 
     #[test]

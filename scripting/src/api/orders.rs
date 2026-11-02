@@ -6,11 +6,11 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use rhai::{Array, Engine, INT, ImmutableString};
+use rhai::{Array, Engine, INT, ImmutableString, Map};
 
 use project_x_core::{
     game::commands::GameCommand,
-    simulation::ids::{SettlementId, SimulationID, UnitId},
+    simulation::ids::{BuildingId, SimulationID, UnitId},
 };
 
 use super::{ScriptResult, coords, entity_id};
@@ -68,10 +68,20 @@ pub fn register(engine: &mut Engine) {
         )
         .register_fn(
             "construct_building",
-            |orders: &mut Orders, settlement: INT, template: ImmutableString| -> ScriptResult<()> {
+            // on a tile of the nation's own land: it belongs to the nearest settlement
+            |orders: &mut Orders, template: ImmutableString, tile: Map| -> ScriptResult<()> {
                 orders.push(GameCommand::ConstructBuilding {
-                    settlement: entity_id::<SettlementId>(settlement, "settlement")?,
                     template: SimulationID::new_abstract_id(&template),
+                    tile: coords::from_map(&tile)?,
+                });
+                Ok(())
+            },
+        )
+        .register_fn(
+            "upgrade_building",
+            |orders: &mut Orders, building: INT| -> ScriptResult<()> {
+                orders.push(GameCommand::UpgradeBuilding {
+                    building: entity_id::<BuildingId>(building, "building")?,
                 });
                 Ok(())
             },

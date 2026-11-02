@@ -18,7 +18,7 @@ use project_x_core::{
     },
     hex_map::coordinates::{CubeCoords, OffsetCoords},
     simulation::{
-        ids::{EntityIndex, SettlementId, SimulationID, UnitId},
+        ids::{BuildingId, EntityIndex, SimulationID, UnitId},
         resources::Resource,
     },
 };
@@ -134,7 +134,12 @@ pub enum CommandWire {
     #[serde(rename_all = "camelCase")]
     FoundSettlement { founder: u32, name: String },
     #[serde(rename_all = "camelCase")]
-    ConstructBuilding { settlement: u32, template: String },
+    ConstructBuilding {
+        template: String,
+        tile: OffsetCoordsWire,
+    },
+    #[serde(rename_all = "camelCase")]
+    UpgradeBuilding { building: u32 },
 }
 
 impl From<CommandWire> for GameCommand {
@@ -148,12 +153,12 @@ impl From<CommandWire> for GameCommand {
                 founder: UnitId::from_index(founder as usize),
                 name,
             },
-            CommandWire::ConstructBuilding {
-                settlement,
-                template,
-            } => Self::ConstructBuilding {
-                settlement: SettlementId::from_index(settlement as usize),
+            CommandWire::ConstructBuilding { template, tile } => Self::ConstructBuilding {
                 template: SimulationID::new_abstract_id(&template),
+                tile: tile.into(),
+            },
+            CommandWire::UpgradeBuilding { building } => Self::UpgradeBuilding {
+                building: BuildingId::from_index(building as usize),
             },
         }
     }
@@ -179,6 +184,11 @@ impl From<&CommandRejection> for RejectionWire {
             CommandRejection::IllegalMove { .. } => "illegalMove",
             CommandRejection::TileOccupied => "tileOccupied",
             CommandRejection::InsufficientResources { .. } => "insufficientResources",
+            CommandRejection::IllegalPlacement { .. } => "illegalPlacement",
+            CommandRejection::MissingDeposit { .. } => "missingDeposit",
+            CommandRejection::NoSettlement => "noSettlement",
+            CommandRejection::AtMaxLevel => "atMaxLevel",
+            CommandRejection::WorksUnderWay => "worksUnderWay",
             CommandRejection::NotImplemented(_) => "notImplemented",
         };
         Self {
@@ -208,7 +218,9 @@ pub enum EventWire {
         tile: u32,
     },
     #[serde(rename_all = "camelCase")]
-    BuildingConstructed { building: u32, settlement: u32 },
+    ConstructionStarted { building: u32, settlement: u32 },
+    #[serde(rename_all = "camelCase")]
+    UpgradeStarted { building: u32, level: u8 },
     #[serde(rename_all = "camelCase")]
     ResourceShortage { nation: u16, resource: &'static str },
     #[serde(rename_all = "camelCase")]
@@ -243,12 +255,16 @@ impl From<&GameEvent> for EventWire {
                 nation: nation.raw(),
                 tile: *tile,
             },
-            GameEvent::BuildingConstructed {
+            GameEvent::ConstructionStarted {
                 building,
                 settlement,
-            } => Self::BuildingConstructed {
+            } => Self::ConstructionStarted {
                 building: building.raw(),
                 settlement: settlement.raw(),
+            },
+            GameEvent::UpgradeStarted { building, level } => Self::UpgradeStarted {
+                building: building.raw(),
+                level: *level,
             },
             GameEvent::ResourceShortage { nation, resource } => Self::ResourceShortage {
                 nation: nation.raw(),

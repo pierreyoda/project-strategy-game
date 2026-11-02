@@ -34,10 +34,13 @@ pub enum GameEvent {
         nation: NationId,
         tile: TileIndex,
     },
-    BuildingConstructed {
+    /// A building was ordered: its construction is under way.
+    ConstructionStarted {
         building: BuildingId,
         settlement: SettlementId,
     },
+    /// A building's upgrade to `level` was ordered.
+    UpgradeStarted { building: BuildingId, level: u8 },
     ResourceShortage {
         nation: NationId,
         resource: Resource,

@@ -1,0 +1,42 @@
+<g id="b-water_pump-1">
+<ellipse cx="555" cy="752" rx="290" ry="110" fill="var(--st-deep)" opacity="0.26"></ellipse>
+<ellipse cx="615" cy="790" rx="150" ry="56" fill="var(--st-deep)" opacity="0.16"></ellipse>
+<path d="M705 930 C 700 960 820 975 960 980" stroke="var(--st-deep)" stroke-width="9" fill="none" opacity="0.28" stroke-dasharray="26 18"></path>
+<path d="M345 536.3 L441 587.2 L369 625.3 L273 574.5 Z" fill="var(--st-hi)"></path>
+<path d="M273 574.5 L369 625.3 L369 681.3 L273 630.5 Z" fill="var(--st-lit)"></path>
+<path d="M369 625.3 L441 587.2 L441 643.2 L369 681.3 Z" fill="var(--st-mid)"></path>
+<path d="M273 602.5 L369 653.3" stroke="var(--st-deep)" stroke-width="3" opacity="0.24"></path>
+<path d="M286.4 599.6 L334.4 625 L334.4 641 L286.4 615.6 Z" fill="var(--accent)"></path>
+<path d="M390.6 633.9 L426.6 614.8 L426.6 628.8 L390.6 647.9 Z" fill="var(--accent)" opacity="0.4"></path>
+<path d="M535 714.8 L615 757.2 L715 704.2" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="var(--st-deep)" stroke-width="17"></path>
+<path d="M535 714.8 L615 757.2 L715 704.2" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="var(--st-mid)" stroke-width="11"></path>
+<path d="M535 714.8 L615 757.2 L715 704.2" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="var(--st-hi)" stroke-width="3.08" opacity="0.55" transform="translate(0 -2.4)"></path>
+<ellipse cx="518.8" cy="718.1" rx="73.6" ry="27.6" fill="#000" opacity="0.22"></ellipse>
+<ellipse cx="505" cy="708.9" rx="57.5" ry="30.5" fill="var(--st-dark)" opacity="0.6"></ellipse>
+<ellipse cx="505" cy="708.9" rx="39.1" ry="20.7" fill="var(--water)" opacity="0.45"></ellipse>
+<path d="M487.8 674.4 L487.8 708.9 A17.3 9.1 0 0 0 522.3 708.9 L522.3 674.4 Z" fill="var(--st-lit)"></path>
+<path d="M510.2 676.2 L510.2 710.7 A17.3 9.1 0 0 0 522.3 708.9 L522.3 674.4 Z" fill="var(--st-mid)"></path>
+<ellipse cx="505" cy="674.4" rx="17.3" ry="9.1" fill="var(--st-mid)"></ellipse>
+<path d="M477.4 639.9 L477.4 674.4 A27.6 14.6 0 0 0 532.6 674.4 L532.6 639.9 Z" fill="var(--st-lit)"></path>
+<path d="M513.3 642.8 L513.3 677.3 A27.6 14.6 0 0 0 532.6 674.4 L532.6 639.9 Z" fill="var(--st-mid)"></path>
+<ellipse cx="505" cy="639.9" rx="27.6" ry="14.6" fill="var(--st-hi)"></ellipse>
+<path d="M477.4 657.2 L532.6 657.2" stroke="var(--st-deep)" stroke-width="7" opacity="0.38"></path>
+<path d="M525.7 658.3 L557.9 658.3" stroke="var(--st-mid)" stroke-width="12.649999999999999" stroke-linecap="round"></path>
+<circle cx="477.4" cy="658.3" r="5.8" fill="var(--accent)" opacity="0.85"></circle>
+<ellipse cx="825" cy="734.8" rx="92" ry="34" fill="#000" opacity="0.24"></ellipse>
+<path d="M733 606.8 L733 724.8 A62 32.9 0 0 0 857 724.8 L857 606.8 Z" fill="var(--st-lit)"></path>
+<path d="M813.6 613.4 L813.6 731.4 A62 32.9 0 0 0 857 724.8 L857 606.8 Z" fill="var(--st-mid)"></path>
+<ellipse cx="795" cy="606.8" rx="62" ry="32.9" fill="var(--st-hi)"></ellipse>
+<path d="M733 642.2 L857 642.2" stroke="var(--st-deep)" stroke-width="7" opacity="0.38"></path>
+<path d="M733 684.7 L857 684.7" stroke="var(--st-deep)" stroke-width="7" opacity="0.38"></path>
+<path d="M733 666.8 A62 32.9 0 0 0 857 666.8 L857 674.8 A62 32.9 0 0 1 733 674.8 Z" fill="var(--water)" opacity="0.8"></path>
+<path d="M355 587 L355 470" stroke="var(--st-mid)" stroke-width="8" stroke-linecap="round"></path>
+<path d="M315 536 L395 536" stroke="var(--st-mid)" stroke-width="7" stroke-linecap="round"></path>
+<path d="M355 560 L305 593" stroke="var(--st-dark)" stroke-width="3" opacity="0.45"></path>
+<path d="M355 560 L405 593" stroke="var(--st-dark)" stroke-width="3" opacity="0.45"></path>
+<path d="M359 476 L427 504 L359 532 Z" fill="var(--nation)"></path>
+<path d="M359 504 L427 504" stroke="#000" stroke-width="3" opacity="0.18"></path>
+<circle cx="355" cy="462" r="26.4" fill="var(--accent)" opacity="0.22"></circle>
+<circle cx="355" cy="462" r="12" fill="var(--accent)"></circle>
+<circle cx="470" cy="900" r="6" fill="var(--accent)" opacity="0.8"></circle>
+<circle cx="760" cy="905" r="6" fill="var(--accent)" opacity="0.7"></circle></g>

@@ -11,12 +11,13 @@
 use crate::{
     game::{
         events::{EventBuffer, GameEvent},
-        state::WorldMut,
+        state::{World, WorldMut},
     },
     hex_map::coordinates::CubeCoords,
     simulation::{
         buildings::Building,
-        ids::{EntityRef, NationId, SettlementId, SimulationID, UnitId},
+        economy::ConstructionCosts,
+        ids::{BuildingId, EntityRef, NationId, SettlementId, SimulationID, UnitId},
         movement::{self, StepRefusal},
         resources::{Resource, ResourceDataStore, ResourceQuantity},
         settlements::Settlement,
@@ -30,11 +31,15 @@ pub enum GameCommand {
     MoveUnit { unit: UnitId, path: Vec<CubeCoords> },
     /// Found a settlement where the founding unit stands. The unit is spent.
     FoundSettlement { founder: UnitId, name: String },
-    /// Build in a settlement, paid for out of the nation's stockpile.
+    /// Order a building on a tile of the issuer's own land, belonging to its nearest settlement:
+    /// level 1's cost is paid at once, and its turns pass before the building works.
     ConstructBuilding {
-        settlement: SettlementId,
         template: SimulationID,
+        tile: CubeCoords,
     },
+    /// Order a building's next level: that level's cost at once, then its turns, during which the
+    /// building keeps working at the level it has.
+    UpgradeBuilding { building: BuildingId },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,6 +60,19 @@ pub enum CommandRejection {
         resource: Resource,
         missing: ResourceQuantity,
     },
+    /// Not the issuer's land, water, or a tile already built on.
+    IllegalPlacement {
+        reason: &'static str,
+    },
+    /// The template extracts a resource the tile holds no deposit of - or none with anything left.
+    MissingDeposit {
+        resource: Resource,
+    },
+    /// A building needs a settlement to belong to, and the issuer has none.
+    NoSettlement,
+    AtMaxLevel,
+    /// Works are already under way on the building: one level at a time.
+    WorksUnderWay,
     /// Rejected by a rule that has not been written yet.
     NotImplemented(&'static str),
 }
@@ -71,6 +89,13 @@ impl std::fmt::Display for CommandRejection {
             Self::InsufficientResources { resource, missing } => {
                 write!(f, "{missing} more {resource:?} needed")
             }
+            Self::IllegalPlacement { reason } => write!(f, "cannot build here: {reason}"),
+            Self::MissingDeposit { resource } => {
+                write!(f, "it needs a {resource:?} deposit to stand on")
+            }
+            Self::NoSettlement => write!(f, "a building needs a settlement to belong to"),
+            Self::AtMaxLevel => write!(f, "the building is at its last level"),
+            Self::WorksUnderWay => write!(f, "works are already under way"),
             Self::NotImplemented(what) => write!(f, "not implemented yet: {what}"),
         }
     }
@@ -94,10 +119,12 @@ pub fn apply(
         GameCommand::FoundSettlement { founder, name } => {
             found_settlement(*founder, name, issuer, world, events)
         }
-        GameCommand::ConstructBuilding {
-            settlement,
-            template,
-        } => construct_building(*settlement, template, issuer, world, events),
+        GameCommand::ConstructBuilding { template, tile } => {
+            construct_building(template, *tile, issuer, world, events)
+        }
+        GameCommand::UpgradeBuilding { building } => {
+            upgrade_building(*building, issuer, world, events)
+        }
     }
 }
 
@@ -224,60 +251,156 @@ fn found_settlement(
 }
 
 fn construct_building(
-    settlement: SettlementId,
     template: &SimulationID,
+    tile: CubeCoords,
     issuer: NationId,
     world: &mut WorldMut<'_>,
     events: &mut EventBuffer,
 ) -> Result<(), CommandRejection> {
-    let (position, cost) = {
+    let (position, settlement, cost, turns) = {
         let state = world.world();
-        let target = state
-            .settlements()
-            .get(settlement)
-            .ok_or(CommandRejection::UnknownEntity(EntityRef::Settlement(
-                settlement,
-            )))?;
-        if target.owner() != issuer {
-            return Err(CommandRejection::NotYours(EntityRef::Settlement(
-                settlement,
-            )));
-        }
         let definition = state
             .building_template(template)
             .ok_or_else(|| CommandRejection::UnknownDefinition(template.clone()))?;
-        let nation = state
-            .nations()
-            .get(issuer)
-            .ok_or(CommandRejection::UnknownEntity(EntityRef::Nation(issuer)))?;
-        // the whole bill is checked before a single resource is spent
-        for (&resource, &amount) in &definition.first_level().cost {
-            let held = nation.resources().quantity_of(resource);
-            if held < amount {
-                return Err(CommandRejection::InsufficientResources {
-                    resource,
-                    missing: amount - held,
-                });
+        let off_map = CommandRejection::IllegalPlacement {
+            reason: "the tile is off the map",
+        };
+        let position = state.shape().wrap(tile).ok_or(off_map.clone())?;
+        let ground = state.tile(position).ok_or(off_map)?;
+        if ground.artificial().owner() != Some(issuer) {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "the tile is not the nation's land",
+            });
+        }
+        if ground.natural().terrain().is_water() {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "a building cannot stand on water",
+            });
+        }
+        // one building per tile: the client's single building slot
+        if !ground.artificial().buildings().is_empty() {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "the tile is already built on",
+            });
+        }
+        // judged against the truth, like every order: an extractor on ground the nation never
+        // looked at is refused on what is there, not on what it knows
+        if let Some(resource) = definition.deposit() {
+            let holds = ground
+                .natural()
+                .deposits()
+                .iter()
+                .filter_map(|&deposit| state.deposits().get(deposit))
+                .any(|deposit| deposit.resource() == Some(resource) && deposit.amount() > 0);
+            if !holds {
+                return Err(CommandRejection::MissingDeposit { resource });
             }
         }
-        (target.position(), definition.first_level().cost.clone())
+        let settlement =
+            nearest_settlement(state, issuer, position).ok_or(CommandRejection::NoSettlement)?;
+        let level = definition.first_level();
+        affordable(state, issuer, &level.cost)?;
+        (position, settlement, level.cost.clone(), level.turns)
     };
 
-    if let Some(nation) = world.nation_mut(issuer) {
-        for (&resource, &amount) in &cost {
-            nation.resources_mut().consume(resource, amount);
-        }
-    }
-    let building = world.insert_building(Building::construct(
+    pay(world, issuer, &cost);
+    let building = world.insert_building(Building::order(
         template.clone(),
         issuer,
         settlement,
         position,
+        turns,
     ));
 
-    events.push(GameEvent::BuildingConstructed {
+    events.push(GameEvent::ConstructionStarted {
         building,
         settlement,
     });
     Ok(())
+}
+
+fn upgrade_building(
+    building: BuildingId,
+    issuer: NationId,
+    world: &mut WorldMut<'_>,
+    events: &mut EventBuffer,
+) -> Result<(), CommandRejection> {
+    let (level, cost, turns) = {
+        let state = world.world();
+        let target = state
+            .buildings()
+            .get(building)
+            .ok_or(CommandRejection::UnknownEntity(EntityRef::Building(
+                building,
+            )))?;
+        if target.owner() != issuer {
+            return Err(CommandRejection::NotYours(EntityRef::Building(building)));
+        }
+        // a building still under its construction has works too: it is raised once it stands
+        if target.works().is_some() {
+            return Err(CommandRejection::WorksUnderWay);
+        }
+        let definition = state
+            .building_template(target.template())
+            .ok_or_else(|| CommandRejection::UnknownDefinition(target.template().clone()))?;
+        let level = target
+            .level()
+            .checked_add(1)
+            .ok_or(CommandRejection::AtMaxLevel)?;
+        let next = definition
+            .level(level)
+            .ok_or(CommandRejection::AtMaxLevel)?;
+        affordable(state, issuer, &next.cost)?;
+        (level, next.cost.clone(), next.turns)
+    };
+
+    pay(world, issuer, &cost);
+    if let Some(target) = world.building_mut(building) {
+        target.start_upgrade(turns);
+    }
+
+    events.push(GameEvent::UpgradeStarted { building, level });
+    Ok(())
+}
+
+/// The issuer's settlement nearest a tile, the shortest way round the map, ties to the lowest ID.
+fn nearest_settlement(state: &World, issuer: NationId, tile: CubeCoords) -> Option<SettlementId> {
+    let shape = state.shape();
+    state
+        .settlements()
+        .iter()
+        .filter(|(_, settlement)| settlement.owner() == issuer)
+        .min_by_key(|(id, settlement)| (shape.distance(settlement.position(), tile), *id))
+        .map(|(id, _)| id)
+}
+
+/// Refuse a bill the issuer cannot pay in full: it is checked before a single resource is spent.
+fn affordable(
+    state: &World,
+    issuer: NationId,
+    cost: &ConstructionCosts,
+) -> Result<(), CommandRejection> {
+    let nation = state
+        .nations()
+        .get(issuer)
+        .ok_or(CommandRejection::UnknownEntity(EntityRef::Nation(issuer)))?;
+    for (&resource, &amount) in cost {
+        let held = nation.resources().quantity_of(resource);
+        if held < amount {
+            return Err(CommandRejection::InsufficientResources {
+                resource,
+                missing: amount - held,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Pay a bill `affordable` accepted.
+fn pay(world: &mut WorldMut<'_>, issuer: NationId, cost: &ConstructionCosts) {
+    if let Some(nation) = world.nation_mut(issuer) {
+        for (&resource, &amount) in cost {
+            nation.resources_mut().consume(resource, amount);
+        }
+    }
 }
