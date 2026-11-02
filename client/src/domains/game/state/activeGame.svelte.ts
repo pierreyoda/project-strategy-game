@@ -1,4 +1,5 @@
 import type { MapDeposit } from "../../map/deposits";
+import type { MapConstruction } from "../../map/constructions";
 import type { MapEntity } from "../../map/entities";
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
 import { isExplored } from "../../map/terrain";
@@ -28,8 +29,8 @@ import {
   lensToggled,
 } from "./lens";
 import { mapDepositsOf } from "./mapDeposits";
-import { mapEntitiesOf } from "./mapEntities";
-import { type SlotView, type TileDetails, slotOf, tileDetailsOf } from "./tileDetails";
+import { constructionsOf, mapEntitiesOf } from "./mapEntities";
+import { type SlotFigures, type SlotView, type TileDetails, slotFiguresOf, slotOf, tileDetailsOf } from "./tileDetails";
 import { type UnitView, type WorldState, applyProjection, toHexMapData } from "./worldState";
 
 /** How many entries of the turn log are kept. */
@@ -116,6 +117,8 @@ export type ActiveGame = {
    * identity would ever re-run.
    */
   readonly entities: readonly MapEntity[];
+  /** The viewer's works under way, for the construction overlay: rebuilt on every projection too. */
+  readonly constructions: readonly MapConstruction[];
   /** The deposits the map draws on the ground, rebuilt on every projection for the same reason. */
   readonly deposits: readonly MapDeposit[];
   /** The nation being played, whose eyes everything is seen through. */
@@ -158,6 +161,12 @@ export type ActiveGame = {
   readonly inspected: TileDetails | null;
   /** Its building slot, as the panels draw it. */
   readonly inspectedSlot: SlotView | null;
+  /** What that slot's actions cost and give. */
+  readonly inspectedFigures: SlotFigures | null;
+  /** Order a building of `template` on the inspected tile. A refusal lands in the turn log. */
+  orderBuild: (template: string) => Promise<void>;
+  /** Order the next level of the inspected tile's building. A refusal lands in the turn log. */
+  orderUpgrade: () => Promise<void>;
   /** Whether the inspected tile is shown in the docked focus view rather than the compact panel. */
   readonly focusOpen: boolean;
   /** Show the inspected tile in the focus view. Nothing for a tile never explored. */
@@ -208,6 +217,7 @@ export const createActiveGame = (): ActiveGame => {
   let map = $state.raw<HexMapData | null>(null);
   let dirtyTiles = $state.raw<Uint32Array | null>(null);
   let entities = $state.raw<readonly MapEntity[]>([]);
+  let constructions = $state.raw<readonly MapConstruction[]>([]);
   let deposits = $state.raw<readonly MapDeposit[]>([]);
   let viewer = $state(0);
 
@@ -287,6 +297,7 @@ export const createActiveGame = (): ActiveGame => {
     dirtyTiles = applied.dirtyTiles;
     // settlements are sparse: rebuilding the list costs less than tracking which ones moved
     entities = mapEntitiesOf(applied.state);
+    constructions = constructionsOf(applied.state);
     deposits = mapDepositsOf(applied.state);
   };
 
@@ -337,6 +348,7 @@ export const createActiveGame = (): ActiveGame => {
     map = null;
     dirtyTiles = null;
     entities = [];
+    constructions = [];
     deposits = [];
     selectedUnit = null;
     reach = null;
@@ -369,6 +381,9 @@ export const createActiveGame = (): ActiveGame => {
     },
     get entities() {
       return entities;
+    },
+    get constructions() {
+      return constructions;
     },
     get deposits() {
       return deposits;
@@ -442,6 +457,13 @@ export const createActiveGame = (): ActiveGame => {
       }
       return slotOf(tileDetailsOf(world, inspectedTile), viewer);
     },
+    get inspectedFigures() {
+      if (inspectedTile === null || !world || !meta) {
+        return null;
+      }
+      const details = tileDetailsOf(world, inspectedTile);
+      return slotFiguresOf(world, details, slotOf(details, viewer));
+    },
     get focusOpen() {
       return focusOpen;
     },
@@ -510,6 +532,39 @@ export const createActiveGame = (): ActiveGame => {
         selectedUnit = own.id;
         await refreshReach();
       }
+    },
+
+    orderBuild: async (template: string) => {
+      if (!world || !meta || resolving || inspectedTile === null) {
+        return;
+      }
+      const columns = world.columns;
+      const rejection = await session.submit({
+        type: "constructBuilding",
+        template,
+        tile: { col: inspectedTile % columns, row: Math.floor(inspectedTile / columns) },
+      });
+      if (rejection) {
+        record([{ kind: "rejected", rejection }]);
+        return;
+      }
+      await catchUp(meta.version);
+    },
+
+    orderUpgrade: async () => {
+      if (!world || !meta || resolving || inspectedTile === null) {
+        return;
+      }
+      const building = tileDetailsOf(world, inspectedTile).building;
+      if (!building) {
+        return;
+      }
+      const rejection = await session.submit({ type: "upgradeBuilding", building: building.id });
+      if (rejection) {
+        record([{ kind: "rejected", rejection }]);
+        return;
+      }
+      await catchUp(meta.version);
     },
 
     orderMove: async (tile: OffsetCoords) => {

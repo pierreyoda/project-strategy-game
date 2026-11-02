@@ -15,7 +15,7 @@ use crate::{
         state::{TileIndex, World},
     },
     simulation::{
-        buildings::Building,
+        buildings::{Building, BuildingLevel},
         fog::TileVisibility,
         ids::{BuildingId, DepositId, NationId, SettlementId, SimulationID, UnitId},
         military::Unit,
@@ -46,6 +46,27 @@ pub struct UnitTemplateMeta {
     pub r#type: String,
     pub movement: u8,
     pub sight: u8,
+}
+
+/// What a building template tells the client: what to order it by, what it is called, what it
+/// extracts, and every level - the sprite it is drawn with, and the figures the panels show.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuildingTemplateMeta {
+    /// What a construct order names it by: its ID, which a scenario may give a type of another's.
+    pub id: String,
+    pub r#type: String,
+    pub deposit: Option<Resource>,
+    pub levels: Vec<BuildingLevel>,
+}
+
+/// Bits of the per-building state buffer.
+pub mod building_states {
+    /// Its first construction is under way: it is level 0, and works nothing yet.
+    pub const UNDER_CONSTRUCTION: u8 = 1 << 0;
+    /// An upgrade is under way: it works at its level meanwhile.
+    pub const UPGRADING: u8 = 1 << 1;
+    /// Its maintenance went unpaid: it makes nothing. Only ever set for its owner.
+    pub const HALTED: u8 = 1 << 2;
 }
 
 /// Bits of the per-tile flags buffer.
@@ -84,12 +105,12 @@ pub struct SnapshotMeta {
     pub viewer: u16,
     pub active_nation: u16,
     pub nations: Vec<NationMeta>,
-    /// Types of the registered building templates (`BuildingTemplate::type`), in the fixed order the
-    /// `building_kinds` buffers index into. Templates are script-defined, so the list is the game's
-    /// rather than a hardcoded enum; it is small and never changes during a playthrough.
-    pub building_types: Vec<String>,
+    /// The registered building templates, in the fixed order the `building_kinds` buffers index
+    /// into. Templates are script-defined, so the list is the game's rather than a hardcoded enum;
+    /// it is small and never changes during a playthrough.
+    pub building_templates: Vec<BuildingTemplateMeta>,
     /// The registered unit templates, in the fixed order the `unit_kinds` buffers index into. Same
-    /// reasoning as `building_types`.
+    /// reasoning as `building_templates`.
     pub unit_templates: Vec<UnitTemplateMeta>,
 }
 
@@ -126,10 +147,15 @@ pub struct WorldSnapshot {
     pub building_ids: Vec<u32>,
     pub building_tiles: Vec<u32>,
     pub building_owners: Vec<u16>,
-    /// Indices into the meta's `building_types`, or `UNKNOWN_BUILDING_KIND`.
+    /// Indices into the meta's `building_templates`, or `UNKNOWN_BUILDING_KIND`.
     pub building_kinds: Vec<u8>,
-    /// `Building::level`, from 1.
+    /// `Building::level`: 0 while it is first being built.
     pub building_levels: Vec<u8>,
+    /// `building_states` bits: its works, and for the viewer's own whether it is halted.
+    pub building_states: Vec<u8>,
+    /// Turns its works have left, and take in all; zero without works, and for a rival's.
+    pub building_turns_left: Vec<u16>,
+    pub building_turns_total: Vec<u16>,
     pub deposits: DepositsBuffers,
 }
 
@@ -201,13 +227,19 @@ pub struct WorldDelta {
     pub building_ids: Vec<u32>,
     pub building_tiles: Vec<u32>,
     pub building_owners: Vec<u16>,
-    /// Indices into the meta's `building_types`, or `UNKNOWN_BUILDING_KIND`.
+    /// Indices into the meta's `building_templates`, or `UNKNOWN_BUILDING_KIND`.
     pub building_kinds: Vec<u8>,
-    /// `Building::level`, from 1.
+    /// `Building::level`: 0 while it is first being built.
     pub building_levels: Vec<u8>,
+    /// `building_states` bits: its works, and for the viewer's own whether it is halted.
+    pub building_states: Vec<u8>,
+    /// Turns its works have left, and take in all; zero without works, and for a rival's.
+    pub building_turns_left: Vec<u16>,
+    pub building_turns_total: Vec<u16>,
     pub buildings_removed: Vec<u32>,
-    /// Deposits on the tiles that changed and that the viewer knows: those just explored, mostly.
-    /// Nothing works a deposit yet, so nothing else changes one, and none is ever removed.
+    /// Deposits on the tiles that changed and that the viewer knows: those just explored, and those
+    /// an extractor drew on - `deposit_mut` marks the tile. None is ever removed: one run dry stays,
+    /// at level 0.
     pub deposits: DepositsBuffers,
 }
 
@@ -248,6 +280,9 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         building_owners: Vec::new(),
         building_kinds: Vec::new(),
         building_levels: Vec::new(),
+        building_states: Vec::new(),
+        building_turns_left: Vec::new(),
+        building_turns_total: Vec::new(),
         deposits: DepositsBuffers::default(),
     };
 
@@ -316,6 +351,10 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         snapshot.building_owners.push(building.owner().raw());
         snapshot.building_kinds.push(kind_of(&kinds, building));
         snapshot.building_levels.push(building.level());
+        let (state, turns_left, turns_total) = building_state(building, viewer);
+        snapshot.building_states.push(state);
+        snapshot.building_turns_left.push(turns_left);
+        snapshot.building_turns_total.push(turns_total);
     }
 
     for (id, deposit) in world.deposits().iter() {
@@ -357,6 +396,9 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         building_owners: Vec::new(),
         building_kinds: Vec::new(),
         building_levels: Vec::new(),
+        building_states: Vec::new(),
+        building_turns_left: Vec::new(),
+        building_turns_total: Vec::new(),
         buildings_removed: Vec::new(),
         deposits: DepositsBuffers::default(),
     };
@@ -491,6 +533,10 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
                     delta.building_owners.push(building.owner().raw());
                     delta.building_kinds.push(kind_of(&kinds, building));
                     delta.building_levels.push(building.level());
+                    let (state, turns_left, turns_total) = building_state(building, viewer);
+                    delta.building_states.push(state);
+                    delta.building_turns_left.push(turns_left);
+                    delta.building_turns_total.push(turns_total);
                 } else {
                     delta.buildings_removed.push(id.raw());
                 }
@@ -557,6 +603,32 @@ fn kind_of(kinds: &BTreeMap<&SimulationID, u8>, building: &Building) -> u8 {
         .get(building.template())
         .copied()
         .unwrap_or(UNKNOWN_BUILDING_KIND)
+}
+
+/// What the viewer is shown of a building's works and upkeep: its `building_states` bits, and its
+/// works' turns left and total.
+///
+/// All of it for its own buildings; for a rival's only that works are under way - scaffolding can be
+/// seen from across the border, how long it has to go and whether its upkeep is paid cannot.
+fn building_state(building: &Building, viewer: NationId) -> (u8, u16, u16) {
+    let mut state = 0;
+    if building.works().is_some() {
+        state |= if building.is_operating() {
+            building_states::UPGRADING
+        } else {
+            building_states::UNDER_CONSTRUCTION
+        };
+    }
+    if building.owner() != viewer {
+        return (state, 0, 0);
+    }
+    if building.halted() {
+        state |= building_states::HALTED;
+    }
+    let (turns_left, turns_total) = building
+        .works()
+        .map_or((0, 0), |works| (works.turns_left(), works.turns_total()));
+    (state, turns_left, turns_total)
 }
 
 /// The sphere of influence the viewer is shown on a tile.
@@ -628,9 +700,16 @@ fn meta(world: &World, viewer: NationId, version: StateVersion) -> SnapshotMeta 
                 },
             })
             .collect(),
-        building_types: world
+        building_templates: world
             .building_templates()
-            .map(|(_, template)| template.r#type().to_string())
+            .map(|(id, template)| BuildingTemplateMeta {
+                id: match id {
+                    SimulationID::Abstract(name) | SimulationID::Property(name) => name.clone(),
+                },
+                r#type: template.r#type().to_string(),
+                deposit: template.deposit(),
+                levels: template.levels().to_vec(),
+            })
             .collect(),
         unit_templates: world
             .unit_templates()

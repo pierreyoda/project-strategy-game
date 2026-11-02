@@ -26,6 +26,8 @@
   const STRENGTH_ALPHA = { held: 0.95, lost: 0.28 };
   /** Opacity of a sprite with nothing left to do this turn. */
   const SPENT_ALPHA = 0.55;
+  /** A building still going up: fainter than a spent unit, like the panels' portrait of one. */
+  const GHOST_ALPHA = 0.4;
 
   /**
    * The drawn entities, as two layers showing one at a time.
@@ -118,7 +120,12 @@
         if (!textures) {
           continue;
         }
-        const { base, mark } = spriteTextures(textures, entity.sprite);
+        const frames = spriteTextures(textures, entity.sprite);
+        if (!frames) {
+          // no art for it: its token still says whose it is, zoomed out
+          continue;
+        }
+        const { base, mark } = frames;
         const parts = spriteCopy.addChild(new Container({ position }));
         parts.addChild(entitySprite(layout, base));
         if (mark) {
@@ -128,7 +135,9 @@
         if (entity.strength) {
           parts.addChild(strengthRow(layout, entity.strength));
         }
-        if (entity.spent) {
+        if (entity.ghost) {
+          parts.alpha = GHOST_ALPHA;
+        } else if (entity.spent) {
           parts.alpha = SPENT_ALPHA;
         }
       }

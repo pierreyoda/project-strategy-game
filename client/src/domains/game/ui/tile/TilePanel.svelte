@@ -41,7 +41,11 @@
           <Badge size="sm">{details.settlement}</Badge>
         {/if}
         {#if details.building}
-          <Badge size="sm">{details.building.name} · lvl {details.building.level}</Badge>
+          <Badge size="sm"
+            >{details.building.name} · {details.building.level === 0
+              ? "being built"
+              : `lvl ${details.building.level}`}</Badge
+          >
         {/if}
       </div>
     </div>

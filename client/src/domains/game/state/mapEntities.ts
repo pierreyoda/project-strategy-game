@@ -1,3 +1,4 @@
+import type { MapConstruction } from "../../map/constructions";
 import {
   type MapEntity,
   SETTLEMENT_SPRITES,
@@ -7,6 +8,7 @@ import {
   unitDrawing,
 } from "../../map/entities";
 import { nationColor } from "../nations";
+import { BuildingState } from "../session/protocol";
 import type { WorldState } from "./worldState";
 
 /**
@@ -24,10 +26,17 @@ import type { WorldState } from "./worldState";
  */
 export const mapEntitiesOf = (world: WorldState): MapEntity[] => {
   const entities: MapEntity[] = [];
-  for (const { id, tile, owner, type, level } of world.buildings.values()) {
-    const drawing = buildingDrawing(type, level);
+  for (const { id, tile, owner, sprite, level, state } of world.buildings.values()) {
+    const drawing = buildingDrawing(sprite, level);
     if (drawing) {
-      entities.push({ id: BUILDING_ID_OFFSET + id, tile, ...drawing, tint: nationColor(owner) });
+      entities.push({
+        id: BUILDING_ID_OFFSET + id,
+        tile,
+        ...drawing,
+        tint: nationColor(owner),
+        // still going up: faded, a rival's as much as the viewer's - scaffolding shows from afar
+        ghost: (state & BuildingState.UnderConstruction) !== 0,
+      });
     }
   }
   for (const { id, tile, owner, stage } of world.settlements.values()) {
@@ -54,6 +63,16 @@ export const mapEntitiesOf = (world: WorldState): MapEntity[] => {
   }
   return entities;
 };
+
+/**
+ * The works the construction overlay draws the progress of: the viewer's own constructions and
+ * upgrades. A rival's are sent with no turns - only that they are under way, which `mapEntitiesOf`
+ * shows - so there is no progress of theirs to draw.
+ */
+export const constructionsOf = (world: WorldState): MapConstruction[] =>
+  [...world.buildings.values()]
+    .filter(({ turnsTotal }) => turnsTotal > 0)
+    .map(({ id, tile, turnsLeft, turnsTotal }) => ({ id, tile, turnsLeft, turnsTotal }));
 
 /** Keep the sets' entity ids apart: each is a dense index from 0 in the simulation. */
 const BUILDING_ID_OFFSET = 1 << 24;

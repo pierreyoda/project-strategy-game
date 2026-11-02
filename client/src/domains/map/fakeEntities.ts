@@ -1,6 +1,4 @@
 import {
-  BUILDING_LEVELS,
-  BUILDING_TYPES,
   type MapEntity,
   SETTLEMENT_SPRITES,
   SETTLEMENT_TOKENS,
@@ -37,6 +35,14 @@ const entityRandom = (tile: number, salt: number): number => {
 };
 
 /**
+ * The buildings the `buildings` sheet has art for today, and how many levels each is drawn at: what
+ * the test bench scatters around. The game itself draws whatever its scripts name (see
+ * `buildingDrawing`); the fakes only follow the naming scripts default to, `{type}_{level}`.
+ */
+const FAKE_BUILDINGS = ["mine", "solar_plant"] as const;
+const FAKE_LEVELS = 3;
+
+/**
  * Scatter settlements of every stage over the habitable tiles of a map, `density` of them taking one,
  * as many buildings of every type and level on their own tiles, and half as many units, at every
  * strength, some of them spent.
@@ -53,9 +59,9 @@ export const createFakeEntities = (map: HexMapData, density = 0.05): MapEntity[]
       const stage = STAGES[Math.floor(entityRandom(tile, 2) * STAGES.length)];
       entities.push({ id: tile, tile, sprite: SETTLEMENT_SPRITES[stage], token: SETTLEMENT_TOKENS[stage], tint });
     } else if (roll < 2 * density) {
-      const type = BUILDING_TYPES[Math.floor(entityRandom(tile, 4) * BUILDING_TYPES.length)];
-      const level = BUILDING_LEVELS[Math.floor(entityRandom(tile, 5) * BUILDING_LEVELS.length)];
-      entities.push({ id: tile, tile, ...buildingDrawing(type, level)!, tint });
+      const type = FAKE_BUILDINGS[Math.floor(entityRandom(tile, 4) * FAKE_BUILDINGS.length)];
+      const level = 1 + Math.floor(entityRandom(tile, 5) * FAKE_LEVELS);
+      entities.push({ id: tile, tile, ...buildingDrawing(`${type}_${level}`, level)!, tint });
     } else {
       const type = UNIT_TYPES[Math.floor(entityRandom(tile, 6) * UNIT_TYPES.length)];
       const held = 1 + Math.floor(entityRandom(tile, 7) * STRENGTH_STEPS);

@@ -482,15 +482,33 @@ impl WorldSnapshotView {
         self.inner.building_owners.clone()
     }
 
-    /// Indices into the meta's `buildingTypes`.
+    /// Indices into the meta's `buildingTemplates`.
     #[wasm_bindgen(getter, js_name = buildingKinds)]
     pub fn building_kinds(&self) -> Vec<u8> {
         self.inner.building_kinds.clone()
     }
 
+    /// 0 while a building is first being built.
     #[wasm_bindgen(getter, js_name = buildingLevels)]
     pub fn building_levels(&self) -> Vec<u8> {
         self.inner.building_levels.clone()
+    }
+
+    /// `projection::building_states` bits; a rival's halted bit is never set.
+    #[wasm_bindgen(getter, js_name = buildingStates)]
+    pub fn building_states(&self) -> Vec<u8> {
+        self.inner.building_states.clone()
+    }
+
+    /// Zero without works under way, and for a rival's building.
+    #[wasm_bindgen(getter, js_name = buildingTurnsLeft)]
+    pub fn building_turns_left(&self) -> Vec<u16> {
+        self.inner.building_turns_left.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingTurnsTotal)]
+    pub fn building_turns_total(&self) -> Vec<u16> {
+        self.inner.building_turns_total.clone()
     }
 
     #[wasm_bindgen(getter, js_name = depositIds)]
@@ -717,15 +735,33 @@ impl WorldDeltaView {
         self.inner.building_owners.clone()
     }
 
-    /// Indices into the meta's `buildingTypes`.
+    /// Indices into the meta's `buildingTemplates`.
     #[wasm_bindgen(getter, js_name = buildingKinds)]
     pub fn building_kinds(&self) -> Vec<u8> {
         self.inner.building_kinds.clone()
     }
 
+    /// 0 while a building is first being built.
     #[wasm_bindgen(getter, js_name = buildingLevels)]
     pub fn building_levels(&self) -> Vec<u8> {
         self.inner.building_levels.clone()
+    }
+
+    /// `projection::building_states` bits; a rival's halted bit is never set.
+    #[wasm_bindgen(getter, js_name = buildingStates)]
+    pub fn building_states(&self) -> Vec<u8> {
+        self.inner.building_states.clone()
+    }
+
+    /// Zero without works under way, and for a rival's building.
+    #[wasm_bindgen(getter, js_name = buildingTurnsLeft)]
+    pub fn building_turns_left(&self) -> Vec<u16> {
+        self.inner.building_turns_left.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = buildingTurnsTotal)]
+    pub fn building_turns_total(&self) -> Vec<u16> {
+        self.inner.building_turns_total.clone()
     }
 
     #[wasm_bindgen(getter, js_name = depositIds)]
@@ -941,7 +977,7 @@ fn deposit_definition(kind: DepositKind) -> &'static str {
 
 /// The terrain of a tile, or `UNKNOWN_TERRAIN` while the viewer has never explored it.
 fn meta_json(meta: &MetaWire) -> String {
-    // a `MetaWire` has no map and no non-string keys: it cannot fail to serialize
+    // a `MetaWire`'s only maps are keyed by resource names: it cannot fail to serialize
     serde_json::to_string(meta).unwrap_or_else(|_| "{}".to_string())
 }
 
@@ -1182,6 +1218,41 @@ mod tests {
             .count();
         assert!(owned > 2, "{owned} owned tiles");
         assert!(owned < world.tiles_count() / 2, "{owned} owned tiles");
+    }
+
+    #[test]
+    fn test_a_new_games_meta_carries_the_scenarios_building_templates() {
+        let snapshot = start_game().snapshot(0);
+        let meta: serde_json::Value = serde_json::from_str(&snapshot.meta()).unwrap();
+        let templates = meta["buildingTemplates"].as_array().expect("in the meta");
+        let mine = templates
+            .iter()
+            .find(|template| template["type"] == "mine")
+            .expect("the default scenario's mine");
+
+        assert_eq!(mine["id"], "mine", "what a construct order names it by");
+        assert_eq!(mine["deposit"], "metals");
+        let levels = mine["levels"].as_array().unwrap();
+        assert_eq!(levels.len(), 3);
+        for (index, level) in levels.iter().enumerate() {
+            assert_eq!(level["sprite"], format!("mine_{}", index + 1));
+            assert!(level["turns"].as_u64().is_some_and(|turns| turns >= 1));
+            // resources by the names the client knows them by, as objects
+            for figures in ["cost", "maintenance", "production"] {
+                let figures = level[figures].as_object().expect("an object");
+                assert!(figures.values().all(serde_json::Value::is_u64));
+            }
+            assert!(
+                level["production"]["metals"]
+                    .as_u64()
+                    .is_some_and(|metals| metals > 0)
+            );
+        }
+        let solar = templates
+            .iter()
+            .find(|template| template["type"] == "solar_plant")
+            .unwrap();
+        assert!(solar["deposit"].is_null(), "it extracts nothing");
     }
 
     #[test]

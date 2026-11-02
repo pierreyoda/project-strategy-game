@@ -57,6 +57,8 @@ export type MapEntity = {
   strength?: EntityStrength;
   /** Whether the entity has nothing left to do this turn, which dims its sprite. */
   spent?: boolean;
+  /** Whether it is still being built, which fades it as the panels' portraits are. */
+  ghost?: boolean;
 };
 
 /** A unit's strength as the counters show it: `held` of `steps` segments lit. */
@@ -107,59 +109,44 @@ export const SETTLEMENT_TOKENS: Record<SettlementStage, EntityToken> = {
 };
 
 /**
- * The buildings the `buildings` entity set has sprites for, by the type their template names them
- * with (see `BuildingView`), and the levels each one is drawn at.
+ * What the buildings the default scenario defines are called, by the type their template names them
+ * with (see `BuildingView`). Templates are script-defined: a type missing here is shown as it is.
  */
-export const BUILDING_TYPES = ["mine", "solar_plant"] as const;
-export type BuildingType = (typeof BUILDING_TYPES)[number];
-export const BUILDING_LEVELS = [1, 2, 3] as const;
-export type BuildingLevel = (typeof BUILDING_LEVELS)[number];
-
-export const BUILDING_TYPE_NAMES: Record<BuildingType, string> = {
+export const BUILDING_TYPE_NAMES: Record<string, string> = {
   mine: "Mine",
   solar_plant: "Solar power plant",
 };
 
-const isBuildingType = (type: string): type is BuildingType => (BUILDING_TYPES as readonly string[]).includes(type);
-
-const buildingSprite = (type: BuildingType, level: BuildingLevel): EntitySprite => ({
+/** The frames of a sprite key: `{key}.png`, and `{key}_mark.png` for the owner's colours if the art has one. */
+const buildingSprite = (key: string): EntitySprite => ({
   entitySet: "buildings",
-  base: `${type}_${level}.png`,
-  mark: `${type}_${level}_mark.png`,
+  base: `${key}.png`,
+  mark: `${key}_mark.png`,
 });
 
-export const BUILDING_SPRITES: Record<BuildingType, Record<BuildingLevel, EntitySprite>> = {
-  mine: { 1: buildingSprite("mine", 1), 2: buildingSprite("mine", 2), 3: buildingSprite("mine", 3) },
-  solar_plant: {
-    1: buildingSprite("solar_plant", 1),
-    2: buildingSprite("solar_plant", 2),
-    3: buildingSprite("solar_plant", 3),
-  },
-};
-
-/** Smaller than a settlement's at every level: a built tile never outweighs the settlement it serves. */
-export const BUILDING_TOKENS: Record<BuildingLevel, EntityToken> = {
-  1: { side: 0.3 },
-  2: { side: 0.42 },
-  3: { side: 0.55 },
-};
+/**
+ * The token's side by level, from level 1: smaller than a settlement's at every level, so that a built
+ * tile never outweighs the settlement it serves. Past the last, the last.
+ */
+const BUILDING_TOKEN_SIDES = [0.3, 0.42, 0.55];
 
 /**
- * The drawing of a building, or `null` for one the set has no sprite for.
+ * The drawing of a building, or `null` for one with no sprite to draw.
  *
- * A type the simulation names and this set does not know is not an error here: templates are
- * script-defined, and a building with no art yet is better left off the map than drawn as another.
- * A level past the last one drawn keeps the last sprite, so an upgrade never undraws anything.
+ * Which sprite is the template's to say, level by level (`BuildingLevelMeta.sprite`): nothing here
+ * lists the buildings or the levels there are, since scripts define both. A key the sheet has no frame
+ * for is left off the map by `spriteTextures`, with a warning - a building with no art yet is better
+ * missing than drawn as another.
  */
 export const buildingDrawing = (
-  type: string | null,
+  sprite: string | null,
   level: number,
 ): { sprite: EntitySprite; token: EntityToken } | null => {
-  if (type === null || !isBuildingType(type)) {
+  if (sprite === null) {
     return null;
   }
-  const drawn = Math.min(Math.max(Math.trunc(level), BUILDING_LEVELS[0]), BUILDING_LEVELS.at(-1)!) as BuildingLevel;
-  return { sprite: BUILDING_SPRITES[type][drawn], token: BUILDING_TOKENS[drawn] };
+  const step = Math.min(Math.max(Math.trunc(level), 1), BUILDING_TOKEN_SIDES.length) - 1;
+  return { sprite: buildingSprite(sprite), token: { side: BUILDING_TOKEN_SIDES[step] } };
 };
 
 /**

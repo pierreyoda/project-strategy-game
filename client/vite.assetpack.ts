@@ -15,8 +15,10 @@ const ASSETPACK_CONFIG: AssetPackConfig = {
   pipes: pixiPipes({
     // the raw assets are drawn for high density screens
     resolutions: { high: 2, default: 1 },
-    // mipmaps average blocks of pixels: wider gaps keep the textures of a sprite sheet from bleeding into each other
-    texturePacker: { texturePacker: { padding: 8 } },
+    // - mipmaps average blocks of pixels: wider gaps keep the textures of a sprite sheet from bleeding into each other;
+    // - unrotated, which AssetPack is not by default: the portraits draw frames straight onto a canvas (see
+    //   `EntityPortrait`), and a rotated one would need the whole transform for a little packing density
+    texturePacker: { texturePacker: { padding: 8, allowRotation: false } },
   }),
 };
 

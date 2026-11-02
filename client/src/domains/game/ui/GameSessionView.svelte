@@ -26,7 +26,8 @@
   /** Width of the docked tile focus panel, which the camera frames its tile beside (`w-96`). */
   const FOCUS_PANEL_WIDTH = 384;
   /** Why a tile's building slot cannot be acted on: the simulation has no slots yet. */
-  const SLOT_UNAVAILABLE = "Not in the simulation yet";
+  /** Why the slot's orders wait: the turn is being resolved, and orders are the next turn's. */
+  const SLOT_WHILE_RESOLVING = "Wait for the turn to resolve";
 
   const VISIBILITY_NAMES: Record<number, string> = {
     [TileVisibility.Unexplored]: "Unexplored",
@@ -184,6 +185,7 @@
         world={game.world}
         dirtyTiles={game.dirtyTiles}
         entities={game.entities}
+        constructions={game.constructions}
         deposits={game.deposits}
         focusTile={game.focusTile}
         selectedTile={game.selected?.tile ?? null}
@@ -214,7 +216,10 @@
           viewer={game.viewer}
           tint={nationColor(game.viewer)}
           chain={concepts}
-          unavailable={SLOT_UNAVAILABLE}
+          figures={game.inspectedFigures ?? undefined}
+          unavailable={game.resolving ? SLOT_WHILE_RESOLVING : null}
+          onBuild={(template) => void game.orderBuild(template)}
+          onUpgrade={() => void game.orderUpgrade()}
           onCentre={() => recentre++}
           onClose={() => game.closeFocus()}
         />

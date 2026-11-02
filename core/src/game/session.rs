@@ -1230,8 +1230,14 @@ mod tests {
         assert_eq!(snapshot.building_ids.len(), 1);
         assert_eq!(snapshot.building_tiles, vec![tile]);
         assert_eq!(snapshot.building_owners, vec![first.raw()]);
-        // its kind names a type of the meta, which is how the client tells a mine from a plant
-        assert_eq!(snapshot.meta.building_types, vec!["mine".to_string()]);
+        // its kind names a template of the meta, which is how the client tells a mine from a plant
+        let templates: Vec<&str> = snapshot
+            .meta
+            .building_templates
+            .iter()
+            .map(|template| template.r#type.as_str())
+            .collect();
+        assert_eq!(templates, ["mine"]);
         assert_eq!(snapshot.building_kinds, vec![0]);
         assert_eq!(snapshot.building_levels, vec![0], "under construction");
 
@@ -1902,6 +1908,120 @@ mod tests {
             (3, None),
             "as it was"
         );
+    }
+
+    /// What `viewer` is shown of a building: its state bits, turns left and total, and level.
+    fn shown(session: &GameSession, viewer: NationId, id: BuildingId) -> (u8, u16, u16, u8) {
+        let snapshot = session.snapshot(viewer);
+        let at = snapshot
+            .building_ids
+            .iter()
+            .position(|&shown| shown == id.raw())
+            .expect("the viewer sees it");
+        (
+            snapshot.building_states[at],
+            snapshot.building_turns_left[at],
+            snapshot.building_turns_total[at],
+            snapshot.building_levels[at],
+        )
+    }
+
+    #[test]
+    fn test_an_owner_is_shown_its_buildings_works_and_its_templates() {
+        use crate::game::projection::building_states::{UNDER_CONSTRUCTION, UPGRADING};
+
+        let (mut session, first, workshop) = workshop_session(100);
+        let meta = session.snapshot(first).meta;
+        let template = meta
+            .building_templates
+            .iter()
+            .find(|template| template.r#type == WORKSHOP)
+            .expect("in the meta");
+        assert_eq!(template.id, WORKSHOP, "what a construct order names it by");
+        assert_eq!(template.levels.len(), 2, "every level, for the panels");
+        assert_eq!(template.levels[1].production, [(Resource::Food, 5)].into());
+        assert_eq!(template.deposit, None);
+
+        assert_eq!(
+            shown(&session, first, workshop),
+            (UNDER_CONSTRUCTION, 2, 2, 0)
+        );
+        resolve_turn(&mut session);
+        assert_eq!(
+            shown(&session, first, workshop),
+            (UNDER_CONSTRUCTION, 1, 2, 0)
+        );
+        resolve_turn(&mut session);
+        assert_eq!(shown(&session, first, workshop), (0, 0, 0, 1), "built");
+
+        upgrade(&mut session, workshop).unwrap();
+        assert_eq!(shown(&session, first, workshop), (UPGRADING, 1, 1, 1));
+    }
+
+    #[test]
+    fn test_a_rival_sees_works_under_way_but_not_how_they_go_nor_a_halt() {
+        use crate::game::projection::building_states::{HALTED, UNDER_CONSTRUCTION};
+
+        let (mut session, first, workshop) = workshop_session(0);
+        let second = NationId::from_index(1);
+        // a scout of the other nation's, next to the works
+        let mut changes = TurnChanges::new();
+        WorldMut::new(&mut session.world, &mut changes).insert_unit(Unit::recruit(
+            SimulationID::new_abstract_id(SCOUT),
+            second,
+            at(3, 1),
+        ));
+
+        resolve_turn(&mut session);
+        assert_eq!(
+            shown(&session, first, workshop),
+            (UNDER_CONSTRUCTION, 1, 2, 0)
+        );
+        assert_eq!(
+            shown(&session, second, workshop),
+            (UNDER_CONSTRUCTION, 0, 0, 0),
+            "the scaffolding, not the turns"
+        );
+
+        // built, then unpaid: its owner has no credits
+        resolve_turn(&mut session);
+        resolve_turn(&mut session);
+        assert_eq!(shown(&session, first, workshop), (HALTED, 0, 0, 1));
+        assert_eq!(
+            shown(&session, second, workshop),
+            (0, 0, 0, 1),
+            "a rival's upkeep is its own"
+        );
+    }
+
+    #[test]
+    fn test_a_deposit_drawn_on_is_caught_up_with_in_the_delta() {
+        let (mut session, first, ..) = builders_session(0);
+        let mut stock = ResourceDataStorage::new();
+        stock.replenish(Resource::Metals, 10);
+        let deposit = session.world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_metals"),
+            at(1, 0),
+            stock,
+            600,
+        ));
+        construct(&mut session, DRILL, 1, 0).unwrap();
+        resolve_turn(&mut session);
+        let version = session.version();
+
+        resolve_turn(&mut session);
+
+        let Projection::Delta(delta) = session.project(first, version) else {
+            panic!("a turn must not cost a full snapshot");
+        };
+        let at = delta
+            .deposits
+            .ids
+            .iter()
+            .position(|&id| id == deposit.raw())
+            .expect("the deposit it drew on");
+        assert_eq!(delta.deposits.quantities[at], 6);
+        assert_eq!(delta.deposits.turns_left[at], 1, "6 left, 4 a turn");
     }
 
     #[test]

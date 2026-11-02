@@ -1,8 +1,7 @@
 import { TerrainKind } from "../../../map/terrain";
 import { nationColor } from "../../nations";
 import { TileVisibility } from "../../session/protocol";
-import type { TileDetails, TileNation } from "../../state/tileDetails";
-import type { SlotFigures } from "./BuildingSlot.svelte";
+import type { SlotFigures, TileDetails, TileNation } from "../../state/tileDetails";
 
 /** Tiles for the stories, as the UI kit's Tile focus board draws them. */
 
@@ -23,7 +22,18 @@ export const HILLS: TileDetails = {
   supplyNode: true,
   infrastructure: true,
   hasDeposit: true,
-  building: { type: "mine", name: "Mine", level: 2 },
+  building: {
+    id: 0,
+    template: "mine",
+    type: "mine",
+    name: "Mine",
+    level: 2,
+    sprite: "mine_2",
+    levels: 3,
+    state: 0,
+    turnsLeft: 0,
+    turnsTotal: 0,
+  },
   movementCost: 2,
   defense: 0.25,
   deposit: { resource: "metals", left: 340, turnsLeft: 113 },
@@ -49,13 +59,26 @@ export const SPARSE: TileDetails = {
 
 export const FIGURES: SlotFigures = {
   options: [
-    { type: "mine", cost: 40, turns: 5, favoured: "Deposit" },
-    { type: "solar_plant", cost: 60, turns: 4 },
+    {
+      template: "mine",
+      type: "mine",
+      sprite: "mine_1",
+      cost: { credits: 200, metals: 100 },
+      turns: 3,
+      favoured: "Deposit",
+    },
+    {
+      template: "solar_plant",
+      type: "solar_plant",
+      sprite: "solar_plant_1",
+      cost: { credits: 500, metals: 250 },
+      turns: 4,
+    },
   ],
-  output: { resource: "metals", amount: 3 },
-  upkeep: 2,
-  upgrade: { cost: 80, turns: 4 },
-  spent: 40,
-  refund: 20,
+  output: { metals: 8 },
+  upkeep: { credits: 3 },
+  upgrade: { cost: { credits: 450, metals: 250 }, turns: 5 },
+  spent: { credits: 200, metals: 100 },
+  refund: { credits: 100, metals: 50 },
   endsTurn: 44,
 };

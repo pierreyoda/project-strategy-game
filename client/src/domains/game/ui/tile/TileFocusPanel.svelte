@@ -6,11 +6,11 @@
   import { buildingDrawing } from "../../../map/entities";
   import { TERRAIN_COLORS } from "../../../map/terrain";
   import { RESOURCE_NAMES, formatChange, formatQuantity } from "../../resources";
-  import { TileVisibility } from "../../session/protocol";
-  import type { SlotView, TileDetails } from "../../state/tileDetails";
+  import { BuildingState, TileVisibility } from "../../session/protocol";
+  import type { SlotFigures, SlotView, TileDetails } from "../../state/tileDetails";
   import type { ConceptChain } from "../concepts/chain.svelte";
   import ConceptTerm from "../concepts/ConceptTerm.svelte";
-  import BuildingSlot, { type SlotFigures } from "./BuildingSlot.svelte";
+  import BuildingSlot from "./BuildingSlot.svelte";
   import { VISIBILITY_NAMES, cssColor, ownershipColor, ownershipText } from "./tileText";
 
   type TileFocusPanelProps = {
@@ -24,6 +24,10 @@
     /** Why the slot's actions cannot be taken; `null` lets them be. */
     unavailable?: string | null;
     figures?: SlotFigures;
+    /** Order one of the slot's options, by its template. */
+    onBuild?: (template: string) => void;
+    /** Order the next level of the tile's building. */
+    onUpgrade?: () => void;
     onCentre: () => void;
     onClose: () => void;
   };
@@ -35,12 +39,14 @@
     chain,
     unavailable = null,
     figures,
+    onBuild,
+    onUpgrade,
     onCentre,
     onClose,
   }: TileFocusPanelProps = $props();
 
   const ownership = $derived(ownershipText(details, viewer));
-  const portrait = $derived(details.building && buildingDrawing(details.building.type, details.building.level));
+  const portrait = $derived(details.building && buildingDrawing(details.building.sprite, details.building.level));
   const portraitTint = $derived(details.owner ? details.owner.color : tint);
   const hasNetwork = $derived(details.supplyNode || details.infrastructure);
   const HEX = "50,3 97,30 97,85.5 50,112.5 3,85.5 3,30";
@@ -86,6 +92,7 @@
             tint={portraitTint}
             width={80}
             height={92}
+            ghost={details.building !== null && (details.building.state & BuildingState.UnderConstruction) !== 0}
             class="absolute -top-0.5 -left-0.5"
           />
         {/if}
@@ -112,7 +119,7 @@
       </div>
     </div>
 
-    <BuildingSlot {slot} tint={portraitTint} {chain} {unavailable} {figures} />
+    <BuildingSlot {slot} tint={portraitTint} {chain} {unavailable} {figures} {onBuild} {onUpgrade} />
 
     {#if details.terrain !== null}
       <div class="flex flex-col gap-1.5">

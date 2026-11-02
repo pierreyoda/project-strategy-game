@@ -74,10 +74,15 @@
     canvas.height = pixelHeight;
     context.clearRect(0, 0, pixelWidth, pixelHeight);
 
-    const { base, mark } = spriteTextures(textures, sprite);
-    if (!base || base.rotate !== 0 || (mark && mark.rotate !== 0)) {
+    const frames = spriteTextures(textures, sprite);
+    if (!frames) {
+      // no art for it, which `spriteTextures` has reported already
+      return;
+    }
+    const { base, mark } = frames;
+    if (base.rotate !== 0 || (mark && mark.rotate !== 0)) {
       // AssetPack packs its sheets unrotated: a rotated frame would need the whole transform, for nothing
-      console.warn(`No portrait for "${sprite.base}": its frame is missing or rotated in the sheet.`);
+      console.warn(`No portrait for "${sprite.base}": its frame is rotated in the sheet.`);
       return;
     }
     drawFrame(context, base, pixelWidth, pixelHeight);

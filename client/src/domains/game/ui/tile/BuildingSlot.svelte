@@ -6,9 +6,10 @@
   import Tooltip from "../../../../shared/ui/Tooltip.svelte";
   import EntityPortrait from "../../../map/components/EntityPortrait.svelte";
   import { constructionProgress } from "../../../map/constructions";
-  import { BUILDING_LEVELS, BUILDING_TYPES, type BuildingType, buildingDrawing } from "../../../map/entities";
-  import { type Resource, formatChange } from "../../resources";
-  import { type SlotView, buildingName } from "../../state/tileDetails";
+  import { buildingDrawing } from "../../../map/entities";
+  import { RESOURCES, formatChange, formatQuantity } from "../../resources";
+  import { BuildingState, type ResourceAmounts } from "../../session/protocol";
+  import { type SlotFigures, type SlotView, buildingName } from "../../state/tileDetails";
   import type { ConceptChain } from "../concepts/chain.svelte";
   import ConceptTerm from "../concepts/ConceptTerm.svelte";
 
@@ -17,18 +18,16 @@
   const SOCKET = { width: 96, height: 111 };
   /** The art overflows the socket a little, as a building overhangs its tile on the map. */
   const ART = { width: 108, height: 125 };
-  const LAST_LEVEL = BUILDING_LEVELS.at(-1)!;
 
-  /** What a slot's actions would cost and give: the simulation does not send any of it yet. */
-  export type SlotFigures = {
-    options?: { type: BuildingType; cost: number; turns: number; favoured?: string }[];
-    output?: { resource: Resource; amount: number };
-    upkeep?: number;
-    upgrade?: { cost: number; turns: number };
-    spent?: number;
-    refund?: number;
-    endsTurn?: number;
-  };
+  /** Why an action its caller gave no handler for cannot be taken: the simulation has no such order. */
+  const NOT_YET = "Not in the simulation yet";
+
+  /** The resources a set of figures names, in the toolbar's order. */
+  const named = (amounts: ResourceAmounts | undefined) =>
+    RESOURCES.filter((resource) => (amounts?.[resource] ?? 0) > 0).map((resource) => ({
+      resource,
+      amount: amounts![resource]!,
+    }));
 </script>
 
 <script lang="ts">
@@ -40,7 +39,8 @@
     /** Why the slot's actions cannot be taken, as their tooltip; `null` lets them be taken. */
     unavailable?: string | null;
     figures?: SlotFigures;
-    onBuild?: (type: BuildingType) => void;
+    /** Order one of the free slot's options, by its template. */
+    onBuild?: (template: string) => void;
     onUpgrade?: () => void;
     onDemolish?: () => void;
     onCancel?: () => void;
@@ -64,12 +64,12 @@
         ? slot.building
         : null,
   );
-  const drawing = $derived(building && buildingDrawing(building.type, building.level));
+  const drawing = $derived(building && buildingDrawing(building.sprite, building.level));
   /** The share done, as the map's construction overlay computes it. */
   const progress = $derived(slot.state === "construction" ? constructionProgress(slot) : 0);
-  const options = $derived(
-    figures.options ?? BUILDING_TYPES.map((type) => ({ type, cost: undefined, turns: undefined, favoured: undefined })),
-  );
+  const options = $derived(figures.options ?? []);
+  const halted = $derived(slot.state === "built" && (slot.building.state & BuildingState.Halted) !== 0);
+  const upgrading = $derived(slot.state === "built" && (slot.building.state & BuildingState.Upgrading) !== 0);
 </script>
 
 {#snippet action(
@@ -79,10 +79,15 @@
   onclick?: () => void,
   extra = "",
 )}
-  {#if unavailable}
-    <Tooltip content={unavailable}>
-      <Button size="sm" {variant} {icon} class={extra} aria-label={label ? undefined : unavailable} disabled
-        >{label}</Button
+  {#if unavailable || !onclick}
+    <Tooltip content={unavailable ?? NOT_YET}>
+      <Button
+        size="sm"
+        {variant}
+        {icon}
+        class={extra}
+        aria-label={label ? undefined : (unavailable ?? NOT_YET)}
+        disabled>{label}</Button
       >
     </Tooltip>
   {:else}
@@ -90,9 +95,23 @@
   {/if}
 {/snippet}
 
-{#snippet pips(level: number)}
-  <span class="flex gap-[3px]" aria-label="Level {level} of {LAST_LEVEL}">
-    {#each BUILDING_LEVELS as step (step)}
+<!-- figures by resource, signed as changes per turn or as plain quantities -->
+{#snippet amounts(figures: ResourceAmounts | undefined, sign: 1 | -1 | 0)}
+  {#each named(figures) as { resource, amount } (resource)}
+    <span class="inline-flex items-center gap-0.5">
+      {sign === 0 ? formatQuantity(amount) : formatChange(sign * amount)}<Icon
+        name={resource}
+        size="xs"
+        style="color: var(--color-resource-{resource})"
+      />
+    </span>
+  {/each}
+{/snippet}
+
+{#snippet pips(level: number, levels: number)}
+  <!-- one pip per level its template has: scripts decide how many there are -->
+  <span class="flex gap-[3px]" aria-label="Level {level} of {levels}">
+    {#each Array.from({ length: levels }, (_, index) => index + 1) as step (step)}
       <i class={["pip", step <= level && "on"]}></i>
     {/each}
   </span>
@@ -163,7 +182,12 @@
         {:else if slot.state === "construction"}
           <Badge tone="accent" size="sm">Under construction</Badge>
         {:else if slot.state === "built"}
-          {@render pips(slot.building.level)}
+          {@render pips(slot.building.level, slot.building.levels)}
+          {#if halted}
+            <Badge tone="danger" size="sm">Halted</Badge>
+          {:else if upgrading}
+            <Badge tone="accent" size="sm">Upgrading</Badge>
+          {/if}
         {:else if slot.state === "foreign"}
           <Badge tone="danger" size="sm">{slot.owner.name}</Badge>
         {:else if slot.state === "settlement"}
@@ -174,9 +198,11 @@
         {#if slot.state === "free"}
           One building fits this tile.
         {:else if slot.state === "construction"}
-          Level {slot.building.level}.{figures.endsTurn ? ` Completes at the end of turn ${figures.endsTurn}.` : ""}
+          Level {slot.building.level + 1} under way.{figures.endsTurn
+            ? ` Completes at the end of turn ${figures.endsTurn}.`
+            : ""}
         {:else if slot.state === "built"}
-          Level {slot.building.level}{slot.building.level >= LAST_LEVEL ? ", the highest." : "."}
+          Level {slot.building.level}{slot.building.level >= slot.building.levels ? ", the highest." : "."}
         {:else if slot.state === "foreign"}
           Inside the borders of {slot.owner.name}: only a tile's owner builds on it.
         {:else if slot.state === "none"}
@@ -195,8 +221,11 @@
     >
       {#if slot.state === "free"}
         <div class="font-display text-[11px] font-semibold tracking-[.08em] text-fg-subtle uppercase">Build here</div>
-        {#each options as option (option.type)}
-          {@const art = buildingDrawing(option.type, 1)}
+        {#if options.length === 0}
+          <p class="m-0 py-1 text-xs text-fg-subtle">Nothing the nation can build suits this tile.</p>
+        {/if}
+        {#each options as option (option.template)}
+          {@const art = buildingDrawing(option.sprite, 1)}
           <div class="flex items-center gap-2.5 py-1">
             {#if art}
               <EntityPortrait sprite={art.sprite} {tint} width={34} height={39} class="shrink-0" />
@@ -206,16 +235,21 @@
                 >{buildingName(option.type)}</b
               >
               {#if option.cost !== undefined}
-                <span class="flex items-center gap-1 text-xs text-fg-subtle tabular-nums">
-                  <Icon name="metals" size="xs" class="text-resource-metals" />{option.cost} · {option.turns} turns
+                <span class="flex flex-wrap items-center gap-x-1.5 text-xs text-fg-subtle tabular-nums">
+                  {@render amounts(option.cost, 0)}
+                  {#if option.turns !== undefined}<span>· {option.turns} {option.turns === 1 ? "turn" : "turns"}</span
+                    >{/if}
                 </span>
               {/if}
             </div>
             {#if option.favoured}
               <Badge tone="success" size="sm">{option.favoured}</Badge>
             {/if}
-            {@render action("Build", undefined, option.favoured ? "primary" : "secondary", () =>
-              onBuild?.(option.type),
+            {@render action(
+              "Build",
+              undefined,
+              option.favoured ? "primary" : "secondary",
+              onBuild && (() => onBuild(option.template)),
             )}
           </div>
         {/each}
@@ -226,53 +260,60 @@
         <div class="h-1 bg-line">
           <i class="block h-full bg-linear-to-r from-[#8ea2ff] to-accent" style:width="{100 * progress}%"></i>
         </div>
-        {#if figures.spent !== undefined}
+        {#if named(figures.spent).length > 0}
           <div class="flex justify-between gap-4">
-            <span>Spent</span><span class="num flex items-center gap-1 text-fg"
-              ><Icon name="metals" size="xs" class="text-resource-metals" />{figures.spent}</span
+            <span>Spent</span><span class="num flex items-center gap-1.5 text-fg"
+              >{@render amounts(figures.spent, 0)}</span
+            >
+          </div>
+        {/if}
+        {#if named(figures.refund).length > 0}
+          <div class="flex justify-between gap-4">
+            <span>Refund</span><span class="num flex items-center gap-1.5 text-fg"
+              >{@render amounts(figures.refund, 0)}</span
             >
           </div>
         {/if}
         <div class="mt-1 flex">
-          {@render action(
-            figures.refund !== undefined ? `Cancel · refund ${figures.refund}` : "Cancel",
-            "close",
-            "ghost",
-            onCancel,
-            "text-danger!",
-          )}
+          {@render action("Cancel", "close", "ghost", onCancel, "text-danger!")}
         </div>
       {:else if slot.state === "built"}
-        {#if figures.output}
+        {#if halted}
+          <p class="m-0 text-xs text-danger">Its upkeep could not be paid: it makes nothing until it is.</p>
+        {/if}
+        {#if named(figures.output).length > 0}
           <div class="flex justify-between gap-4">
             <span>Output</span>
-            <span class="num flex items-center gap-1 text-success">
-              {formatChange(figures.output.amount)}<Icon
-                name={figures.output.resource}
-                size="xs"
-                style="color: var(--color-resource-{figures.output.resource})"
-              /> / turn
+            <span class={["num flex items-center gap-1.5", halted ? "text-fg-subtle line-through" : "text-success"]}>
+              {@render amounts(figures.output, 1)} / turn
             </span>
           </div>
         {/if}
-        {#if figures.upkeep !== undefined}
+        {#if named(figures.upkeep).length > 0}
           <div class="flex justify-between gap-4">
             <ConceptTerm id="upkeep" {chain} />
-            <span class="num flex items-center gap-1 text-danger">
-              {formatChange(-figures.upkeep)}<Icon name="credits" size="xs" class="text-resource-credits" /> / turn
+            <span class="num flex items-center gap-1.5 text-danger">{@render amounts(figures.upkeep, -1)} / turn</span>
+          </div>
+        {/if}
+        {#if upgrading}
+          <div class="flex justify-between gap-4">
+            <span>Upgrading to level {slot.building.level + 1}</span>
+            <span class="num text-fg">{slot.building.turnsLeft} of {slot.building.turnsTotal} turns</span>
+          </div>
+          {#if figures.endsTurn}
+            <p class="m-0 text-xs text-fg-subtle">Completes at the end of turn {figures.endsTurn}.</p>
+          {/if}
+        {:else if figures.upgrade}
+          <div class="flex justify-between gap-4">
+            <span>Level {slot.building.level + 1}</span>
+            <span class="num flex flex-wrap items-center justify-end gap-x-1.5 text-fg">
+              {@render amounts(figures.upgrade.cost, 0)}<span>· {figures.upgrade.turns} t</span>
             </span>
           </div>
         {/if}
         <div class="mt-1 flex items-center gap-1.5">
-          {#if slot.building.level < LAST_LEVEL}
-            {@render action(
-              figures.upgrade
-                ? `Level ${slot.building.level + 1} · ${figures.upgrade.cost} · ${figures.upgrade.turns} t`
-                : `Level ${slot.building.level + 1}`,
-              "upgrade",
-              "primary",
-              onUpgrade,
-            )}
+          {#if !upgrading && slot.building.level < slot.building.levels}
+            {@render action(`Level ${slot.building.level + 1}`, "upgrade", "primary", onUpgrade)}
           {/if}
           {@render action(undefined, "demolish", "ghost", onDemolish, "text-danger!")}
         </div>
@@ -289,7 +330,9 @@
         </div>
         {#if slot.building}
           <div class="flex justify-between gap-4">
-            <span>Their building</span><span class="num text-fg">{slot.building.name} · lvl {slot.building.level}</span>
+            <span>Their building</span><span class="num text-fg"
+              >{slot.building.name} · {slot.building.level === 0 ? "being built" : `lvl ${slot.building.level}`}</span
+            >
           </div>
         {/if}
       {/if}

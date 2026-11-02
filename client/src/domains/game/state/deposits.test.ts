@@ -20,7 +20,7 @@ const meta: ProjectionMeta = {
   viewer: 0,
   activeNation: 0,
   nations: [],
-  buildingTypes: [],
+  buildingTemplates: [],
   unitTemplates: [],
 };
 
@@ -32,7 +32,14 @@ const noUnits = () => ({
   movementLeft: new Uint8Array(),
 });
 const noSettlements = () => ({ ...none(), stages: new Uint8Array() });
-const noBuildings = () => ({ ...none(), kinds: new Uint8Array(), levels: new Uint8Array() });
+const noBuildings = () => ({
+  ...none(),
+  kinds: new Uint8Array(),
+  levels: new Uint8Array(),
+  states: new Uint8Array(),
+  turnsLeft: new Uint16Array(),
+  turnsTotal: new Uint16Array(),
+});
 
 /** Deposits as the simulation sends them: `[tile, resource, level, quantity, recharge, turnsLeft]`. */
 const deposits = (...rows: [number, number, number, number, number, number][]): DepositsBuffers => ({

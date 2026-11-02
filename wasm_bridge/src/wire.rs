@@ -8,13 +8,15 @@
 //! bindings would cost more boilerplate than they save. The map does **not**: a million tiles
 //! through `JSON.parse` is a non-starter, which is why the projections travel as typed arrays.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use project_x_core::{
     game::{
         commands::{CommandRejection, GameCommand},
         events::GameEvent,
-        projection::{NationMeta, ResourceMeta, SnapshotMeta},
+        projection::{BuildingTemplateMeta, NationMeta, ResourceMeta, SnapshotMeta},
     },
     hex_map::coordinates::{CubeCoords, OffsetCoords},
     simulation::{
@@ -340,10 +342,64 @@ pub struct MetaWire {
     pub viewer: u16,
     pub active_nation: u16,
     pub nations: Vec<NationWire>,
-    /// What the `buildingKinds` buffers index into: a building's `type`, as its template names it.
-    pub building_types: Vec<String>,
+    /// What the `buildingKinds` buffers index into.
+    pub building_templates: Vec<BuildingTemplateWire>,
     /// What the `unitKinds` buffers index into.
     pub unit_templates: Vec<UnitTemplateWire>,
+}
+
+/// A building template, like `projection::BuildingTemplateMeta` in the `core` crate.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildingTemplateWire {
+    /// What `constructBuilding` names it by.
+    pub id: String,
+    pub r#type: String,
+    /// The resource it extracts from the deposit it stands on, if any.
+    pub deposit: Option<&'static str>,
+    pub levels: Vec<BuildingLevelWire>,
+}
+
+/// A level of a building template, like `buildings::BuildingLevel` in the `core` crate.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildingLevelWire {
+    /// What the client draws the level with: a key into its art.
+    pub sprite: String,
+    /// What reaching the level costs: the construction for the first, an upgrade above.
+    pub cost: BTreeMap<&'static str, u16>,
+    pub turns: u16,
+    /// Per turn, while it works at this level.
+    pub maintenance: BTreeMap<&'static str, u16>,
+    pub production: BTreeMap<&'static str, u16>,
+}
+
+impl From<&BuildingTemplateMeta> for BuildingTemplateWire {
+    fn from(value: &BuildingTemplateMeta) -> Self {
+        // resources by the names the client knows them by, as on the rest of the wire
+        let named = |figures: &BTreeMap<Resource, u16>| {
+            figures
+                .iter()
+                .map(|(&resource, &amount)| (resource_name(resource), amount))
+                .collect()
+        };
+        Self {
+            id: value.id.clone(),
+            r#type: value.r#type.clone(),
+            deposit: value.deposit.map(resource_name),
+            levels: value
+                .levels
+                .iter()
+                .map(|level| BuildingLevelWire {
+                    sprite: level.sprite.clone(),
+                    cost: named(&level.cost),
+                    turns: level.turns,
+                    maintenance: named(&level.maintenance),
+                    production: named(&level.production),
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -379,7 +435,11 @@ impl From<&SnapshotMeta> for MetaWire {
             viewer: value.viewer,
             active_nation: value.active_nation,
             nations: value.nations.iter().map(NationWire::from).collect(),
-            building_types: value.building_types.clone(),
+            building_templates: value
+                .building_templates
+                .iter()
+                .map(BuildingTemplateWire::from)
+                .collect(),
             unit_templates: value
                 .unit_templates
                 .iter()

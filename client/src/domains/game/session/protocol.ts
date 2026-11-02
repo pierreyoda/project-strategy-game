@@ -172,10 +172,36 @@ export type ProjectionMeta = {
   viewer: number;
   activeNation: number;
   nations: NationMeta[];
-  /** What `BuildingsBuffers.kinds` index into: a building's type, as its template names it. */
-  buildingTypes: string[];
+  /** What `BuildingsBuffers.kinds` index into, like `BuildingTemplateWire` in the `wasm_bridge` crate. */
+  buildingTemplates: BuildingTemplateMeta[];
   /** What `UnitsBuffers.kinds` index into, like `UnitTemplateWire` in the `wasm_bridge` crate. */
   unitTemplates: UnitTemplateMeta[];
+};
+
+/** Quantities of resources, by name: a cost, an upkeep, an output. */
+export type ResourceAmounts = Partial<Record<Resource, number>>;
+
+/** A level of a building template, like `BuildingLevelWire` in the `wasm_bridge` crate. */
+export type BuildingLevelMeta = {
+  /** What the level is drawn with: a frame of the `buildings` sheet, `{sprite}.png`. */
+  sprite: string;
+  /** What reaching the level costs: the construction for the first, an upgrade above. */
+  cost: ResourceAmounts;
+  /** Turns the works to reach it take. */
+  turns: number;
+  /** Per turn, while it works at this level. */
+  maintenance: ResourceAmounts;
+  production: ResourceAmounts;
+};
+
+export type BuildingTemplateMeta = {
+  /** What `constructBuilding` names it by: a scenario may give it the type of another. */
+  id: string;
+  type: string;
+  /** The resource it extracts from the deposit it stands on, `null` for none. */
+  deposit: Resource | null;
+  /** Level n is `levels[n - 1]`. */
+  levels: BuildingLevelMeta[];
 };
 
 export type UnitTemplateMeta = {
@@ -212,11 +238,26 @@ export type BuildingsBuffers = {
   ids: Uint32Array;
   tiles: Uint32Array;
   owners: Uint16Array;
-  /** Indices into `ProjectionMeta.buildingTypes`, `UNKNOWN_BUILDING_KIND` for a template nobody registered. */
+  /** Indices into `ProjectionMeta.buildingTemplates`, `UNKNOWN_BUILDING_KIND` for a template nobody registered. */
   kinds: Uint8Array;
-  /** From 1. */
+  /** 0 while a building is first being built. */
   levels: Uint8Array;
+  /** `BuildingState` bits: its works, and for the viewer's own whether it is halted. */
+  states: Uint8Array;
+  /** Turns its works have left, and take in all: zero without works, and for a rival's. */
+  turnsLeft: Uint16Array;
+  turnsTotal: Uint16Array;
 };
+
+/** Bits of `BuildingsBuffers.states`, like `projection::building_states` in the `core` crate. */
+export const BuildingState = {
+  /** Its first construction is under way: level 0, working nothing yet. */
+  UnderConstruction: 1 << 0,
+  /** An upgrade is under way: it works at its level meanwhile. */
+  Upgrading: 1 << 1,
+  /** Its upkeep went unpaid: it makes nothing. Never set for a rival's. */
+  Halted: 1 << 2,
+} as const;
 
 /** A building whose template is unknown, like `projection::UNKNOWN_BUILDING_KIND` in the `core` crate. */
 export const UNKNOWN_BUILDING_KIND = 0xff;

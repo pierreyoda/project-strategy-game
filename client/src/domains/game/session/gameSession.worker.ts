@@ -73,6 +73,9 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     buildings.owners.buffer,
     buildings.kinds.buffer,
     buildings.levels.buffer,
+    buildings.states.buffer,
+    buildings.turnsLeft.buffer,
+    buildings.turnsTotal.buffer,
     deposits.ids.buffer,
     deposits.tiles.buffer,
     deposits.resources.buffer,
@@ -137,6 +140,9 @@ const readSnapshot = (view: {
   buildingOwners: Uint16Array;
   buildingKinds: Uint8Array;
   buildingLevels: Uint8Array;
+  buildingStates: Uint8Array;
+  buildingTurnsLeft: Uint16Array;
+  buildingTurnsTotal: Uint16Array;
   depositIds: Uint32Array;
   depositTiles: Uint32Array;
   depositResources: Uint8Array;
@@ -189,12 +195,18 @@ const readBuildings = (view: {
   buildingOwners: Uint16Array;
   buildingKinds: Uint8Array;
   buildingLevels: Uint8Array;
+  buildingStates: Uint8Array;
+  buildingTurnsLeft: Uint16Array;
+  buildingTurnsTotal: Uint16Array;
 }): BuildingsBuffers => ({
   ids: view.buildingIds,
   tiles: view.buildingTiles,
   owners: view.buildingOwners,
   kinds: view.buildingKinds,
   levels: view.buildingLevels,
+  states: view.buildingStates,
+  turnsLeft: view.buildingTurnsLeft,
+  turnsTotal: view.buildingTurnsTotal,
 });
 
 const readDeposits = (view: {
@@ -242,6 +254,9 @@ const readDelta = (view: {
   buildingOwners: Uint16Array;
   buildingKinds: Uint8Array;
   buildingLevels: Uint8Array;
+  buildingStates: Uint8Array;
+  buildingTurnsLeft: Uint16Array;
+  buildingTurnsTotal: Uint16Array;
   buildingsRemoved: Uint32Array;
   depositIds: Uint32Array;
   depositTiles: Uint32Array;

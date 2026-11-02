@@ -40,10 +40,24 @@ export type BuildingView = {
   id: number;
   tile: number;
   owner: number;
+  /** Its template's ID, what an order names it by; `null` for one the simulation could not name. */
+  template: string | null;
   /** Its template's type (`mine`, `solar_plant`...), `null` for one the simulation could not name. */
   type: string | null;
-  /** How far it has been upgraded, from 1. The simulation's call, like a settlement's stage. */
+  /** How far it has been upgraded: 0 while it is first being built. The simulation's call. */
   level: number;
+  /**
+   * What its template draws it with: the level it works at, or for one still being built the level it
+   * will be. `null` for a building the simulation could not name.
+   */
+  sprite: string | null;
+  /** How many levels its template has, 0 for an unknown one. */
+  levels: number;
+  /** `BuildingState` bits. */
+  state: number;
+  /** Turns its works have left, and take in all: zero without works, and for a rival's. */
+  turnsLeft: number;
+  turnsTotal: number;
 };
 
 export type DepositView = {
@@ -153,12 +167,21 @@ const readBuildings = (into: Map<number, BuildingView>, buffers: BuildingsBuffer
   for (let index = 0; index < buffers.ids.length; index++) {
     const id = buffers.ids[index];
     const kind = buffers.kinds[index];
+    const template = kind === UNKNOWN_BUILDING_KIND ? undefined : meta.buildingTemplates[kind];
+    const level = buffers.levels[index];
     into.set(id, {
       id,
       tile: buffers.tiles[index],
       owner: buffers.owners[index],
-      type: kind === UNKNOWN_BUILDING_KIND ? null : (meta.buildingTypes[kind] ?? null),
-      level: buffers.levels[index],
+      template: template?.id ?? null,
+      type: template?.type ?? null,
+      level,
+      // level 0 is a building still going up: drawn as the level 1 it will be
+      sprite: template?.levels[Math.max(level, 1) - 1]?.sprite ?? null,
+      levels: template?.levels.length ?? 0,
+      state: buffers.states[index],
+      turnsLeft: buffers.turnsLeft[index],
+      turnsTotal: buffers.turnsTotal[index],
     });
   }
 };

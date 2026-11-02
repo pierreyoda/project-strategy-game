@@ -12,7 +12,7 @@ const meta: ProjectionMeta = {
   viewer: 0,
   activeNation: 0,
   nations: [],
-  buildingTypes: [],
+  buildingTemplates: [],
   unitTemplates: [],
 };
 
@@ -45,6 +45,9 @@ const noBuildings = () => ({
   owners: new Uint16Array(),
   kinds: new Uint8Array(),
   levels: new Uint8Array(),
+  states: new Uint8Array(),
+  turnsLeft: new Uint16Array(),
+  turnsTotal: new Uint16Array(),
 });
 
 /** A 3 × 1 map: a forest, bare hills, and an unexplored tile. */
