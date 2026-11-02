@@ -54,10 +54,20 @@
         return event.message;
       case "settlementFounded":
         return `Nation ${event.nation + 1} founded a settlement.`;
+      // how a nation's buildings fare is its own to know: a rival's are not told
       case "constructionStarted":
-        return `A construction was started.`;
+        return event.nation === viewer ? "A construction was started." : null;
       case "upgradeStarted":
-        return `An upgrade to level ${event.level} was started.`;
+        return event.nation === viewer ? `An upgrade to level ${event.level} was started.` : null;
+      case "buildingCompleted":
+        if (event.nation !== viewer) {
+          return null;
+        }
+        return event.level === 1 ? "A building was completed." : `A building reached level ${event.level}.`;
+      case "buildingHalted":
+        return event.nation === viewer ? "A building halted: its upkeep could not be paid." : null;
+      case "depositExhausted":
+        return event.nation === viewer ? "A deposit ran dry." : null;
       case "resourceShortage":
         return `Nation ${event.nation + 1} has run out of ${event.resource}.`;
       case "commandRejected":

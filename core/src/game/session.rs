@@ -19,6 +19,7 @@ use crate::{
         turn::{StepBudget, TurnPhase, TurnProgress, TurnState},
     },
     simulation::{
+        economy,
         ids::{EntityIndex, NationId, UnitId},
         resources::ResourceDataStore,
     },
@@ -293,6 +294,8 @@ impl GameSession {
                 self.events
                     .push(GameEvent::ResourceShortage { nation, resource });
             }
+            // its income is in: its buildings pay and make on top of it
+            economy::run_buildings(&mut world, nation, &mut self.events);
         }
         state.advance_cursor(end - start.min(end));
         end >= nations.len()
@@ -1402,6 +1405,7 @@ mod tests {
         let started = session.drain_events().into_iter().any(|event| {
             event
                 == GameEvent::ConstructionStarted {
+                    nation: first,
                     building,
                     settlement,
                 }
@@ -1594,11 +1598,11 @@ mod tests {
             "level 2's turns"
         );
         assert_eq!(credits(&session, first), 1000 - 40 - 60);
-        assert!(
-            session
-                .drain_events()
-                .contains(&GameEvent::UpgradeStarted { building, level: 2 })
-        );
+        assert!(session.drain_events().contains(&GameEvent::UpgradeStarted {
+            nation: first,
+            building,
+            level: 2,
+        }));
 
         assert_eq!(
             upgrade(&mut session, building),
@@ -1635,6 +1639,268 @@ mod tests {
             Err(CommandRejection::UnknownEntity(EntityRef::Building(
                 nowhere
             )))
+        );
+    }
+
+    const WORKSHOP: &str = "workshop";
+    const PUMP: &str = "pump";
+
+    /// Free to reach: level 1 in 2 turns, upkeep 1 credit, 3 food; level 2 in 1 turn, upkeep 2
+    /// credits, 5 food.
+    fn workshop_template() -> BuildingTemplate {
+        let level = |turns, upkeep, food| crate::simulation::buildings::BuildingLevel {
+            cost: Default::default(),
+            turns,
+            maintenance: [(Resource::Credits, upkeep)].into(),
+            production: [(Resource::Food, food)].into(),
+            sprite: String::new(),
+        };
+        BuildingTemplate::new(
+            SimulationID::new_abstract_id(WORKSHOP),
+            WORKSHOP.to_string(),
+            None,
+            vec![level(2, 1, 3), level(1, 2, 5)],
+        )
+    }
+
+    /// An extractor of water, free, built in a turn, after 5 water a turn.
+    fn pump_template() -> BuildingTemplate {
+        BuildingTemplate::new(
+            SimulationID::new_abstract_id(PUMP),
+            PUMP.to_string(),
+            Some(Resource::Water),
+            vec![crate::simulation::buildings::BuildingLevel {
+                cost: Default::default(),
+                turns: 1,
+                maintenance: Default::default(),
+                production: [(Resource::Water, 5)].into(),
+                sprite: String::new(),
+            }],
+        )
+    }
+
+    fn held(session: &GameSession, nation: NationId, resource: Resource) -> u16 {
+        session
+            .world()
+            .nations()
+            .get(nation)
+            .unwrap()
+            .resources()
+            .quantity_of(resource)
+    }
+
+    fn give(session: &mut GameSession, nation: NationId, resource: Resource, amount: u16) {
+        let mut changes = TurnChanges::new();
+        WorldMut::new(&mut session.world, &mut changes)
+            .nation_mut(nation)
+            .unwrap()
+            .resources_mut()
+            .replenish(resource, amount);
+    }
+
+    fn building(session: &GameSession, id: BuildingId) -> &Building {
+        session.world().buildings().get(id).unwrap()
+    }
+
+    /// `builders_session`, with a workshop ordered on (2, 1).
+    fn workshop_session(credits: u16) -> (GameSession, NationId, BuildingId) {
+        let (mut session, first, ..) = builders_session(credits);
+        session
+            .world
+            .register_building_template(workshop_template());
+        construct(&mut session, WORKSHOP, 2, 1).expect("free, on own land");
+        let workshop = building_at(&session, 2, 1);
+        session.drain_events();
+        (session, first, workshop)
+    }
+
+    #[test]
+    fn test_a_building_works_from_the_turn_after_its_construction_completes() {
+        let (mut session, first, workshop) = workshop_session(10);
+
+        resolve_turn(&mut session);
+        assert_eq!(building(&session, workshop).level(), 0);
+        assert_eq!(
+            building(&session, workshop)
+                .works()
+                .map(|works| works.turns_left()),
+            Some(1)
+        );
+
+        resolve_turn(&mut session);
+        assert_eq!(building(&session, workshop).level(), 1);
+        assert!(
+            session
+                .drain_events()
+                .contains(&GameEvent::BuildingCompleted {
+                    nation: first,
+                    building: workshop,
+                    level: 1,
+                })
+        );
+        // it was still being built when that turn settled it
+        assert_eq!(held(&session, first, Resource::Food), 0);
+        assert_eq!(held(&session, first, Resource::Credits), 10);
+
+        resolve_turn(&mut session);
+        assert_eq!(held(&session, first, Resource::Food), 3, "its production");
+        assert_eq!(held(&session, first, Resource::Credits), 9, "its upkeep");
+    }
+
+    #[test]
+    fn test_an_upgrading_building_works_at_its_level_until_the_upgrade_is_done() {
+        let (mut session, first, workshop) = workshop_session(100);
+        resolve_turn(&mut session);
+        resolve_turn(&mut session);
+        upgrade(&mut session, workshop).expect("level 1 stands");
+
+        resolve_turn(&mut session);
+        // settled at level 1, then raised: level 2's single turn is over
+        assert_eq!(held(&session, first, Resource::Food), 3);
+        assert_eq!(held(&session, first, Resource::Credits), 99);
+        assert_eq!(building(&session, workshop).level(), 2);
+
+        resolve_turn(&mut session);
+        assert_eq!(held(&session, first, Resource::Food), 3 + 5);
+        assert_eq!(held(&session, first, Resource::Credits), 99 - 2);
+    }
+
+    #[test]
+    fn test_a_building_halts_while_its_upkeep_goes_unpaid() {
+        let (mut session, first, workshop) = workshop_session(0);
+        resolve_turn(&mut session);
+        resolve_turn(&mut session);
+        session.drain_events();
+
+        resolve_turn(&mut session);
+        assert!(building(&session, workshop).halted());
+        assert_eq!(held(&session, first, Resource::Food), 0, "nothing made");
+        let halted = |events: Vec<GameEvent>| {
+            events
+                .iter()
+                .filter(|event| matches!(event, GameEvent::BuildingHalted { .. }))
+                .count()
+        };
+        assert_eq!(halted(session.drain_events()), 1);
+
+        resolve_turn(&mut session);
+        assert_eq!(
+            halted(session.drain_events()),
+            0,
+            "told the turn it stops, once"
+        );
+
+        give(&mut session, first, Resource::Credits, 5);
+        resolve_turn(&mut session);
+        assert!(
+            !building(&session, workshop).halted(),
+            "paid again, it works again"
+        );
+        assert_eq!(held(&session, first, Resource::Food), 3);
+        assert_eq!(held(&session, first, Resource::Credits), 4);
+    }
+
+    #[test]
+    fn test_when_upkeep_runs_short_the_earlier_building_is_the_one_paid() {
+        let (mut session, first, earlier) = workshop_session(1);
+        construct(&mut session, WORKSHOP, 1, 0).unwrap();
+        let later = building_at(&session, 1, 0);
+        resolve_turn(&mut session);
+        resolve_turn(&mut session);
+
+        resolve_turn(&mut session);
+        assert!(!building(&session, earlier).halted());
+        assert!(building(&session, later).halted());
+        assert_eq!(
+            held(&session, first, Resource::Food),
+            3,
+            "the one paid made its food"
+        );
+        assert_eq!(held(&session, first, Resource::Credits), 0);
+    }
+
+    #[test]
+    fn test_an_extractor_draws_its_deposit_down_to_nothing() {
+        let (mut session, first, ..) = builders_session(0);
+        let mut stock = ResourceDataStorage::new();
+        stock.replenish(Resource::Metals, 10);
+        let deposit = session.world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_metals"),
+            at(1, 0),
+            stock,
+            600,
+        ));
+        construct(&mut session, DRILL, 1, 0).expect("on its deposit");
+        resolve_turn(&mut session);
+        session.drain_events();
+
+        let left = |session: &GameSession| {
+            let deposit = session.world().deposits().get(deposit).unwrap();
+            (deposit.amount(), deposit.turns_left())
+        };
+        let mut exhausted = 0;
+        for (metals, stock, turns_left) in [(4, 6, Some(1)), (8, 2, Some(0)), (10, 0, Some(0))] {
+            resolve_turn(&mut session);
+            assert_eq!(held(&session, first, Resource::Metals), metals);
+            assert_eq!(left(&session), (stock, turns_left), "at {metals} metals");
+            exhausted += session
+                .drain_events()
+                .iter()
+                .filter(|event| {
+                    **event
+                        == GameEvent::DepositExhausted {
+                            nation: first,
+                            deposit,
+                        }
+                })
+                .count();
+        }
+        assert_eq!(exhausted, 1, "the turn it ran dry");
+        assert_eq!(session.world().deposits().get(deposit).unwrap().level(), 0);
+
+        resolve_turn(&mut session);
+        assert_eq!(
+            held(&session, first, Resource::Metals),
+            10,
+            "nothing left to draw"
+        );
+        assert!(
+            session
+                .drain_events()
+                .iter()
+                .all(|event| !matches!(event, GameEvent::DepositExhausted { .. }))
+        );
+    }
+
+    #[test]
+    fn test_a_recharging_deposit_yields_up_to_its_recharge_and_never_runs_out() {
+        let (mut session, first, ..) = builders_session(0);
+        session.world.register_building_template(pump_template());
+        let mut spring = ResourceDataStorage::new();
+        spring.replenish(Resource::Water, 0);
+        spring.set_income(Resource::Water, 3);
+        let deposit = session.world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_water"),
+            at(1, 0),
+            spring,
+            10,
+        ));
+        construct(&mut session, PUMP, 1, 0).expect("on its spring");
+        resolve_turn(&mut session);
+
+        for water in [3, 6, 9] {
+            resolve_turn(&mut session);
+            assert_eq!(
+                held(&session, first, Resource::Water),
+                water,
+                "3 of the 5 it is after"
+            );
+        }
+        let spring = session.world().deposits().get(deposit).unwrap();
+        assert_eq!(
+            (spring.amount(), spring.turns_left()),
+            (3, None),
+            "as it was"
         );
     }
 

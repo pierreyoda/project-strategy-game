@@ -10,7 +10,7 @@
 use crate::{
     game::{GameTurnScalar, state::TileIndex},
     simulation::{
-        ids::{BuildingId, NationId, SettlementId, UnitId},
+        ids::{BuildingId, DepositId, NationId, SettlementId, UnitId},
         resources::Resource,
     },
 };
@@ -34,13 +34,36 @@ pub enum GameEvent {
         nation: NationId,
         tile: TileIndex,
     },
+    // The building events name the nation they are about: how its buildings fare - halted for
+    // want of upkeep, run dry - is its own to know, and the client tells it to that nation alone.
     /// A building was ordered: its construction is under way.
     ConstructionStarted {
+        nation: NationId,
         building: BuildingId,
         settlement: SettlementId,
     },
     /// A building's upgrade to `level` was ordered.
-    UpgradeStarted { building: BuildingId, level: u8 },
+    UpgradeStarted {
+        nation: NationId,
+        building: BuildingId,
+        level: u8,
+    },
+    /// A building's works completed: it works at `level` from the next turn on.
+    BuildingCompleted {
+        nation: NationId,
+        building: BuildingId,
+        level: u8,
+    },
+    /// A building stopped for want of its maintenance. Told the turn it stops, once.
+    BuildingHalted {
+        nation: NationId,
+        building: BuildingId,
+    },
+    /// A deposit `nation` drew on ran dry.
+    DepositExhausted {
+        nation: NationId,
+        deposit: DepositId,
+    },
     ResourceShortage {
         nation: NationId,
         resource: Resource,

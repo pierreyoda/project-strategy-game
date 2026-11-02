@@ -16,10 +16,10 @@ use crate::{
     hex_map::coordinates::CubeCoords,
     simulation::{
         buildings::Building,
-        economy::ConstructionCosts,
+        economy::{self, ConstructionCosts},
         ids::{BuildingId, EntityRef, NationId, SettlementId, SimulationID, UnitId},
         movement::{self, StepRefusal},
-        resources::{Resource, ResourceDataStore, ResourceQuantity},
+        resources::{Resource, ResourceQuantity},
         settlements::Settlement,
     },
 };
@@ -313,6 +313,7 @@ fn construct_building(
     ));
 
     events.push(GameEvent::ConstructionStarted {
+        nation: issuer,
         building,
         settlement,
     });
@@ -359,7 +360,11 @@ fn upgrade_building(
         target.start_upgrade(turns);
     }
 
-    events.push(GameEvent::UpgradeStarted { building, level });
+    events.push(GameEvent::UpgradeStarted {
+        nation: issuer,
+        building,
+        level,
+    });
     Ok(())
 }
 
@@ -384,23 +389,17 @@ fn affordable(
         .nations()
         .get(issuer)
         .ok_or(CommandRejection::UnknownEntity(EntityRef::Nation(issuer)))?;
-    for (&resource, &amount) in cost {
-        let held = nation.resources().quantity_of(resource);
-        if held < amount {
-            return Err(CommandRejection::InsufficientResources {
-                resource,
-                missing: amount - held,
-            });
+    match economy::shortfall(nation.resources(), cost) {
+        Some((resource, missing)) => {
+            Err(CommandRejection::InsufficientResources { resource, missing })
         }
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Pay a bill `affordable` accepted.
 fn pay(world: &mut WorldMut<'_>, issuer: NationId, cost: &ConstructionCosts) {
     if let Some(nation) = world.nation_mut(issuer) {
-        for (&resource, &amount) in cost {
-            nation.resources_mut().consume(resource, amount);
-        }
+        economy::take(nation.resources_mut(), cost);
     }
 }

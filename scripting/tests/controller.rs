@@ -308,15 +308,15 @@ fn test_a_script_builds_by_the_rules_a_player_builds_by() {
     let built = world.tile(tile).unwrap().artificial().buildings();
     assert_eq!(built.len(), 1, "{events:?}");
     let hut = world.buildings().get(built[0]).unwrap();
-    assert_eq!(
-        (hut.owner(), hut.level()),
-        (ai, 0),
-        "ordered, under construction"
-    );
+    // ordered while the AI planned, then built by the same turn's Economy phase: a hut takes one
+    assert_eq!((hut.owner(), hut.level()), (ai, 1), "ordered, then built");
+    assert!(events.iter().any(
+        |event| matches!(event, GameEvent::ConstructionStarted { nation, .. } if *nation == ai)
+    ));
     assert!(
         events
             .iter()
-            .any(|event| matches!(event, GameEvent::ConstructionStarted { .. }))
+            .any(|event| matches!(event, GameEvent::BuildingCompleted { nation, level: 1, .. } if *nation == ai))
     );
     assert_eq!(
         rejections(&events),

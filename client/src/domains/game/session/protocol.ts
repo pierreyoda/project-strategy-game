@@ -76,8 +76,18 @@ export type GameEvent =
   | { type: "log"; nation: number | null; message: string }
   | { type: "unitMoved"; unit: number; from: number; to: number }
   | { type: "settlementFounded"; settlement: number; nation: number; tile: number }
-  | { type: "constructionStarted"; building: number; settlement: number }
-  | { type: "upgradeStarted"; building: number; level: number }
+  /*
+   * The building events name the nation they are about: how its buildings fare is its own to know,
+   * like `BuildingHalted` and the rest of them in the `core` crate.
+   */
+  | { type: "constructionStarted"; nation: number; building: number; settlement: number }
+  | { type: "upgradeStarted"; nation: number; building: number; level: number }
+  /** Its works completed: it works at `level` from the next turn on. */
+  | { type: "buildingCompleted"; nation: number; building: number; level: number }
+  /** It stopped for want of its maintenance; told the turn it stops, once. */
+  | { type: "buildingHalted"; nation: number; building: number }
+  /** A deposit the nation drew on ran dry. */
+  | { type: "depositExhausted"; nation: number; deposit: number }
   | { type: "resourceShortage"; nation: number; resource: Resource }
   | { type: "commandRejected"; nation: number; reason: string }
   /** What a controller said while planning for a nation, like `ControllerLog`: not narrative. */

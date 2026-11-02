@@ -218,9 +218,27 @@ pub enum EventWire {
         tile: u32,
     },
     #[serde(rename_all = "camelCase")]
-    ConstructionStarted { building: u32, settlement: u32 },
+    ConstructionStarted {
+        nation: u16,
+        building: u32,
+        settlement: u32,
+    },
     #[serde(rename_all = "camelCase")]
-    UpgradeStarted { building: u32, level: u8 },
+    UpgradeStarted {
+        nation: u16,
+        building: u32,
+        level: u8,
+    },
+    #[serde(rename_all = "camelCase")]
+    BuildingCompleted {
+        nation: u16,
+        building: u32,
+        level: u8,
+    },
+    #[serde(rename_all = "camelCase")]
+    BuildingHalted { nation: u16, building: u32 },
+    #[serde(rename_all = "camelCase")]
+    DepositExhausted { nation: u16, deposit: u32 },
     #[serde(rename_all = "camelCase")]
     ResourceShortage { nation: u16, resource: &'static str },
     #[serde(rename_all = "camelCase")]
@@ -256,15 +274,39 @@ impl From<&GameEvent> for EventWire {
                 tile: *tile,
             },
             GameEvent::ConstructionStarted {
+                nation,
                 building,
                 settlement,
             } => Self::ConstructionStarted {
+                nation: nation.raw(),
                 building: building.raw(),
                 settlement: settlement.raw(),
             },
-            GameEvent::UpgradeStarted { building, level } => Self::UpgradeStarted {
+            GameEvent::UpgradeStarted {
+                nation,
+                building,
+                level,
+            } => Self::UpgradeStarted {
+                nation: nation.raw(),
                 building: building.raw(),
                 level: *level,
+            },
+            GameEvent::BuildingCompleted {
+                nation,
+                building,
+                level,
+            } => Self::BuildingCompleted {
+                nation: nation.raw(),
+                building: building.raw(),
+                level: *level,
+            },
+            GameEvent::BuildingHalted { nation, building } => Self::BuildingHalted {
+                nation: nation.raw(),
+                building: building.raw(),
+            },
+            GameEvent::DepositExhausted { nation, deposit } => Self::DepositExhausted {
+                nation: nation.raw(),
+                deposit: deposit.raw(),
             },
             GameEvent::ResourceShortage { nation, resource } => Self::ResourceShortage {
                 nation: nation.raw(),

@@ -77,7 +77,9 @@ impl ResourceDataStore for ResourceDataStorage {
 
     fn replenish(&mut self, resource: Resource, amount: ResourceQuantity) {
         if let Some(resource_datum) = self.get_mut(&resource) {
-            resource_datum.quantity += amount;
+            // a stockpile tops out rather than wrapping round to nothing, or panicking in a debug
+            // build: production adds to it every turn of a long game
+            resource_datum.quantity = resource_datum.quantity.saturating_add(amount);
         } else {
             self.insert(
                 resource,
@@ -109,7 +111,9 @@ impl ResourceDataStore for ResourceDataStorage {
 
     fn update(&mut self) -> Option<Resource> {
         for (resource, resource_datum) in self.iter_mut() {
-            resource_datum.quantity += resource_datum.income.unwrap_or(0);
+            resource_datum.quantity = resource_datum
+                .quantity
+                .saturating_add(resource_datum.income.unwrap_or(0));
             if let Some(depletion) = resource_datum.depletion {
                 if depletion > resource_datum.quantity {
                     return Some(*resource);
@@ -210,7 +214,7 @@ impl ResourceDeposit {
 mod tests {
     use crate::simulation::resources::Resource;
 
-    use super::{ResourceDataStorage, ResourceDataStore};
+    use super::{ResourceDataStorage, ResourceDataStore, ResourceQuantity};
 
     #[test]
     fn test_a_deposit_level_is_read_against_its_scale_and_falls_as_it_is_worked() {
@@ -294,6 +298,19 @@ mod tests {
             "all of it is affordable"
         );
         assert_eq!(resources.quantity_of(Resource::Food), 0);
+
+        // and a stockpile tops out, by replenishment and by income alike
+        resources.replenish(Resource::Credits, ResourceQuantity::MAX);
+        assert_eq!(
+            resources.quantity_of(Resource::Credits),
+            ResourceQuantity::MAX
+        );
+        resources.set_income(Resource::Credits, 7);
+        assert_eq!(resources.update(), None);
+        assert_eq!(
+            resources.quantity_of(Resource::Credits),
+            ResourceQuantity::MAX
+        );
         assert_eq!(resources.quantity_of(Resource::Water), 50);
         assert_eq!(resources.quantity_of(Resource::Uranium), 0);
     }
