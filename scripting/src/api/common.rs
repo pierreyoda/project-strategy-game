@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use project_x_core::simulation::resources::{Resource, ResourceQuantity};
-use rhai::{INT, Map};
+use rhai::{Array, INT, Map};
 
 use crate::api::ScriptResult;
 
@@ -18,6 +18,19 @@ fn resource_named(name: &str) -> Option<Resource> {
         "uranium" => Resource::Uranium,
         _ => return None,
     })
+}
+
+/// The name scripts know a resource by, for the errors that mention one.
+pub fn resource_name(resource: Resource) -> &'static str {
+    match resource {
+        Resource::Credits => "credits",
+        Resource::Water => "water",
+        Resource::Food => "food",
+        Resource::Electricity => "electricity",
+        Resource::Metals => "metals",
+        Resource::Oil => "oil",
+        Resource::Uranium => "uranium",
+    }
 }
 
 /// A definition map, read strictly: a key it does not know is a typo, not something to ignore.
@@ -48,6 +61,44 @@ impl<'a> Fields<'a> {
             .into_string()
             .map(Some)
             .map_err(|_| format!("{}'s `{key}` must be a string, got {value}", self.what).into())
+    }
+
+    /// A resource by its name, `"metals"`; none when the key is left out.
+    pub fn optional_resource(&self, key: &str) -> ScriptResult<Option<Resource>> {
+        let Some(name) = self.optional_text(key)? else {
+            return Ok(None);
+        };
+        resource_named(&name).map(Some).ok_or_else(|| {
+            format!(
+                "{}'s `{key}` names `{name}`, which is no resource",
+                self.what
+            )
+            .into()
+        })
+    }
+
+    /// A list of definition maps, `[#{...}, #{...}]`: required, and maps only.
+    pub fn maps(&self, key: &str) -> ScriptResult<Vec<Map>> {
+        let value = self
+            .map
+            .get(key)
+            .ok_or_else(|| format!("{} needs `{key}`", self.what))?;
+        let list = value.read_lock::<Array>().ok_or_else(|| {
+            format!(
+                "{}'s `{key}` must be a list of maps, got {value}",
+                self.what
+            )
+        })?;
+        list.iter()
+            .map(|entry| {
+                entry
+                    .read_lock::<Map>()
+                    .map(|map| map.clone())
+                    .ok_or_else(|| {
+                        format!("{}'s `{key}` holds {entry}, which is no map", self.what).into()
+                    })
+            })
+            .collect()
     }
 
     /// A number, range-checked into what `core` stores it as.
@@ -352,6 +403,108 @@ mod tests {
         for value in [Dynamic::from_array(listed), "credits".into()] {
             assert!(cost_of(&map([("cost", value)])).is_err());
         }
+    }
+
+    const LEVELLED: &str = "a building template";
+    const LEVELLED_KEYS: &[&str] = &["deposit", "levels"];
+
+    #[test]
+    fn test_resource_names_go_both_ways() {
+        for resource in [
+            Resource::Credits,
+            Resource::Water,
+            Resource::Food,
+            Resource::Electricity,
+            Resource::Metals,
+            Resource::Oil,
+            Resource::Uranium,
+        ] {
+            assert_eq!(
+                super::resource_named(super::resource_name(resource)),
+                Some(resource)
+            );
+        }
+    }
+
+    #[test]
+    fn test_optional_resource_reads_a_name_or_nothing() {
+        let definition = map([("deposit", "metals".into())]);
+        let fields = Fields::new(LEVELLED, &definition, LEVELLED_KEYS).unwrap();
+        assert_eq!(
+            fields.optional_resource("deposit").unwrap(),
+            Some(Resource::Metals)
+        );
+
+        let empty = Map::new();
+        let fields = Fields::new(LEVELLED, &empty, LEVELLED_KEYS).unwrap();
+        assert_eq!(fields.optional_resource("deposit").unwrap(), None);
+    }
+
+    #[test]
+    fn test_optional_resource_naming_no_resource_is_refused() {
+        let definition = map([("deposit", "gold".into())]);
+        let fields = Fields::new(LEVELLED, &definition, LEVELLED_KEYS).unwrap();
+        assert_eq!(
+            refusal(fields.optional_resource("deposit")),
+            "a building template's `deposit` names `gold`, which is no resource"
+        );
+
+        let definition = map([("deposit", 3_i64.into())]);
+        let fields = Fields::new(LEVELLED, &definition, LEVELLED_KEYS).unwrap();
+        assert!(
+            fields.optional_resource("deposit").is_err(),
+            "a name, not a number"
+        );
+    }
+
+    #[test]
+    fn test_maps_reads_a_list_of_maps_in_order() {
+        let list: Array = [1_i64, 2]
+            .map(|turns| Dynamic::from_map(map([("turns", turns.into())])))
+            .into();
+        let definition = map([("levels", Dynamic::from_array(list))]);
+        let fields = Fields::new(LEVELLED, &definition, LEVELLED_KEYS).unwrap();
+        // `Dynamic` has no equality: what each map holds is compared instead
+        let turns: Vec<i64> = fields
+            .maps("levels")
+            .unwrap()
+            .iter()
+            .map(|level| level["turns"].as_int().unwrap())
+            .collect();
+        assert_eq!(turns, [1, 2]);
+
+        let definition = map([("levels", Dynamic::from_array(Array::new()))]);
+        let fields = Fields::new(LEVELLED, &definition, LEVELLED_KEYS).unwrap();
+        assert!(
+            fields.maps("levels").unwrap().is_empty(),
+            "empty is the caller's to refuse"
+        );
+    }
+
+    #[test]
+    fn test_maps_is_required_and_holds_maps_only() {
+        let empty = Map::new();
+        let fields = Fields::new(LEVELLED, &empty, LEVELLED_KEYS).unwrap();
+        assert_eq!(
+            refusal(fields.maps("levels")),
+            "a building template needs `levels`"
+        );
+
+        let definition = map([("levels", Dynamic::from_map(Map::new()))]);
+        let fields = Fields::new(LEVELLED, &definition, LEVELLED_KEYS).unwrap();
+        assert!(
+            refusal(fields.maps("levels"))
+                .starts_with("a building template's `levels` must be a list of maps"),
+            "one map is not a list of them"
+        );
+
+        let list: Array = vec![Dynamic::from_map(Map::new()), 3_i64.into()];
+        let definition = map([("levels", Dynamic::from_array(list))]);
+        let fields = Fields::new(LEVELLED, &definition, LEVELLED_KEYS).unwrap();
+        assert_eq!(
+            refusal(fields.maps("levels")),
+            "a building template's `levels` holds 3, which is no map"
+        );
     }
 
     #[test]

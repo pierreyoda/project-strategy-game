@@ -446,9 +446,14 @@ mod tests {
         crate::simulation::buildings::BuildingTemplate::new(
             SimulationID::new_abstract_id(MINE),
             "mine".to_string(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            None,
+            vec![crate::simulation::buildings::BuildingLevel {
+                cost: Default::default(),
+                turns: 1,
+                maintenance: Default::default(),
+                production: Default::default(),
+                sprite: "mine_1".to_string(),
+            }],
         )
     }
 

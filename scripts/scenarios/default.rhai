@@ -1,25 +1,41 @@
 // The default scenario: what a new game starts with when nothing else is chosen.
 //
 // Templates are defined here, at the top level, through the `scenario` handle the top level is run
-// with. A template's `type` defaults to its `id`.
+// with. A template's `type` defaults to its `id`; a building level's `sprite` to `{type}_{level}`,
+// the naming the client's art follows.
 
 // The divisions, named after the client's counters.
 scenario.define_unit_template(#{ id: "infantry_division", movement: 2, sight: 2 });
 scenario.define_unit_template(#{ id: "motorized_division", movement: 4, sight: 3 });
 scenario.define_unit_template(#{ id: "light_tank_division", movement: 3, sight: 2 });
 
-// The buildings, named after the client's sprites
+// The buildings, named after the client's sprites, by level: a level's cost and turns are what
+// reaching it takes - the construction for the first, an upgrade above.
+// TODO: levels 2 and 3 extend level 1's balance, as placeholders to tune.
+
+// It extracts metals: it stands on a metals deposit, and its metals come out of it.
 scenario.define_building_template(#{
     id: "mine",
-    cost: #{ credits: 200, metals: 100 },
-    maintenance: #{ credits: 2 },
-    production: #{ metals: 5 }
+    deposit: "metals",
+    levels: [
+        #{ cost: #{ credits: 200, metals: 100 }, turns: 3,
+           maintenance: #{ credits: 2 }, production: #{ metals: 5 } },
+        #{ cost: #{ credits: 300, metals: 150 }, turns: 4,
+           maintenance: #{ credits: 3 }, production: #{ metals: 8 } },
+        #{ cost: #{ credits: 450, metals: 250 }, turns: 5,
+           maintenance: #{ credits: 5 }, production: #{ metals: 12 } }
+    ]
 });
 scenario.define_building_template(#{
     id: "solar_plant",
-    cost: #{ credits: 500, metals: 250 },
-    maintenance: #{ credits: 5 },
-    production: #{ electricity: 3 }
+    levels: [
+        #{ cost: #{ credits: 500, metals: 250 }, turns: 4,
+           maintenance: #{ credits: 5 }, production: #{ electricity: 3 } },
+        #{ cost: #{ credits: 700, metals: 350 }, turns: 5,
+           maintenance: #{ credits: 7 }, production: #{ electricity: 5 } },
+        #{ cost: #{ credits: 1000, metals: 500 }, turns: 6,
+           maintenance: #{ credits: 10 }, production: #{ electricity: 8 } }
+    ]
 });
 
 // Who lives in a slot, counting from 0: the local player's is the first.
@@ -28,7 +44,6 @@ fn nation(slot) {
         definition: `nation_${slot}`,
         name: `Nation ${slot + 1}`,
         capital: `Nation ${slot + 1} capital`,
-        // something for the economy phase to tick and the toolbar to show
         stockpile: #{ credits: 250, water: 120, food: 180, electricity: 60, metals: 90 },
         income: #{ credits: 12, water: 4, food: 6, electricity: 3, metals: 2 }
     }

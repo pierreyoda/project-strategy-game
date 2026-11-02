@@ -4,18 +4,18 @@
 //! the one place the handle exists: an AI script is never given one, so it cannot define anything,
 //! and nor can a scenario's own functions, which run later, once the definitions are in.
 
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use rhai::{Engine, INT, Map};
+use rhai::{Engine, Map};
 
 use project_x_core::simulation::{
-    buildings::BuildingTemplate,
+    buildings::{BuildingLevel, BuildingTemplate, MAX_BUILDING_LEVELS},
     ids::SimulationID,
     military::UnitTemplate,
-    resources::{Resource, ResourceQuantity},
+    resources::Resource,
 };
 
-use crate::api::common::Fields;
+use crate::api::common::{Fields, resource_name};
 
 use super::ScriptResult;
 
@@ -39,14 +39,13 @@ impl UnitDefinition {
     }
 }
 
-/// A building template, as a scenario defines it.
+/// A building template, as a scenario defines it: checked, so that `core`'s asserts never fire.
 #[derive(Clone, Debug)]
 pub struct BuildingDefinition {
     id: String,
     kind: String,
-    cost: BTreeMap<Resource, ResourceQuantity>,
-    maintenance: BTreeMap<Resource, ResourceQuantity>,
-    production: BTreeMap<Resource, ResourceQuantity>,
+    deposit: Option<Resource>,
+    levels: Vec<BuildingLevel>,
 }
 
 impl BuildingDefinition {
@@ -54,11 +53,81 @@ impl BuildingDefinition {
         BuildingTemplate::new(
             SimulationID::new_abstract_id(&self.id),
             self.kind.clone(),
-            self.cost.clone(),
-            self.maintenance.clone(),
-            self.production.clone(),
+            self.deposit,
+            self.levels.clone(),
         )
     }
+
+    fn read(definition: &Map) -> ScriptResult<Self> {
+        let fields = Fields::new(
+            "a building template",
+            definition,
+            &["id", "type", "deposit", "levels"],
+        )?;
+        let id = fields.text("id")?;
+        let kind = fields.optional_text("type")?.unwrap_or_else(|| id.clone());
+        let deposit = fields.optional_resource("deposit")?;
+        let levels = fields.maps("levels")?;
+        if !(1..=MAX_BUILDING_LEVELS).contains(&levels.len()) {
+            return Err(format!(
+                "building template `{id}` has {} levels; it takes from 1 to {MAX_BUILDING_LEVELS}",
+                levels.len()
+            )
+            .into());
+        }
+        let levels = levels
+            .iter()
+            .enumerate()
+            .map(|(index, level)| read_level(&id, &kind, deposit, index + 1, level))
+            .collect::<ScriptResult<_>>()?;
+        Ok(Self {
+            id,
+            kind,
+            deposit,
+            levels,
+        })
+    }
+}
+
+/// Level `number` of the template `id`, of type `kind`, extracting `deposit` if any.
+fn read_level(
+    id: &str,
+    kind: &str,
+    deposit: Option<Resource>,
+    number: usize,
+    definition: &Map,
+) -> ScriptResult<BuildingLevel> {
+    let what = format!("level {number} of `{id}`");
+    let fields = Fields::new(
+        &what,
+        definition,
+        &["cost", "turns", "maintenance", "production", "sprite"],
+    )?;
+    let turns: u16 = fields.number("turns")?;
+    if turns == 0 {
+        return Err(format!("{what} takes no turns; reaching a level takes at least one").into());
+    }
+    let production = fields.quantities("production")?;
+    // an extractor that extracts nothing is a typo, not a design
+    if let Some(resource) = deposit
+        && !production.get(&resource).is_some_and(|&amount| amount > 0)
+    {
+        return Err(format!(
+            "{what} produces no {}, which `{id}` extracts",
+            resource_name(resource)
+        )
+        .into());
+    }
+    Ok(BuildingLevel {
+        cost: fields.quantities("cost")?,
+        turns,
+        maintenance: fields.quantities("maintenance")?,
+        production,
+        // the naming the client's art follows, unless the level points at other art
+        sprite: fields
+            .optional_text("sprite")?
+            .unwrap_or_else(|| format!("{kind}_{number}")),
+    })
 }
 
 /// Everything a scenario defined, in the order it did.
@@ -108,19 +177,7 @@ pub fn register(engine: &mut Engine) {
         .register_fn(
             "define_building_template",
             |scenario: &mut ScenarioHandle, definition: Map| -> ScriptResult<()> {
-                let fields = Fields::new(
-                    "a building template",
-                    &definition,
-                    &["id", "type", "cost", "maintenance", "production"],
-                )?;
-                let id = fields.text("id")?;
-                let building = BuildingDefinition {
-                    kind: fields.optional_text("type")?.unwrap_or_else(|| id.clone()),
-                    cost: fields.quantities("cost")?,
-                    maintenance: fields.quantities("maintenance")?,
-                    production: fields.quantities("production")?,
-                    id,
-                };
+                let building = BuildingDefinition::read(&definition)?;
                 let mut definitions = scenario.0.borrow_mut();
                 if definitions
                     .buildings

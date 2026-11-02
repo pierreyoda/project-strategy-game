@@ -460,6 +460,22 @@ impl<'a> WorldMut<'a> {
         id
     }
 
+    /// A building, to raise it, run its works or settle its turn. Marks it for the next delta.
+    pub fn building_mut(&mut self, id: BuildingId) -> Option<&mut Building> {
+        let building = self.world.buildings.get_mut(id)?;
+        self.changes.mark_building(id);
+        Some(building)
+    }
+
+    /// A deposit, to draw on it. Deposits travel with their tile, so it is the tile that is marked.
+    pub fn deposit_mut(&mut self, id: DepositId) -> Option<&mut ResourceDeposit> {
+        let position = self.world.deposits.get(id)?.position();
+        if let Some(index) = self.world.tile_index(position) {
+            self.changes.mark_tile(index);
+        }
+        self.world.deposits.get_mut(id)
+    }
+
     /// The fog record of a nation, for the sighting pass.
     ///
     /// Visibility changes dirty their tiles through `mark_tile_index`, done by the caller: the fog
@@ -524,6 +540,59 @@ mod tests {
             .filter(|&coords| coords != at)
             .all(|coords| world.tile(coords).unwrap().natural().deposits().is_empty());
         assert!(elsewhere);
+    }
+
+    #[test]
+    fn test_a_deposit_written_through_the_gate_marks_its_tile() {
+        let mut world = build_test_world(6, 4);
+        let at = OffsetCoords::new(2, 1).into();
+        let mut stock = ResourceDataStorage::new();
+        stock.replenish(Resource::Metals, 340);
+        let id = world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_metals"),
+            at,
+            stock,
+            800,
+        ));
+
+        let mut changes = crate::game::journal::TurnChanges::new();
+        let mut gate = WorldMut::new(&mut world, &mut changes);
+        let deposit = gate.deposit_mut(id).expect("in the store");
+        deposit.resources_mut().consume(Resource::Metals, 40);
+
+        let tile = world.tile_index(at).unwrap();
+        assert_eq!(changes.tiles().collect::<Vec<_>>(), [tile], "only its tile");
+        assert_eq!(
+            world
+                .deposits()
+                .get(id)
+                .unwrap()
+                .resources()
+                .quantity_of(Resource::Metals),
+            300
+        );
+    }
+
+    #[test]
+    fn test_a_building_written_through_the_gate_is_marked() {
+        use crate::simulation::{buildings::Building, ids::SettlementId};
+
+        let mut world = build_test_world(6, 4);
+        let mut changes = crate::game::journal::TurnChanges::new();
+        let mut gate = WorldMut::new(&mut world, &mut changes);
+        let id = gate.insert_building(Building::order(
+            SimulationID::new_abstract_id("mine"),
+            NationId::from_index(0),
+            SettlementId::from_index(0),
+            OffsetCoords::new(1, 1).into(),
+            1,
+        ));
+
+        let mut later = crate::game::journal::TurnChanges::new();
+        let mut gate = WorldMut::new(&mut world, &mut later);
+        assert!(gate.building_mut(id).expect("in the store").advance_works());
+        assert_eq!(later.buildings().collect::<Vec<_>>(), [id]);
+        assert_eq!(world.buildings().get(id).unwrap().level(), 1);
     }
 
     pub(crate) fn build_test_world(columns: i16, rows: i16) -> World {

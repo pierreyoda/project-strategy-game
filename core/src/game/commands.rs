@@ -251,7 +251,7 @@ fn construct_building(
             .get(issuer)
             .ok_or(CommandRejection::UnknownEntity(EntityRef::Nation(issuer)))?;
         // the whole bill is checked before a single resource is spent
-        for (&resource, &amount) in definition.cost() {
+        for (&resource, &amount) in &definition.first_level().cost {
             let held = nation.resources().quantity_of(resource);
             if held < amount {
                 return Err(CommandRejection::InsufficientResources {
@@ -260,7 +260,7 @@ fn construct_building(
                 });
             }
         }
-        (target.position(), definition.cost().clone())
+        (target.position(), definition.first_level().cost.clone())
     };
 
     if let Some(nation) = world.nation_mut(issuer) {

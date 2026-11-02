@@ -10,22 +10,22 @@
 //! **NB** Every number a script hands back is checked before it reaches `core`, whose constructors
 //! assert on what they are given: a panic in the worker is the end of the game.
 
+mod common;
 mod coords;
 mod orders;
 mod rng;
 mod scenario;
-mod common;
 mod view;
 
 use rhai::{Engine, EvalAltResult, INT};
 
 use project_x_core::simulation::ids::EntityIndex;
 
+pub use common::Fields;
 pub use orders::Orders;
 pub use rng::ScriptRng;
 pub use scenario::{Definitions, ScenarioHandle, UnitDefinition};
 pub use view::ScriptView;
-pub use common::Fields;
 
 /// Register everything a script may call.
 pub fn register(engine: &mut Engine) {

@@ -1,7 +1,8 @@
 //! A scenario script: the templates it defines, and the nation it answers for each slot.
 
 use project_x_core::simulation::{
-    ids::SimulationID,
+    buildings::BuildingTemplate,
+    ids::{SimulationID, WithSimulationID},
     resources::{Resource, ResourceDataStore},
 };
 use project_x_scripting::{ScriptEngine, ScriptError, ScriptKind, ScriptLimits, ScriptSource};
@@ -63,12 +64,117 @@ fn test_the_default_scenario_defines_the_divisions_and_the_buildings() {
             "light_tank_division 3 2"
         ]
     );
-    let buildings: Vec<String> = scenario
+    let buildings: Vec<BuildingTemplate> = scenario.building_templates().collect();
+    let [mine, solar_plant] = buildings.as_slice() else {
+        panic!("a mine and a solar plant, got {buildings:?}");
+    };
+
+    assert_eq!(mine.r#type(), "mine");
+    assert_eq!(mine.deposit(), Some(Resource::Metals), "it extracts");
+    assert_eq!(mine.max_level(), 3);
+    let first = mine.first_level();
+    assert_eq!(
+        first.cost,
+        [(Resource::Credits, 200), (Resource::Metals, 100)].into()
+    );
+    assert_eq!(first.production, [(Resource::Metals, 5)].into());
+    // every level of an extractor produces what it extracts
+    assert!(mine.levels().iter().all(|level| {
+        level
+            .production
+            .get(&Resource::Metals)
+            .is_some_and(|&n| n > 0)
+    }));
+
+    assert_eq!(solar_plant.deposit(), None, "it extracts nothing");
+    assert_eq!(solar_plant.max_level(), 3);
+    for template in [mine, solar_plant] {
+        let sprites: Vec<&str> = template
+            .levels()
+            .iter()
+            .map(|level| level.sprite.as_str())
+            .collect();
+        let expected: Vec<String> = (1..=3)
+            .map(|n| format!("{}_{n}", template.r#type()))
+            .collect();
+        assert_eq!(sprites, expected, "the client's naming, by default");
+        assert!(template.levels().iter().all(|level| level.turns >= 1));
+    }
+}
+
+/// The art a scripted sprite key is drawn with: `client/raw-assets/entities/buildings*/{key}.png`,
+/// whatever AssetPack tags the folder carries.
+fn building_art() -> std::collections::BTreeSet<String> {
+    let entities =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../client/raw-assets/entities");
+    let folder = std::fs::read_dir(&entities)
+        .expect("the client's raw assets")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("buildings"))
+        })
+        .expect("a buildings folder in the client's raw assets");
+    std::fs::read_dir(folder)
+        .expect("the buildings folder")
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter_map(|name| name.strip_suffix(".png").map(str::to_string))
+        .collect()
+}
+
+#[test]
+fn test_every_sprite_the_default_scenario_names_has_its_art() {
+    let engine = load(DEFAULT_SCENARIO).expect("the default scenario loads");
+    let art = building_art();
+    for template in engine.scenario().unwrap().building_templates() {
+        for (index, level) in template.levels().iter().enumerate() {
+            assert!(
+                art.contains(&level.sprite),
+                "level {} of `{}` is drawn as `{}`, which client/raw-assets/entities/buildings*/ has no \
+                 PNG for",
+                index + 1,
+                template.id(),
+                level.sprite
+            );
+        }
+    }
+}
+
+#[test]
+fn test_a_building_level_names_its_sprite_or_takes_its_types() {
+    let engine = load(&format!(
+        r#"
+        scenario.define_building_template(#{{
+            id: "deep_mine",
+            type: "mine",
+            levels: [#{{ turns: 1 }}, #{{ turns: 2 }}, #{{ turns: 3, sprite: "mine_2" }}]
+        }});
+        {HOOKS}
+        "#
+    ))
+    .expect("loads");
+    let template = engine
+        .scenario()
+        .unwrap()
         .building_templates()
-        .map(|template| format!("{template:?}"))
+        .next()
+        .unwrap();
+    let sprites: Vec<&str> = template
+        .levels()
+        .iter()
+        .map(|level| level.sprite.as_str())
         .collect();
-    assert_eq!(buildings.len(), 2);
-    assert!(buildings[0].contains("\"mine\"") && buildings[1].contains("\"solar_plant\""));
+    // by the type, not the ID: the art is the type's; and a level may reuse another's
+    assert_eq!(sprites, ["mine_1", "mine_2", "mine_2"]);
+    let turns: Vec<u16> = template.levels().iter().map(|level| level.turns).collect();
+    assert_eq!(turns, [1, 2, 3]);
+    assert!(
+        template.levels().iter().all(|level| level.cost.is_empty()),
+        "none, left out"
+    );
 }
 
 #[test]
@@ -158,16 +264,65 @@ fn test_a_template_defined_wrong_is_refused_at_load() {
             "a unit template's `movement` is out of range: 300",
         ),
         (
-            r#"scenario.define_building_template(#{ id: "farm", production: #{ grain: 2 } })"#,
+            r#"scenario.define_building_template(#{ id: "farm", production: #{ food: 2 } })"#,
+            "a building template has no `production`; it takes id, type, deposit, levels",
+        ),
+        (
+            r#"scenario.define_building_template(#{ id: "farm" })"#,
+            "a building template needs `levels`",
+        ),
+        (
+            r#"scenario.define_building_template(#{ id: "farm", levels: [] })"#,
+            "building template `farm` has 0 levels; it takes from 1 to 255",
+        ),
+        (
+            r#"let levels = [];
+               for level in 0..256 { levels.push(#{ turns: 1 }); }
+               scenario.define_building_template(#{ id: "farm", levels: levels })"#,
+            "building template `farm` has 256 levels",
+        ),
+        (
+            r#"scenario.define_building_template(#{ id: "farm", levels: [#{ turns: 1 }, 3] })"#,
+            "a building template's `levels` holds 3, which is no map",
+        ),
+        (
+            r#"scenario.define_building_template(#{ id: "farm", levels: [#{ turns: 1, speed: 2 }] })"#,
+            "level 1 of `farm` has no `speed`",
+        ),
+        (
+            r#"scenario.define_building_template(#{ id: "farm", levels: [#{ cost: #{} }] })"#,
+            "level 1 of `farm` needs `turns`",
+        ),
+        (
+            r#"scenario.define_building_template(#{ id: "farm", levels: [#{ turns: 1 }, #{ turns: 0 }] })"#,
+            "level 2 of `farm` takes no turns",
+        ),
+        (
+            r#"scenario.define_building_template(#{
+                id: "farm", levels: [#{ turns: 1, production: #{ grain: 2 } }]
+            })"#,
             "names `grain`, which is no resource",
         ),
         (
-            r#"scenario.define_building_template(#{ id: "farm", cost: #{ credits: -1 } })"#,
-            "`cost.credits` must be from 0 to 65535, got -1",
+            r#"scenario.define_building_template(#{
+                id: "farm", levels: [#{ turns: 1, cost: #{ credits: -1 } }]
+            })"#,
+            "level 1 of `farm`'s `cost.credits` must be from 0 to 65535, got -1",
         ),
         (
-            r#"scenario.define_building_template(#{ id: "farm" });
-               scenario.define_building_template(#{ id: "farm" })"#,
+            r#"scenario.define_building_template(#{ id: "mine", deposit: "gold", levels: [#{ turns: 1 }] })"#,
+            "a building template's `deposit` names `gold`, which is no resource",
+        ),
+        (
+            r#"scenario.define_building_template(#{
+                id: "mine", deposit: "metals",
+                levels: [#{ turns: 1, production: #{ metals: 5 } }, #{ turns: 2, production: #{ credits: 1 } }]
+            })"#,
+            "level 2 of `mine` produces no metals, which `mine` extracts",
+        ),
+        (
+            r#"scenario.define_building_template(#{ id: "farm", levels: [#{ turns: 1 }] });
+               scenario.define_building_template(#{ id: "farm", levels: [#{ turns: 1 }] })"#,
             "building template `farm` is defined twice",
         ),
     ] {
