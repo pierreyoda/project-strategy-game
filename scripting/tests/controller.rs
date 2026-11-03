@@ -26,7 +26,7 @@ use project_x_core::{
 use project_x_scripting::{ScriptEngine, ScriptError, ScriptKind, ScriptLimits, ScriptSource};
 
 const SEED: GameSeed = 20_261_031;
-const SCOUT_SCRIPT: &str = include_str!("../../scripts/ai/scout.rhai");
+const DEFAULT_AI: &str = include_str!("../../scripts/ai/default.rhai");
 const SCRIPT_NAME: &str = "under_test";
 
 fn at(col: i16, row: i16) -> CubeCoords {
@@ -142,13 +142,14 @@ fn rejections(events: &[GameEvent]) -> Vec<&GameEvent> {
 }
 
 #[test]
-fn test_the_scout_script_sends_every_scout_somewhere_new() {
+// it builds nothing here: there is no land of its own to build on
+fn test_the_default_ai_sends_every_scout_somewhere_new() {
     let Game {
         mut session,
         ai,
         player_scout,
         scouts,
-    } = game(SCOUT_SCRIPT, ScriptLimits::default());
+    } = game(DEFAULT_AI, ScriptLimits::default());
     let before = scouts.map(|scout| position(&session, scout));
     let player_before = position(&session, player_scout);
 

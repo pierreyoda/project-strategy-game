@@ -430,6 +430,8 @@ mod tests {
         },
     };
 
+    use crate::simulation::ids::DepositId;
+
     use super::{GameSession, fill_with_stub_ai};
 
     const SEED: GameSeed = 20_260_129;
@@ -2022,6 +2024,55 @@ mod tests {
             .expect("the deposit it drew on");
         assert_eq!(delta.deposits.quantities[at], 6);
         assert_eq!(delta.deposits.turns_left[at], 1, "6 left, 4 a turn");
+    }
+
+    #[test]
+    fn test_a_nation_view_knows_its_own_land_buildings_and_stockpile_and_deposits_it_saw() {
+        let (mut session, first, second, ..) = builders_session(70);
+        construct(&mut session, PLANT, 2, 1).unwrap();
+        // a deposit far off in the other nation's corner, which the first has never explored
+        let mut stock = ResourceDataStorage::new();
+        stock.replenish(Resource::Metals, 50);
+        let unseen = session.world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_metals"),
+            at(8, 6),
+            stock,
+            600,
+        ));
+
+        let view = NationView::new(session.world(), first);
+        let mut territory: Vec<CubeCoords> = view.territory().collect();
+        territory.sort_by_key(|&coords| session.world().tile_index(coords));
+        let mut ring: Vec<CubeCoords> = session
+            .world()
+            .tiles_within(at(1, 1), 1)
+            .into_iter()
+            .filter_map(|index| session.world().tile_coords(index))
+            .collect();
+        ring.sort_by_key(|&coords| session.world().tile_index(coords));
+        assert_eq!(territory, ring, "the ring its settlement claimed");
+
+        assert_eq!(view.own_buildings().count(), 1);
+        assert_eq!(
+            view.stockpile()
+                .map(|held| held.quantity_of(Resource::Credits)),
+            Some(30),
+            "70, less the plant's 40"
+        );
+        let known: Vec<DepositId> = view.known_deposits().map(|(id, _)| id).collect();
+        assert_eq!(known.len(), 3, "the three around its settlement");
+        assert!(!known.contains(&unseen), "never explored");
+        assert_eq!(
+            view.building_templates().count(),
+            3,
+            "the rules, every nation's"
+        );
+
+        // and the other nation sees none of it
+        let theirs = NationView::new(session.world(), second);
+        assert_eq!(theirs.territory().count(), 0);
+        assert_eq!(theirs.own_buildings().count(), 0);
+        assert!(theirs.known_deposits().all(|(id, _)| id == unseen));
     }
 
     #[test]

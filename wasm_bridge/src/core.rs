@@ -1036,12 +1036,12 @@ mod tests {
         panic!("the turn never finished");
     }
 
-    /// The scout AI, as the client sends it.
-    fn scout_ai() -> serde_json::Value {
+    /// The default AI, as the client sends it.
+    fn default_ai() -> serde_json::Value {
         serde_json::json!({
-            "name": "scout",
+            "name": "default_ai",
             "kind": "ai",
-            "source": include_str!("../../scripts/ai/scout.rhai"),
+            "source": include_str!("../../scripts/ai/default.rhai"),
         })
     }
 
@@ -1051,7 +1051,7 @@ mod tests {
         let mut session = GameSession::new_game(&settings(serde_json::json!({
             "seed": seed,
             "nations": 3,
-            "scripts": [default_scenario(), scout_ai()],
+            "scripts": [default_scenario(), default_ai()],
         })))
         .expect("the settings are valid");
         for _ in 0..turns {
@@ -1104,13 +1104,13 @@ mod tests {
         };
 
         let settings = settings(serde_json::json!({
-            "scripts": [default_scenario(), scout_ai()],
+            "scripts": [default_scenario(), default_ai()],
         }));
         let mut session = GameSession::new_game(&settings).expect("the settings are valid");
         let ai = NationId::from_index(1);
         assert_eq!(
             session.inner.controller(ai).map(|slot| slot.name()),
-            Some("scout")
+            Some("default_ai")
         );
 
         resolve_turn(&mut session);

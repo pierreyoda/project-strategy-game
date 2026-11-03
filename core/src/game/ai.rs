@@ -25,10 +25,12 @@ use crate::{
     game::{commands::GameCommand, rng::GameRng, state::World, turn::StepBudget},
     hex_map::{coordinates::CubeCoords, terrain::TerrainKind, vegetation::Vegetation},
     simulation::{
+        buildings::{Building, BuildingTemplate},
         fog::TileVisibility,
-        ids::{EntityIndex, NationId, SettlementId, UnitId},
+        ids::{BuildingId, DepositId, EntityIndex, NationId, SettlementId, SimulationID, UnitId},
         military::Unit,
         movement::{self, Reachable},
+        resources::{ResourceDataStorage, ResourceDeposit},
         settlements::Settlement,
     },
 };
@@ -115,6 +117,46 @@ impl<'a> NationView<'a> {
             .settlements()
             .iter()
             .filter(move |(_, settlement)| settlement.owner() == self.nation)
+    }
+
+    /// This nation's own buildings, its works under way included.
+    pub fn own_buildings(&self) -> impl Iterator<Item = (BuildingId, &Building)> {
+        self.world
+            .buildings()
+            .iter()
+            .filter(move |(_, building)| building.owner() == self.nation)
+    }
+
+    /// The tiles this nation owns: its own land, known to it whether it is watching or not.
+    pub fn territory(&self) -> impl Iterator<Item = CubeCoords> + '_ {
+        let world = self.world;
+        (0..world.tiles_count() as u32)
+            .filter_map(move |index| world.tile_coords(index))
+            .filter(move |&coords| {
+                world
+                    .tile(coords)
+                    .is_some_and(|tile| tile.artificial().owner() == Some(self.nation))
+            })
+    }
+
+    /// The deposits this nation knows of: those on the tiles it has explored, like the projection's.
+    pub fn known_deposits(&self) -> impl Iterator<Item = (DepositId, &ResourceDeposit)> {
+        self.world.deposits().iter().filter(move |(_, deposit)| {
+            self.visibility(deposit.position()) != TileVisibility::Unexplored
+        })
+    }
+
+    /// What this nation holds and earns. A rival's stockpile is not its to know.
+    pub fn stockpile(&self) -> Option<&ResourceDataStorage> {
+        self.world
+            .nations()
+            .get(self.nation)
+            .map(|nation| nation.resources())
+    }
+
+    /// The game's building templates: its rules, which every nation knows.
+    pub fn building_templates(&self) -> impl Iterator<Item = (&SimulationID, &BuildingTemplate)> {
+        self.world.building_templates()
     }
 
     /// Foreign units standing on a tile this nation is watching right now.

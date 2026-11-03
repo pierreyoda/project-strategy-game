@@ -13,13 +13,15 @@ use project_x_core::{
         vegetation::Vegetation,
     },
     simulation::{
+        buildings::BuildingLevel,
         fog::TileVisibility,
-        ids::{EntityIndex, NationId, SettlementId, SimulationID, UnitId},
+        ids::{BuildingId, DepositId, EntityIndex, NationId, SettlementId, SimulationID, UnitId},
         movement::Reachable,
+        resources::{Resource, ResourceQuantity},
     },
 };
 
-use super::{ScriptResult, coords, entity_id};
+use super::{ScriptResult, common::resource_name, coords, entity_id};
 
 /// What one nation knows, taken at the start of its `plan`.
 ///
@@ -51,6 +53,44 @@ struct Knowledge {
     /// Computed up front, since nothing is left to compute it from once the view is handed over;
     /// and only for the units that have somewhere to go.
     reachable: BTreeMap<UnitId, Reachable>,
+    /// The tiles the nation owns.
+    territory: Vec<CubeCoords>,
+    /// The deposits it knows of, by tile index: the richer, on a tile that holds two.
+    deposits: BTreeMap<usize, KnownDeposit>,
+    /// Its own buildings, its works under way included.
+    buildings: Vec<OwnBuilding>,
+    /// The game's building templates: its rules, every nation's to know.
+    templates: Vec<TemplateData>,
+    /// What it holds, and earns per turn, by resource.
+    stockpile: BTreeMap<Resource, (ResourceQuantity, ResourceQuantity)>,
+}
+
+#[derive(Debug)]
+struct KnownDeposit {
+    id: DepositId,
+    resource: Resource,
+    level: u8,
+    stock: ResourceQuantity,
+    recharge: ResourceQuantity,
+}
+
+#[derive(Debug)]
+struct OwnBuilding {
+    id: BuildingId,
+    tile: CubeCoords,
+    template: ImmutableString,
+    level: u8,
+    halted: bool,
+    /// Turns left, and in all.
+    works: Option<(u16, u16)>,
+}
+
+#[derive(Debug)]
+struct TemplateData {
+    id: ImmutableString,
+    kind: ImmutableString,
+    deposit: Option<Resource>,
+    levels: Vec<BuildingLevel>,
 }
 
 #[derive(Debug)]
@@ -119,6 +159,61 @@ impl ScriptView {
             })
             .collect();
 
+        let mut deposits = BTreeMap::new();
+        for (id, deposit) in view.known_deposits() {
+            let (Some(index), Some(resource)) =
+                (index_in(shape, deposit.position()), deposit.resource())
+            else {
+                continue;
+            };
+            let data = deposit.resources().get(&resource);
+            let known = KnownDeposit {
+                id,
+                resource,
+                level: deposit.level(),
+                stock: data.map_or(0, |data| data.quantity()),
+                recharge: data.and_then(|data| data.income()).unwrap_or(0),
+            };
+            let richer = deposits
+                .get(&index)
+                .is_none_or(|kept: &KnownDeposit| known.level > kept.level);
+            if richer {
+                deposits.insert(index, known);
+            }
+        }
+        let buildings = view
+            .own_buildings()
+            .map(|(id, building)| OwnBuilding {
+                id,
+                tile: building.position(),
+                template: template_name(building.template()),
+                level: building.level(),
+                halted: building.halted(),
+                works: building
+                    .works()
+                    .map(|works| (works.turns_left(), works.turns_total())),
+            })
+            .collect();
+        let templates = view
+            .building_templates()
+            .map(|(id, template)| TemplateData {
+                id: template_name(id),
+                kind: template.r#type().into(),
+                deposit: template.deposit(),
+                levels: template.levels().to_vec(),
+            })
+            .collect();
+        let stockpile = view
+            .stockpile()
+            .map(|held| {
+                held.iter()
+                    .map(|(&resource, data)| {
+                        (resource, (data.quantity(), data.income().unwrap_or(0)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Self(Rc::new(Knowledge {
             turn: INT::from(view.turn()),
             nation: view.nation(),
@@ -130,15 +225,24 @@ impl ScriptView {
             settlements,
             foreign_units,
             reachable,
+            territory: view.territory().collect(),
+            deposits,
+            buildings,
+            templates,
+            stockpile,
         }))
     }
 }
 
+/// Row-major index of a tile, like `World::tile_index`: wrapped east-west, `None` past a pole.
+fn index_in(shape: RectangularHexMapShape, coords: CubeCoords) -> Option<usize> {
+    let offset = OffsetCoords::from(shape.wrap(coords)?);
+    Some(offset.row() as usize * shape.columns() as usize + offset.col() as usize)
+}
+
 impl Knowledge {
-    /// Row-major index of a tile, like `World::tile_index`: wrapped east-west, `None` past a pole.
     fn index(&self, coords: CubeCoords) -> Option<usize> {
-        let offset = OffsetCoords::from(self.shape.wrap(coords)?);
-        Some(offset.row() as usize * self.shape.columns() as usize + offset.col() as usize)
+        index_in(self.shape, coords)
     }
 
     /// Coordinates of a tile from its row-major index, like `World::tile_coords`.
@@ -266,7 +370,126 @@ pub fn register(engine: &mut Engine) {
                     )
                 }))
             },
+        )
+        // the economy: what the nation owns, holds and may build
+        .register_get("territory", |view: &mut ScriptView| -> Array {
+            view.0.territory.iter().copied().map(tile).collect()
+        })
+        .register_fn(
+            "deposit",
+            // the deposit on a tile it has explored, `()` on any other
+            |view: &mut ScriptView, at: Map| -> ScriptResult<Dynamic> {
+                let at = coords::from_map(&at)?;
+                Ok(view
+                    .0
+                    .index(at)
+                    .and_then(|index| view.0.deposits.get(&index))
+                    .map_or(Dynamic::UNIT, KnownDeposit::to_dynamic))
+            },
+        )
+        .register_get("buildings", |view: &mut ScriptView| -> Array {
+            view.0
+                .buildings
+                .iter()
+                .map(OwnBuilding::to_dynamic)
+                .collect()
+        })
+        .register_get("templates", |view: &mut ScriptView| -> Array {
+            view.0
+                .templates
+                .iter()
+                .map(TemplateData::to_dynamic)
+                .collect()
+        })
+        .register_get("stockpile", |view: &mut ScriptView| -> Map {
+            view.0
+                .stockpile
+                .iter()
+                .map(|(&resource, &(quantity, _))| {
+                    (resource_name(resource).into(), INT::from(quantity).into())
+                })
+                .collect()
+        })
+        .register_get("income", |view: &mut ScriptView| -> Map {
+            view.0
+                .stockpile
+                .iter()
+                .filter(|(_, (_, income))| *income > 0)
+                .map(|(&resource, &(_, income))| {
+                    (resource_name(resource).into(), INT::from(income).into())
+                })
+                .collect()
+        });
+}
+
+impl KnownDeposit {
+    fn to_dynamic(&self) -> Dynamic {
+        let mut deposit = Map::new();
+        deposit.insert("id".into(), id(self.id).into());
+        deposit.insert("resource".into(), resource_name(self.resource).into());
+        deposit.insert("level".into(), INT::from(self.level).into());
+        deposit.insert("stock".into(), INT::from(self.stock).into());
+        deposit.insert("recharge".into(), INT::from(self.recharge).into());
+        Dynamic::from_map(deposit)
+    }
+}
+
+impl OwnBuilding {
+    fn to_dynamic(&self) -> Dynamic {
+        let mut building = Map::new();
+        building.insert("id".into(), id(self.id).into());
+        building.insert("tile".into(), tile(self.tile));
+        building.insert("template".into(), self.template.clone().into());
+        building.insert("level".into(), INT::from(self.level).into());
+        building.insert("halted".into(), self.halted.into());
+        let works = self
+            .works
+            .map_or(Dynamic::UNIT, |(turns_left, turns_total)| {
+                let mut works = Map::new();
+                works.insert("turns_left".into(), INT::from(turns_left).into());
+                works.insert("turns_total".into(), INT::from(turns_total).into());
+                Dynamic::from_map(works)
+            });
+        building.insert("works".into(), works);
+        Dynamic::from_map(building)
+    }
+}
+
+impl TemplateData {
+    fn to_dynamic(&self) -> Dynamic {
+        let mut template = Map::new();
+        template.insert("id".into(), self.id.clone().into());
+        template.insert("type".into(), self.kind.clone().into());
+        template.insert(
+            "deposit".into(),
+            self.deposit
+                .map_or(Dynamic::UNIT, |resource| resource_name(resource).into()),
         );
+        let levels: Array = self
+            .levels
+            .iter()
+            .map(|level| {
+                let mut figures = Map::new();
+                figures.insert("cost".into(), amounts(&level.cost));
+                figures.insert("turns".into(), INT::from(level.turns).into());
+                figures.insert("maintenance".into(), amounts(&level.maintenance));
+                figures.insert("production".into(), amounts(&level.production));
+                Dynamic::from_map(figures)
+            })
+            .collect();
+        template.insert("levels".into(), Dynamic::from_array(levels));
+        Dynamic::from_map(template)
+    }
+}
+
+/// Quantities by resource, as scripts read them: `#{credits: 200, metals: 100}`.
+fn amounts(figures: &BTreeMap<Resource, ResourceQuantity>) -> Dynamic {
+    Dynamic::from_map(
+        figures
+            .iter()
+            .map(|(&resource, &amount)| (resource_name(resource).into(), INT::from(amount).into()))
+            .collect(),
+    )
 }
 
 impl OwnUnit {
