@@ -24,6 +24,16 @@ export type MapDeposit = {
   level: DepositLevel;
   /** Something draws on it, so it runs out at some point: what the resource lens warns of. */
   depleting: boolean;
+  /**
+   * It ran dry this turn: still drawn on the map, dimmed and at its trace level, for the player to
+   * see it go, and gone the next turn. Never in the resource lens.
+   */
+  exhausted: boolean;
+  /**
+   * A building stands on it, which covers its art on the map and shows its yield itself. The resource
+   * lens still shows its chip.
+   */
+  covered: boolean;
 };
 
 export const isDepositResource = (resource: string): resource is DepositResource =>

@@ -17,6 +17,8 @@
   const DEPOSITS_FADE_IN = { from: 16, to: 32 };
   /** On the ground: over the tiles, under everything standing on them and under the fog. See `GameView`. */
   const DEPOSITS_Z_INDEX = 2;
+  /** Opacity of a deposit in the turn it ran dry, before it is gone from the map. */
+  const EXHAUSTED_ALPHA = 0.35;
 
   const drawDeposits = (
     root: Container,
@@ -30,6 +32,10 @@
     for (const x of [0, wrapBounds(layout, map).period]) {
       const copy = layer.addChild(new Container({ x }));
       for (const deposit of deposits) {
+        // a building on a deposit covers it, and shows what comes out of it itself
+        if (deposit.covered) {
+          continue;
+        }
         const texture = textures[depositFrame(deposit)];
         if (!texture) {
           continue;
@@ -41,6 +47,9 @@
         });
         // after the texture, which sizes the sprite to the texture's own dimensions
         sprite.setSize(layout.width, 2 * layout.size);
+        if (deposit.exhausted) {
+          sprite.alpha = EXHAUSTED_ALPHA;
+        }
         copy.addChild(sprite);
       }
     }
@@ -54,7 +63,10 @@
     pixi: PixiContext;
     map: HexMapData;
     layout: HexLayout;
-    /** The deposits the viewer knows of, one per tile. A new list redraws the layer. */
+    /**
+     * The deposits the viewer knows of, one per tile. A new list redraws the layer. Those a building
+     * covers are left out; one that ran dry this turn is dimmed.
+     */
     deposits: readonly MapDeposit[];
     /** Greys the deposits along with the ground they lie on, under a lens. */
     muted?: boolean;

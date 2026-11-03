@@ -58,9 +58,9 @@ export const lensForKey = (event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaK
   return LENS_KINDS.find((kind) => LENS_HOTKEYS[kind] === key) ?? null;
 };
 
-/** The deposits the resource lens shows under `filter`. */
+/** The deposits the resource lens shows under `filter`: never one run dry, which has nothing left to show. */
 export const filteredDeposits = (deposits: readonly MapDeposit[], filter: ResourceFilter): readonly MapDeposit[] =>
-  filter === "all" ? deposits : deposits.filter(({ resource }) => resource === filter);
+  deposits.filter(({ resource, exhausted }) => !exhausted && (filter === "all" || resource === filter));
 
 /**
  * The nations the political lens names in its legend: the viewer's own first, then every nation

@@ -50,16 +50,31 @@ describe("the lens hotkeys", () => {
 });
 
 describe("the deposits the resource lens shows", () => {
-  const deposits: MapDeposit[] = [
-    { tile: 1, resource: "water", level: 3, depleting: false },
-    { tile: 4, resource: "oil", level: 1, depleting: true },
-    { tile: 9, resource: "oil", level: 2, depleting: false },
+  const deposit = (tile: number, resource: MapDeposit["resource"], extra: Partial<MapDeposit> = {}): MapDeposit => ({
+    tile,
+    resource,
+    level: 2,
+    depleting: false,
+    exhausted: false,
+    covered: false,
+    ...extra,
+  });
+  const deposits = [
+    deposit(1, "water", { level: 3 }),
+    deposit(4, "oil", { level: 1, depleting: true }),
+    // a building's: the lens shows its chip all the same
+    deposit(9, "oil", { covered: true }),
+    deposit(12, "metals", { level: 1, exhausted: true }),
   ];
 
-  it("are all of them, or those of the resource it is narrowed to", () => {
-    expect(filteredDeposits(deposits, "all")).toBe(deposits);
+  it("are those of the resource it is narrowed to, or all of them", () => {
     expect(filteredDeposits(deposits, "oil").map(({ tile }) => tile)).toStrictEqual([4, 9]);
     expect(filteredDeposits(deposits, "uranium")).toStrictEqual([]);
+  });
+
+  it("leave out one that ran dry, which has nothing left to show", () => {
+    expect(filteredDeposits(deposits, "all").map(({ tile }) => tile)).toStrictEqual([1, 4, 9]);
+    expect(filteredDeposits(deposits, "metals")).toStrictEqual([]);
   });
 });
 

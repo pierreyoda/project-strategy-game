@@ -236,6 +236,11 @@ export const createActiveGame = (): ActiveGame => {
   let lens = $state.raw<Lens>(NO_LENS);
   /** Units set aside by the player this turn. Cleared when the turn ends, like their points refill. */
   const skipped = new SvelteSet<number>();
+  /**
+   * The viewer's deposits that ran dry in the turn last resolved, as its events told: the map shows
+   * them going for that one turn. Forgotten when the next turn is ended.
+   */
+  const justExhausted = new SvelteSet<number>();
   /** The latest reachability request: an older answer arriving late must not overwrite a newer one. */
   let reachRequest = 0;
 
@@ -298,7 +303,7 @@ export const createActiveGame = (): ActiveGame => {
     // settlements are sparse: rebuilding the list costs less than tracking which ones moved
     entities = mapEntitiesOf(applied.state);
     constructions = constructionsOf(applied.state);
-    deposits = mapDepositsOf(applied.state);
+    deposits = mapDepositsOf(applied.state, justExhausted);
   };
 
   /**
@@ -332,6 +337,11 @@ export const createActiveGame = (): ActiveGame => {
         break;
       case "events":
         record(notification.events.map((event) => ({ kind: "event", event })));
+        for (const event of notification.events) {
+          if (event.type === "depositExhausted" && event.nation === viewer) {
+            justExhausted.add(event.deposit);
+          }
+        }
         break;
       case "error":
         error = notification.message;
@@ -354,6 +364,7 @@ export const createActiveGame = (): ActiveGame => {
     reach = null;
     hoveredIndex = null;
     skipped.clear();
+    justExhausted.clear();
     focusTile = null;
     inspectedTile = null;
     focusOpen = false;
@@ -495,6 +506,8 @@ export const createActiveGame = (): ActiveGame => {
       }
       resolving = true;
       error = null;
+      // what ran dry last turn has had its turn on the map
+      justExhausted.clear();
       try {
         const outcome = await session.endTurn();
         // a new turn: everyone can act again, the skipped included
