@@ -3,13 +3,14 @@
 //! Three passes over the same row-major tiles as the client's buffers, none of them touching a
 //! `World`:
 //! 1. **natural**: clusters laid where the geology suits each kind, from the surface alone - the
-//!    same planet gets the same geology whatever the nations on it;
+//!    same planet gets the same geology whatever the nations on it, which are founded after it,
+//!    their capitals clear of every deposit (see `settle`);
 //! 2. **guarantees**: every nation finds water and metals within `GUARANTEE_REACH` of its turn-1
 //!    borders, whatever the geology dealt it;
 //! 3. **balance**: the poorest nations get topped up with water and metals.
 //!
-//! The last two only add deposits, and mark them, so the survey can count what the corrections
-//! cost the realism. The output is data for the caller to write into the world.
+//! The last two only add deposits, never on a capital, and mark them, so the survey can count what
+//! the corrections cost the realism. The output is data for the caller to write into the world.
 
 use project_x_core::game::{
     rng::{GameRng, RngPurpose},
@@ -23,7 +24,10 @@ pub use self::{
     settings::{DepositKind, DepositsGeneratorSettings, KindSettings, PerKind},
     survey::DepositsSurvey,
 };
-use crate::{map::PlanetSurface, nations::GeneratedNations};
+use crate::{
+    map::PlanetSurface,
+    nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings},
+};
 
 mod balance;
 mod geology;
@@ -130,38 +134,75 @@ impl DepositsGenerator {
         &self.settings
     }
 
-    /// The deposits of a planet; without nations, the natural ones only.
-    pub fn generate(
+    /// The natural deposits of a planet: from its surface alone, before any nation is founded.
+    pub fn generate_natural(&self, surface: &PlanetSurface) -> GeneratedDeposits {
+        self.lay_naturally(surface, &Geology::survey(surface))
+    }
+
+    /// The deposits of a settled planet: its natural ones, then the guarantees and top-ups the
+    /// nations need. Neither goes onto a capital.
+    pub fn settle(
         &self,
         surface: &PlanetSurface,
-        nations: Option<&GeneratedNations>,
+        natural: GeneratedDeposits,
+        nations: &GeneratedNations,
     ) -> GeneratedDeposits {
         let settings = &self.settings;
         let geology = Geology::survey(surface);
-        let mut rng = GameRng::new(settings.get_seed(), RngPurpose::DepositGeneration);
+        let GeneratedDeposits {
+            deposits,
+            mut report,
+        } = natural;
         let mut ledger = placement::Ledger::new(surface.tiles_count());
-        let relaxations =
-            placement::place_naturally(surface, &geology, settings, &mut rng, &mut ledger);
-        let mut natural = PerKind::default();
-        for deposit in &ledger.deposits {
-            *natural.of_mut(deposit.kind) += 1;
+        for deposit in deposits {
+            ledger.lay(deposit);
         }
-
-        let mut report = DepositsReport {
-            natural,
-            relaxations,
-            ..DepositsReport::default()
-        };
-        if let Some(nations) = nations {
-            report.guarantees =
-                guarantees::guarantee(surface, &geology, nations, settings, &mut ledger);
-            report.top_ups = balance::top_up(surface, &geology, nations, settings, &mut ledger);
-        }
+        ledger.reserve_capitals(surface, nations);
+        report.guarantees =
+            guarantees::guarantee(surface, &geology, nations, settings, &mut ledger);
+        report.top_ups = balance::top_up(surface, &geology, nations, settings, &mut ledger);
         GeneratedDeposits {
             deposits: ledger.deposits,
             report,
         }
     }
+
+    fn lay_naturally(&self, surface: &PlanetSurface, geology: &Geology) -> GeneratedDeposits {
+        let settings = &self.settings;
+        let mut rng = GameRng::new(settings.get_seed(), RngPurpose::DepositGeneration);
+        let mut ledger = placement::Ledger::new(surface.tiles_count());
+        let relaxations =
+            placement::place_naturally(surface, geology, settings, &mut rng, &mut ledger);
+        let mut natural = PerKind::default();
+        for deposit in &ledger.deposits {
+            *natural.of_mut(deposit.kind) += 1;
+        }
+        GeneratedDeposits {
+            deposits: ledger.deposits,
+            report: DepositsReport {
+                natural,
+                relaxations,
+                ..DepositsReport::default()
+            },
+        }
+    }
+}
+
+/// Settle a planet: its natural deposits, then its nations, clear of them, then the deposits the
+/// nations are guaranteed or topped up with. In that order, so that no capital sits on a deposit
+/// and the natural deposits still owe nothing to the nations.
+pub fn settle(
+    surface: &PlanetSurface,
+    nations_settings: &NationsGeneratorSettings,
+    deposits_settings: &DepositsGeneratorSettings,
+) -> (GeneratedNations, GeneratedDeposits) {
+    let generator = DepositsGenerator::from_settings(deposits_settings.clone());
+    let natural = generator.generate_natural(surface);
+    let taken: Vec<TileIndex> = natural.deposits().iter().map(|d| d.tile()).collect();
+    let nations = NationsGenerator::from_settings(nations_settings.clone())
+        .generate_clear_of(surface, &taken);
+    let deposits = generator.settle(surface, natural, &nations);
+    (nations, deposits)
 }
 
 #[cfg(test)]
@@ -172,7 +213,7 @@ pub(crate) mod tests {
     };
     use crate::{
         map::{MapGenerator, MapGeneratorSettings, PlanetSurface},
-        nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings},
+        nations::{GeneratedNations, NationsGeneratorSettings},
     };
 
     pub(crate) fn planet(seed: u32, columns: i16, rows: i16) -> PlanetSurface {
@@ -187,11 +228,11 @@ pub(crate) mod tests {
         seed: u64,
         nations: u16,
     ) -> (GeneratedNations, GeneratedDeposits) {
-        let nations = NationsGenerator::from_settings(NationsGeneratorSettings::new(seed, nations))
-            .generate(surface);
-        let deposits = DepositsGenerator::from_settings(DepositsGeneratorSettings::new(seed))
-            .generate(surface, Some(&nations));
-        (nations, deposits)
+        super::settle(
+            surface,
+            &NationsGeneratorSettings::new(seed, nations),
+            &DepositsGeneratorSettings::new(seed),
+        )
     }
 
     /// Whether every nation finds every guaranteed kind within its zone.
@@ -258,7 +299,7 @@ pub(crate) mod tests {
         let (_, few) = settle(&surface, 9, 2);
         let (_, many) = settle(&surface, 9, 12);
         let none = DepositsGenerator::from_settings(DepositsGeneratorSettings::new(9))
-            .generate(&surface, None);
+            .generate_natural(&surface);
         assert_eq!(natural(&few), natural(&many));
         assert_eq!(natural(&few), none.deposits());
         assert_eq!(none.report().guarantees.laid, 0);

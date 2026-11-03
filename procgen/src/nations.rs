@@ -126,11 +126,25 @@ impl NationsGenerator {
     }
 
     pub fn generate(&self, surface: &PlanetSurface) -> GeneratedNations {
+        self.generate_clear_of(surface, &[])
+    }
+
+    /// The nations, no capital on any of the `taken` tiles: those of the natural deposits, so
+    /// that no nation is founded on top of one.
+    pub fn generate_clear_of(
+        &self,
+        surface: &PlanetSurface,
+        taken: &[TileIndex],
+    ) -> GeneratedNations {
         let settings = &self.settings;
         let landmasses = Landmasses::find(surface);
         let habitability = Habitability::compute(surface, settings);
+        let mut barred = vec![false; surface.tiles_count()];
+        for &index in taken {
+            barred[index as usize] = true;
+        }
         let (capitals, siting) =
-            capitals::place_capitals(surface, &landmasses, &habitability, settings);
+            capitals::place_capitals(surface, &landmasses, &habitability, settings, &barred);
         let spheres = Spheres::carve(surface, &capitals, settings);
 
         let nations = capitals

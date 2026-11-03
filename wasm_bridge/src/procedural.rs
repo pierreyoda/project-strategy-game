@@ -6,9 +6,10 @@ use project_x_core::{
     hex_map::{HexMap, shape::RectangularHexMapShape},
 };
 use project_x_procgen::{
+    deposits::{self, DepositsGeneratorSettings},
     forests::Forests,
     map::{MAX_SEED, MapGenerator, MapGeneratorEvent, MapGeneratorSettings},
-    nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings, PlanetSurface},
+    nations::{GeneratedNations, NationsGeneratorSettings, PlanetSurface},
 };
 
 use crate::wire::NationsReportWire;
@@ -73,8 +74,12 @@ impl GeneratedPlanet {
         if nations == 0 {
             return None;
         }
-        let settings = NationsGeneratorSettings::new(u64::from(seed), nations);
-        let generated = NationsGenerator::from_settings(settings).generate(&self.surface);
+        // settled as a game is, so that the capitals keep clear of the same deposits
+        let (generated, _) = deposits::settle(
+            &self.surface,
+            &NationsGeneratorSettings::new(u64::from(seed), nations),
+            &DepositsGeneratorSettings::new(u64::from(seed)),
+        );
         Some(GeneratedNationsView::from_generated(
             &generated,
             &self.surface,

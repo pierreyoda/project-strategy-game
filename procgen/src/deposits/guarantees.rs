@@ -102,8 +102,9 @@ pub struct GuaranteeReport {
 }
 
 /// Lay, for every nation in turn, the guaranteed deposits its zone lacks: on the zone's best free
-/// tile for the kind, the nearest to the capital on ties. With every tile of the zone taken, the
-/// deposit goes onto the capital itself - the guarantee holds even on a one-tile island.
+/// tile for the kind, the nearest to the capital on ties. The capitals are reserved, never free.
+/// With every other tile of the zone taken, the deposit shares the best of them; only on a
+/// one-tile island does it go onto the capital itself - the guarantee holds even there.
 pub fn guarantee(
     surface: &PlanetSurface,
     geology: &Geology,
@@ -112,6 +113,15 @@ pub fn guarantee(
     ledger: &mut Ledger,
 ) -> GuaranteeReport {
     let owners = territory_owners(surface, nations);
+    let capitals: Vec<TileIndex> = nations
+        .nations()
+        .iter()
+        .map(|nation| {
+            surface
+                .index(nation.capital())
+                .expect("a capital is on the map")
+        })
+        .collect();
     let mut report = GuaranteeReport::default();
     for nation in nations.nations() {
         let zone = Zone::of(surface, nations, &owners, nation);
@@ -127,11 +137,17 @@ pub fn guarantee(
                 .filter(|deposit| deposit.kind == kind && zone.contains(deposit.tile))
                 .count();
             for _ in found..count {
-                let best = |tiles: &[TileIndex]| {
+                let best = |tiles: &[TileIndex], free_only: bool| {
                     tiles
                         .iter()
                         .copied()
-                        .filter(|&index| ledger.is_free(index))
+                        .filter(|&index| {
+                            if free_only {
+                                ledger.is_free(index)
+                            } else {
+                                !capitals.contains(&index)
+                            }
+                        })
                         .max_by(|&a, &b| {
                             geology
                                 .suitability(kind, a)
@@ -140,8 +156,10 @@ pub fn guarantee(
                                 .then(b.cmp(&a))
                         })
                 };
-                let tile = best(&zone.preferred)
-                    .or_else(|| best(&zone.fallback))
+                let tile = best(&zone.preferred, true)
+                    .or_else(|| best(&zone.fallback, true))
+                    .or_else(|| best(&zone.preferred, false))
+                    .or_else(|| best(&zone.fallback, false))
                     .unwrap_or(capital);
                 ledger.lay(GeneratedDeposit {
                     kind,
@@ -228,6 +246,7 @@ mod tests {
         .generate(&surface);
         let geology = Geology::survey(&surface);
         let mut ledger = Ledger::new(surface.tiles_count());
+        ledger.reserve_capitals(&surface, &nations);
         let report = guarantee(
             &surface,
             &geology,
@@ -264,6 +283,7 @@ mod tests {
         let nations = NationsGenerator::from_settings(settings).generate(&surface);
         let geology = Geology::survey(&surface);
         let mut ledger = Ledger::new(surface.tiles_count());
+        ledger.reserve_capitals(&surface, &nations);
         guarantee(
             &surface,
             &geology,

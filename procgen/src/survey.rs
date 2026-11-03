@@ -9,12 +9,12 @@
 use std::fmt;
 
 use crate::{
-    deposits::{DepositsGenerator, DepositsGeneratorSettings, DepositsSurvey, GeneratedDeposits},
+    deposits::{self, DepositsGeneratorSettings, DepositsSurvey, GeneratedDeposits},
     map::{
         Criterion, MapGenerator, MapGeneratorSeedScalar, MapGeneratorSettings, PlanetSurface,
         PlanetSurvey, Target, Unit, score,
     },
-    nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings},
+    nations::{GeneratedNations, NationsGeneratorSettings},
 };
 
 /// Everything it takes to generate a world, one seed for all three generators.
@@ -52,10 +52,7 @@ impl WorldSettings {
 
     /// The nations and deposits of a surface generated with these settings.
     pub fn settle(&self, surface: &PlanetSurface) -> (GeneratedNations, GeneratedDeposits) {
-        let nations = NationsGenerator::from_settings(self.nations.clone()).generate(surface);
-        let deposits = DepositsGenerator::from_settings(self.deposits.clone())
-            .generate(surface, Some(&nations));
-        (nations, deposits)
+        deposits::settle(surface, &self.nations, &self.deposits)
     }
 }
 
@@ -306,7 +303,7 @@ pub(crate) mod tests {
             .filter(|criterion| criterion.mandatory)
             .map(|criterion| criterion.id)
             .collect();
-        assert_eq!(mandatory, ["D1", "N1", "E7", "F1"]);
+        assert_eq!(mandatory, ["D1", "N1", "E7", "F1", "F8"]);
     }
 
     #[test]

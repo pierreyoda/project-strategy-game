@@ -9,7 +9,7 @@ use super::{
     geology::Geology,
     settings::{DepositKind, DepositsGeneratorSettings, KindSettings, PerKind},
 };
-use crate::map::PlanetSurface;
+use crate::{map::PlanetSurface, nations::GeneratedNations};
 
 /// A cluster grows onto ground at least this suitable, as a share of its seed's.
 const CLUSTER_GROUND_SHARE: f64 = 0.5;
@@ -17,7 +17,7 @@ const CLUSTER_GROUND_SHARE: f64 = 0.5;
 /// The deposits as they are being laid, one per tile at most.
 pub struct Ledger {
     pub deposits: Vec<GeneratedDeposit>,
-    /// Records which tiles already have a deposit.
+    /// Records which tiles already have a deposit, or are reserved.
     occupied: Vec<bool>,
 }
 
@@ -31,6 +31,16 @@ impl Ledger {
 
     pub fn is_free(&self, index: TileIndex) -> bool {
         !self.occupied[index as usize]
+    }
+
+    /// Keep the capitals free of any deposit to come.
+    pub fn reserve_capitals(&mut self, surface: &PlanetSurface, nations: &GeneratedNations) {
+        for nation in nations.nations() {
+            let capital = surface
+                .index(nation.capital())
+                .expect("a capital is on the map");
+            self.occupied[capital as usize] = true;
+        }
     }
 
     /// Lay a deposit. Only a guarantee with nowhere else to go lays one on a taken tile.

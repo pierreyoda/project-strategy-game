@@ -41,11 +41,15 @@ pub struct SitingReport {
 /// the better - with a little randomness among the best few. When no site is clear, the spacing
 /// relaxes down to its floor; when a landmass is full, the nation looks anywhere else; when the
 /// planet is full, it goes unplaced and the report says so.
+///
+/// No capital sits on a tile `barred` marks - the deposits' tiles - and a `barred` shorter than
+/// the planet bars none past its end.
 pub fn place_capitals(
     surface: &PlanetSurface,
     landmasses: &Landmasses,
     habitability: &Habitability,
     settings: &NationsGeneratorSettings,
+    barred: &[bool],
 ) -> (Vec<Capital>, SitingReport) {
     let nations = settings.get_nations();
     let weights = habitability.landmass_weights(landmasses);
@@ -57,6 +61,7 @@ pub fn place_capitals(
         landmasses,
         habitability,
         settings,
+        barred,
         rng: GameRng::new(settings.get_seed(), RngPurpose::WorldGeneration),
         nearest: vec![u32::MAX; surface.tiles_count()],
         capitals: Vec::with_capacity(nations as usize),
@@ -138,6 +143,8 @@ struct Siting<'a> {
     landmasses: &'a Landmasses,
     habitability: &'a Habitability,
     settings: &'a NationsGeneratorSettings,
+    /// Tiles no capital may take.
+    barred: &'a [bool],
     rng: GameRng,
     /// Distance to the nearest capital already placed, `u32::MAX` beyond the crowding distance.
     nearest: Vec<u32>,
@@ -196,6 +203,7 @@ impl Siting<'_> {
             .filter(|&index| {
                 self.nearest[index as usize] >= self.spacing
                     && self.habitability.score(index) > 0.0
+                    && !self.barred.get(index as usize).copied().unwrap_or(false)
                     && landmass.is_none_or(|id| self.landmass_of(index) == id)
             })
             .collect();
@@ -283,7 +291,8 @@ mod tests {
             .with_capital_spacing(Some(4))
             .with_site_jitter(1);
         let habitability = Habitability::compute(&surface, &settings);
-        let (capitals, report) = place_capitals(&surface, &landmasses, &habitability, &settings);
+        let (capitals, report) =
+            place_capitals(&surface, &landmasses, &habitability, &settings, &[]);
 
         assert_eq!(capitals.len(), 4);
         assert_eq!(report.relaxations, 0);
@@ -308,6 +317,21 @@ mod tests {
     }
 
     #[test]
+    fn test_capitals_keep_off_barred_tiles() {
+        let surface = surface_from_art(PLAIN);
+        let landmasses = Landmasses::find(&surface);
+        let settings = NationsGeneratorSettings::new(0, 1).with_site_jitter(1);
+        let habitability = Habitability::compute(&surface, &settings);
+        let (free, _) = place_capitals(&surface, &landmasses, &habitability, &settings, &[]);
+        let mut barred = vec![false; surface.tiles_count()];
+        barred[free[0].tile as usize] = true;
+        let (capitals, _) =
+            place_capitals(&surface, &landmasses, &habitability, &settings, &barred);
+        assert_eq!(capitals.len(), 1);
+        assert_ne!(capitals[0].tile, free[0].tile, "the best site is barred");
+    }
+
+    #[test]
     fn test_capitals_spread_out_rather_than_crowd_the_best_region() {
         // a plain of one uniform quality: the second capital goes as far as it can get
         let surface = surface_from_art(&["....................."; 7].join("|"));
@@ -316,7 +340,7 @@ mod tests {
             .with_capital_spacing(Some(3))
             .with_site_jitter(1);
         let habitability = Habitability::compute(&surface, &settings);
-        let (capitals, _) = place_capitals(&surface, &landmasses, &habitability, &settings);
+        let (capitals, _) = place_capitals(&surface, &landmasses, &habitability, &settings, &[]);
         let apart = distance(&surface, capitals[0].tile, capitals[1].tile);
         assert!(apart >= 6, "{apart} hexes apart: {capitals:?}");
     }
@@ -327,7 +351,8 @@ mod tests {
         let landmasses = Landmasses::find(&surface);
         let settings = NationsGeneratorSettings::new(0, 6).with_capital_spacing(Some(10));
         let habitability = Habitability::compute(&surface, &settings);
-        let (capitals, report) = place_capitals(&surface, &landmasses, &habitability, &settings);
+        let (capitals, report) =
+            place_capitals(&surface, &landmasses, &habitability, &settings, &[]);
         assert!(report.relaxations > 0);
         assert!(report.spacing_final < report.spacing_requested);
         assert!(report.spacing_final >= settings.get_spacing_floor());
@@ -341,7 +366,8 @@ mod tests {
         let landmasses = Landmasses::find(&surface);
         let settings = NationsGeneratorSettings::new(0, 3);
         let habitability = Habitability::compute(&surface, &settings);
-        let (capitals, report) = place_capitals(&surface, &landmasses, &habitability, &settings);
+        let (capitals, report) =
+            place_capitals(&surface, &landmasses, &habitability, &settings, &[]);
         assert_eq!(capitals.len(), 1);
         assert_eq!(report.unplaced, 2);
     }
@@ -355,7 +381,7 @@ mod tests {
             .with_capital_spacing(Some(2))
             .with_min_landmass_weight(0.0);
         let habitability = Habitability::compute(&surface, &settings);
-        let (capitals, _) = place_capitals(&surface, &landmasses, &habitability, &settings);
+        let (capitals, _) = place_capitals(&surface, &landmasses, &habitability, &settings, &[]);
         let on_first = capitals
             .iter()
             .filter(|capital| capital.landmass == landmasses.of(0).unwrap())
@@ -370,7 +396,7 @@ mod tests {
         let place = |seed| {
             let settings = NationsGeneratorSettings::new(seed, 3).with_capital_spacing(Some(3));
             let habitability = Habitability::compute(&surface, &settings);
-            place_capitals(&surface, &landmasses, &habitability, &settings).0
+            place_capitals(&surface, &landmasses, &habitability, &settings, &[]).0
         };
         assert_eq!(place(7), place(7));
         assert!(

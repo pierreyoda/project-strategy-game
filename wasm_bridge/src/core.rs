@@ -33,10 +33,10 @@ use project_x_core::{
     },
 };
 use project_x_procgen::{
-    deposits::{DepositKind, DepositsGenerator, DepositsGeneratorSettings, GeneratedDeposits},
+    deposits::{self, DepositKind, DepositsGeneratorSettings, GeneratedDeposits},
     forests::Forests,
     map::{MAX_SEED, MapGenerator, MapGeneratorSettings},
-    nations::{GeneratedNations, NationsGenerator, NationsGeneratorSettings, PlanetSurface},
+    nations::{GeneratedNations, NationsGeneratorSettings, PlanetSurface},
 };
 use project_x_scripting::{NationSetup, ScriptEngine, ScriptSource};
 
@@ -136,15 +136,12 @@ impl GameSession {
         let surface = PlanetSurface::classify(&map, &generator_settings);
         let terrain: Vec<u8> = surface.terrain().iter().map(|&kind| kind as u8).collect();
         let vegetation = Forests::grow(&surface).vegetation();
-        let nations = NationsGenerator::from_settings(NationsGeneratorSettings::new(
-            u64::from(settings.seed),
-            settings.nations,
-        ))
-        .generate(&surface);
-
         let deposit_settings = DepositsGeneratorSettings::new(u64::from(settings.seed));
-        let deposits = DepositsGenerator::from_settings(deposit_settings.clone())
-            .generate(&surface, Some(&nations));
+        let (nations, deposits) = deposits::settle(
+            &surface,
+            &NationsGeneratorSettings::new(u64::from(settings.seed), settings.nations),
+            &deposit_settings,
+        );
 
         let mut world = World::new(shape, map);
         // the simulation reads the ground for its rules; the client gets the same kinds from `terrain`

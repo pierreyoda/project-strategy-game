@@ -4,7 +4,8 @@
 //! - **E, realism**: whether each kind lies on the ground it belongs to, clustered as real ore
 //!   bodies and oil fields are, at a sensible density, with few corrections laid on purpose.
 //! - **F, balance**: whether every nation finds what it is guaranteed, starts not much poorer than
-//!   the others, and has to reach out for the scarce kinds that nobody monopolizes.
+//!   the others, and has to reach out for the scarce kinds that nobody monopolizes - and whether
+//!   every capital is founded clear of the deposits.
 
 use std::{collections::VecDeque, fmt};
 
@@ -52,6 +53,8 @@ pub struct DepositsSurvey {
     pub scarce_outside_territories: f64,
     pub biggest_oil_holding: f64,
     pub biggest_uranium_holding: f64,
+    /// Capitals with no deposit on their tile, over all capitals.
+    pub capitals_clear: f64,
 }
 
 impl DepositsSurvey {
@@ -235,6 +238,18 @@ impl DepositsSurvey {
         let scarce: Vec<TileIndex> = oil.iter().chain(&uranium).copied().collect();
         let scarce_outside_territories =
             share_of(&scarce, &|index| owners[index as usize].is_none());
+        let capitals_clear = per_nation(
+            nations
+                .nations()
+                .iter()
+                .filter(|nation| {
+                    let capital = surface
+                        .index(nation.capital())
+                        .expect("a capital is on the map");
+                    deposits.on(capital).next().is_none()
+                })
+                .count(),
+        );
 
         Self {
             metals_in_ranges,
@@ -258,6 +273,7 @@ impl DepositsSurvey {
             scarce_outside_territories,
             biggest_oil_holding,
             biggest_uranium_holding,
+            capitals_clear,
         }
     }
 
@@ -416,6 +432,14 @@ impl DepositsSurvey {
                 Share,
                 AtMost(0.4),
             ),
+            criterion(
+                "F8",
+                "capitals clear of deposits",
+                self.capitals_clear,
+                Share,
+                AtLeast(1.0),
+            )
+            .mandatory(),
         ]
     }
 
@@ -572,6 +596,7 @@ mod tests {
         );
         println!("{survey}");
         assert_eq!(survey.guarantees_met, 1.0);
+        assert_eq!(survey.capitals_clear, 1.0);
         assert_eq!(survey.on_ice, 0.0);
         assert!(survey.criteria().iter().all(|c| c.target != Target::Info));
         let (met, judged) = survey.score();
