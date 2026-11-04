@@ -1912,6 +1912,98 @@ mod tests {
         );
     }
 
+    /// What `viewer` is shown of its stockpiles: quantity, and the change next turn, per resource.
+    fn shown_stocks(
+        session: &GameSession,
+        viewer: NationId,
+    ) -> std::collections::BTreeMap<Resource, (u16, i32)> {
+        session
+            .snapshot(viewer)
+            .meta
+            .nations
+            .into_iter()
+            .find(|nation| nation.id == viewer.raw())
+            .expect("the viewer is a nation")
+            .resources
+            .into_iter()
+            .map(|meta| {
+                let change = i32::from(meta.income) - i32::from(meta.depletion);
+                (meta.resource, (meta.quantity, change))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_the_change_a_stockpile_is_shown_is_the_change_the_turn_makes() {
+        let (mut session, first, ..) = builders_session(2);
+        session.world.register_building_template(pump_template());
+        session
+            .world
+            .register_building_template(workshop_template());
+        give(&mut session, first, Resource::Water, 0);
+        let mut changes = TurnChanges::new();
+        WorldMut::new(&mut session.world, &mut changes)
+            .nation_mut(first)
+            .unwrap()
+            .resources_mut()
+            .set_income(Resource::Water, 2);
+        let mut spring = ResourceDataStorage::new();
+        spring.replenish(Resource::Water, 0);
+        spring.set_income(Resource::Water, 3);
+        session.world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit_water"),
+            at(1, 0),
+            spring,
+            10,
+        ));
+        // a pump after 5 water from a spring of 3, a drill after 4 metals from a stock of 300, and
+        // a workshop making 3 food for a credit a turn, out of 2 credits
+        construct(&mut session, PUMP, 1, 0).unwrap();
+        construct(&mut session, DRILL, 2, 2).unwrap();
+        construct(&mut session, WORKSHOP, 2, 1).unwrap();
+
+        let shown = shown_stocks(&session, first);
+        assert_eq!(
+            shown[&Resource::Water],
+            (0, 2),
+            "only its income: all still being built"
+        );
+        assert_eq!(shown[&Resource::Credits], (2, 0));
+        resolve_turn(&mut session);
+        resolve_turn(&mut session);
+
+        let shown = shown_stocks(&session, first);
+        assert_eq!(
+            shown[&Resource::Water].1,
+            2 + 3,
+            "the pump, up to its spring"
+        );
+        assert_eq!(shown[&Resource::Metals].1, 4, "the drill");
+        assert_eq!(shown[&Resource::Food].1, 3, "the workshop");
+        assert_eq!(shown[&Resource::Credits].1, -1, "its upkeep");
+
+        // turn over turn - the workshop working twice, then halted - what is shown is what comes
+        let mut halted = false;
+        for _ in 0..5 {
+            let before = shown_stocks(&session, first);
+            resolve_turn(&mut session);
+            let after = shown_stocks(&session, first);
+            for (resource, &(quantity, change)) in &before {
+                let came = i32::from(after[resource].0) - i32::from(quantity);
+                assert_eq!(came, change, "{resource:?}");
+            }
+            halted |= building(&session, building_at(&session, 2, 1)).halted();
+        }
+        assert!(halted, "out of credits, the workshop stopped");
+        let shown = shown_stocks(&session, first);
+        assert_eq!(
+            shown[&Resource::Food],
+            (6, 0),
+            "a halted building makes nothing"
+        );
+        assert_eq!(shown[&Resource::Credits], (0, 0));
+    }
+
     /// What `viewer` is shown of a building: its state bits, turns left and total, and level.
     fn shown(session: &GameSession, viewer: NationId, id: BuildingId) -> (u8, u16, u16, u8) {
         let snapshot = session.snapshot(viewer);

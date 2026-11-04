@@ -6,7 +6,7 @@ import { isExplored } from "../../map/terrain";
 import { SvelteSet } from "svelte/reactivity";
 
 import { MAX_SEED } from "../../map/procgen/planetGenerator";
-import { RESOURCES, type Resource, type ResourceStock } from "../resources";
+import type { Resource, ResourceStock } from "../resources";
 import { DEFAULT_SCRIPTS } from "../scripts";
 import { type GameSessionHandle, createGameSession } from "../session/gameSession";
 import type {
@@ -31,6 +31,7 @@ import {
 import { mapDepositsOf } from "./mapDeposits";
 import { constructionsOf, mapEntitiesOf } from "./mapEntities";
 import { type SlotFigures, type SlotView, type TileDetails, slotFiguresOf, slotOf, tileDetailsOf } from "./tileDetails";
+import { stocksOf } from "./stocks";
 import { type UnitView, type WorldState, applyProjection, toHexMapData } from "./worldState";
 
 /** How many entries of the turn log are kept. */
@@ -406,18 +407,7 @@ export const createActiveGame = (): ActiveGame => {
       return meta?.turn ?? 0;
     },
     get stocks() {
-      const stocks = Object.fromEntries(
-        RESOURCES.map((resource) => [resource, { quantity: 0, income: 0, depletion: 0 }]),
-      ) as Record<Resource, ResourceStock>;
-      const nation = meta?.nations.find(({ id }) => id === viewer);
-      for (const stock of nation?.resources ?? []) {
-        stocks[stock.resource] = {
-          quantity: stock.quantity,
-          income: stock.income ?? 0,
-          depletion: stock.depletion ?? 0,
-        };
-      }
-      return stocks;
+      return stocksOf(meta, viewer);
     },
     get selected() {
       // a delta patches the world in place, so the projection's fresh `meta` is what says the unit

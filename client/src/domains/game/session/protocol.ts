@@ -149,12 +149,17 @@ export type SettlementStage = (typeof SettlementStage)[keyof typeof SettlementSt
 /** The "no nation" value of the owner buffers, like `projection::NO_NATION` in the `core` crate. */
 export const NO_NATION = 0xffff;
 
-/** A nation's stockpile of one resource, like `ResourceWire` in the `wasm_bridge` crate. */
+/**
+ * A nation's stockpile of one resource, like `ResourceWire` in the `wasm_bridge` crate: what it holds, and what the next
+ * turn does to it - its buildings' production and maintenance included, forecast by core.
+ */
 export type ResourceMeta = {
   resource: Resource;
   quantity: number;
-  income: number | null;
-  depletion: number | null;
+  /** Gained next turn. */
+  income: number;
+  /** Lost next turn. */
+  depletion: number;
 };
 
 /** A nation, like `NationWire` in the `wasm_bridge` crate. */

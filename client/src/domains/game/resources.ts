@@ -12,12 +12,12 @@ export const RESOURCE_NAMES: Record<Resource, string> = {
   uranium: "Uranium",
 };
 
-/** Stock of a resource, mirroring `ResourceData` in the `core` crate: a missing income or depletion is 0. */
+/** Stock of a resource, mirroring `ResourceMeta` in the `core` crate's projection. */
 export type ResourceStock = {
   quantity: number;
-  /** Gained each turn. */
+  /** Gained next turn: income, and what buildings make. */
   income: number;
-  /** Consumed each turn. */
+  /** Consumed next turn: depletion, and buildings' maintenance. */
   depletion: number;
 };
 

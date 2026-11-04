@@ -16,10 +16,11 @@ use crate::{
     },
     simulation::{
         buildings::{Building, BuildingLevel},
+        economy,
         fog::TileVisibility,
         ids::{BuildingId, DepositId, NationId, SettlementId, SimulationID, UnitId},
         military::Unit,
-        resources::{Resource, ResourceData, ResourceDeposit},
+        resources::{Resource, ResourceData, ResourceDataStore, ResourceDeposit},
         settlements::{Settlement, SettlementStage},
     },
 };
@@ -81,12 +82,15 @@ pub mod tile_flags {
 /// Past this share of the map being dirty, a delta costs more than a snapshot.
 const FULL_SNAPSHOT_DIRTY_RATIO: f32 = 0.2;
 
+/// A stockpile, and what the next turn does to it: `income - depletion` is the change it will see.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResourceMeta {
     pub resource: Resource,
     pub quantity: u16,
-    pub income: Option<u16>,
-    pub depletion: Option<u16>,
+    /// Gained next turn: the nation's income, and what its buildings make (see `economy::forecast`).
+    pub income: u16,
+    /// Lost next turn: the nation's depletion, and its buildings' maintenance.
+    pub depletion: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -690,10 +694,14 @@ fn meta(world: &World, viewer: NationId, version: StateVersion) -> SnapshotMeta 
                 name: nation.name().to_string(),
                 // only the viewer's own stockpiles: what a rival holds is not public knowledge
                 resources: if id == viewer {
-                    nation
-                        .resources()
-                        .iter()
-                        .map(|(&resource, data)| resource_meta(resource, data))
+                    economy::forecast(world, id)
+                        .into_iter()
+                        .map(|(resource, forecast)| ResourceMeta {
+                            resource,
+                            quantity: nation.resources().quantity_of(resource),
+                            income: forecast.gained,
+                            depletion: forecast.spent,
+                        })
                         .collect()
                 } else {
                     Vec::new()
@@ -719,14 +727,5 @@ fn meta(world: &World, viewer: NationId, version: StateVersion) -> SnapshotMeta 
                 sight: template.sight(),
             })
             .collect(),
-    }
-}
-
-fn resource_meta(resource: Resource, data: &ResourceData) -> ResourceMeta {
-    ResourceMeta {
-        resource,
-        quantity: data.quantity(),
-        income: data.income(),
-        depletion: data.depletion(),
     }
 }

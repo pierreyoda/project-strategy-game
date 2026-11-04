@@ -423,8 +423,10 @@ pub struct NationWire {
 pub struct ResourceWire {
     pub resource: &'static str,
     pub quantity: u16,
-    pub income: Option<u16>,
-    pub depletion: Option<u16>,
+    /// Gained next turn, buildings' production included.
+    pub income: u16,
+    /// Lost next turn, buildings' maintenance included.
+    pub depletion: u16,
 }
 
 impl From<&SnapshotMeta> for MetaWire {

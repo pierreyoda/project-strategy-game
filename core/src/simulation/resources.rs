@@ -20,7 +20,7 @@ pub enum Resource {
     // TODO: CustomResource for scripts
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ResourceData {
     quantity: ResourceQuantity,
     /// Per-turn income.
@@ -53,7 +53,15 @@ pub trait ResourceDataStore {
     /// Quantity currently held, zero if the resource was never stored.
     fn quantity_of(&self, resource: Resource) -> ResourceQuantity;
     /// Called every turn. If a resource lacks the quantity compared to its per-turn depletion, return its key.
-    fn update(&mut self) -> Option<Resource>;
+    fn update(&mut self) -> Option<Resource> {
+        self.update_with(&mut |_, _, _| {})
+    }
+    /// `update`, telling `applied` what each resource it settled gained and lost - which is what a
+    /// forecast of the turn is read from, so that it cannot drift from the turn itself.
+    fn update_with(
+        &mut self,
+        applied: &mut dyn FnMut(Resource, ResourceQuantity, ResourceQuantity),
+    ) -> Option<Resource>;
 }
 
 impl ResourceDataStore for ResourceDataStorage {
@@ -109,17 +117,21 @@ impl ResourceDataStore for ResourceDataStorage {
         self.get(&resource).map_or(0, ResourceData::quantity)
     }
 
-    fn update(&mut self) -> Option<Resource> {
+    fn update_with(
+        &mut self,
+        applied: &mut dyn FnMut(Resource, ResourceQuantity, ResourceQuantity),
+    ) -> Option<Resource> {
         for (resource, resource_datum) in self.iter_mut() {
-            resource_datum.quantity = resource_datum
-                .quantity
-                .saturating_add(resource_datum.income.unwrap_or(0));
+            let income = resource_datum.income.unwrap_or(0);
+            resource_datum.quantity = resource_datum.quantity.saturating_add(income);
             if let Some(depletion) = resource_datum.depletion {
                 if depletion > resource_datum.quantity {
+                    applied(*resource, income, 0);
                     return Some(*resource);
                 }
                 resource_datum.quantity -= depletion;
             }
+            applied(*resource, income, resource_datum.depletion.unwrap_or(0));
         }
         None
     }
