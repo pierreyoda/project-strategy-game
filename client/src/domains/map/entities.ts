@@ -114,6 +114,7 @@ export const SETTLEMENT_TOKENS: Record<SettlementStage, EntityToken> = {
  */
 export const BUILDING_TYPE_NAMES: Record<string, string> = {
   mine: "Mine",
+  water_pump: "Water pump",
   solar_plant: "Solar power plant",
 };
 

@@ -65,8 +65,8 @@ fn test_the_default_scenario_defines_the_divisions_and_the_buildings() {
         ]
     );
     let buildings: Vec<BuildingTemplate> = scenario.building_templates().collect();
-    let [mine, solar_plant] = buildings.as_slice() else {
-        panic!("a mine and a solar plant, got {buildings:?}");
+    let [mine, water_pump, solar_plant] = buildings.as_slice() else {
+        panic!("a mine, a water pump and a solar plant, got {buildings:?}");
     };
 
     assert_eq!(mine.r#type(), "mine");
@@ -86,9 +86,19 @@ fn test_the_default_scenario_defines_the_divisions_and_the_buildings() {
             .is_some_and(|&n| n > 0)
     }));
 
+    assert_eq!(water_pump.r#type(), "water_pump");
+    assert_eq!(water_pump.deposit(), Some(Resource::Water), "it extracts");
+    assert_eq!(water_pump.max_level(), 3);
+    assert!(water_pump.levels().iter().all(|level| {
+        level
+            .production
+            .get(&Resource::Water)
+            .is_some_and(|&n| n > 0)
+    }));
+
     assert_eq!(solar_plant.deposit(), None, "it extracts nothing");
     assert_eq!(solar_plant.max_level(), 3);
-    for template in [mine, solar_plant] {
+    for template in [mine, water_pump, solar_plant] {
         let sprites: Vec<&str> = template
             .levels()
             .iter()

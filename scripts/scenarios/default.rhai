@@ -26,6 +26,20 @@ scenario.define_building_template(#{
            maintenance: #{ credits: 5 }, production: #{ metals: 12 } }
     ]
 });
+// It pumps water: a water deposit springs back, yielding up to its recharge - 4 to 12 a turn -
+// whatever the level asks, and never running dry.
+scenario.define_building_template(#{
+    id: "water_pump",
+    deposit: "water",
+    levels: [
+        #{ cost: #{ credits: 150, metals: 60 }, turns: 2,
+           maintenance: #{ credits: 1 }, production: #{ water: 4 } },
+        #{ cost: #{ credits: 225, metals: 90 }, turns: 3,
+           maintenance: #{ credits: 2 }, production: #{ water: 7 } },
+        #{ cost: #{ credits: 350, metals: 150 }, turns: 4,
+           maintenance: #{ credits: 3 }, production: #{ water: 10 } }
+    ]
+});
 scenario.define_building_template(#{
     id: "solar_plant",
     levels: [
