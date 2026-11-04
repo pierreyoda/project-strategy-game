@@ -331,3 +331,55 @@ fn test_it_sees_its_economy_as_its_nation_knows_it() {
         ]
     );
 }
+
+#[test]
+fn test_its_income_is_what_the_turn_does_to_its_stockpile_buildings_and_all() {
+    // the default AI builds its mine on turn 1 out of 110 credits; it works from turn 3
+    let Game {
+        mut session, ai, ..
+    } = game(110, true);
+    end_turn(&mut session);
+    end_turn(&mut session);
+    let engine = ScriptEngine::load(&[ScriptSource {
+        name: "probe".to_string(),
+        kind: ScriptKind::Ai,
+        source: r#"
+            fn plan(view, orders, rng) {
+                print(`income ${view.income.metals} ${view.income.credits} ${view.income.food}`);
+                print(`stockpile ${view.stockpile.metals} ${view.stockpile.credits}`);
+            }
+        "#
+        .to_string(),
+    }])
+    .unwrap();
+    session.set_controller(
+        ai,
+        ControllerSlot::Ai(Box::new(engine.controller_for(ai, SEED).unwrap())),
+    );
+
+    let said: Vec<String> = end_turn(&mut session)
+        .into_iter()
+        .filter_map(|event| match event {
+            GameEvent::ControllerLog { message, .. } => Some(message),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        said,
+        [
+            // the mine's 4 metals and its credit of upkeep; nothing changes food, so it is not in
+            "income 4 -1 ",
+            // no metals held yet: the mine has not made any
+            "stockpile  10",
+        ]
+    );
+    let stockpile = session.world().nations().get(ai).unwrap().resources();
+    assert_eq!(
+        (
+            stockpile.quantity_of(Resource::Metals),
+            stockpile.quantity_of(Resource::Credits)
+        ),
+        (4, 9),
+        "as foretold"
+    );
+}

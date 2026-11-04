@@ -19,18 +19,19 @@
 //! nation, `Human` *or* `Ai`, and only AI nations get a planning phase. See D9 in
 //! `docs/architecture/scripting.md`.
 
-use std::fmt::Debug;
+use std::{collections::BTreeMap, fmt::Debug};
 
 use crate::{
     game::{commands::GameCommand, rng::GameRng, state::World, turn::StepBudget},
     hex_map::{coordinates::CubeCoords, terrain::TerrainKind, vegetation::Vegetation},
     simulation::{
         buildings::{Building, BuildingTemplate},
+        economy::{self, Forecast},
         fog::TileVisibility,
         ids::{BuildingId, DepositId, EntityIndex, NationId, SettlementId, SimulationID, UnitId},
         military::Unit,
         movement::{self, Reachable},
-        resources::{ResourceDataStorage, ResourceDeposit},
+        resources::{Resource, ResourceDataStorage, ResourceDeposit},
         settlements::Settlement,
     },
 };
@@ -152,6 +153,12 @@ impl<'a> NationView<'a> {
             .nations()
             .get(self.nation)
             .map(|nation| nation.resources())
+    }
+
+    /// What each of this nation's stockpiles gains and loses next turn, its buildings included: the
+    /// figures its player is shown (see `economy::forecast`).
+    pub fn forecast(&self) -> BTreeMap<Resource, Forecast> {
+        economy::forecast(self.world, self.nation)
     }
 
     /// The game's building templates: its rules, which every nation knows.

@@ -61,8 +61,11 @@ struct Knowledge {
     buildings: Vec<OwnBuilding>,
     /// The game's building templates: its rules, every nation's to know.
     templates: Vec<TemplateData>,
-    /// What it holds, and earns per turn, by resource.
-    stockpile: BTreeMap<Resource, (ResourceQuantity, ResourceQuantity)>,
+    /// What it holds, by resource.
+    stockpile: BTreeMap<Resource, ResourceQuantity>,
+    /// What each stockpile changes by next turn, buildings' production and upkeep included: the
+    /// figure its player is shown. Only those that change.
+    income: BTreeMap<Resource, i32>,
 }
 
 #[derive(Debug)]
@@ -207,12 +210,19 @@ impl ScriptView {
             .stockpile()
             .map(|held| {
                 held.iter()
-                    .map(|(&resource, data)| {
-                        (resource, (data.quantity(), data.income().unwrap_or(0)))
-                    })
+                    .map(|(&resource, data)| (resource, data.quantity()))
                     .collect()
             })
             .unwrap_or_default();
+        let income = view
+            .forecast()
+            .into_iter()
+            .map(|(resource, forecast)| {
+                let change = i32::from(forecast.gained) - i32::from(forecast.spent);
+                (resource, change)
+            })
+            .filter(|&(_, change)| change != 0)
+            .collect();
 
         Self(Rc::new(Knowledge {
             turn: INT::from(view.turn()),
@@ -230,6 +240,7 @@ impl ScriptView {
             buildings,
             templates,
             stockpile,
+            income,
         }))
     }
 }
@@ -405,18 +416,17 @@ pub fn register(engine: &mut Engine) {
             view.0
                 .stockpile
                 .iter()
-                .map(|(&resource, &(quantity, _))| {
+                .map(|(&resource, &quantity)| {
                     (resource_name(resource).into(), INT::from(quantity).into())
                 })
                 .collect()
         })
         .register_get("income", |view: &mut ScriptView| -> Map {
             view.0
-                .stockpile
+                .income
                 .iter()
-                .filter(|(_, (_, income))| *income > 0)
-                .map(|(&resource, &(_, income))| {
-                    (resource_name(resource).into(), INT::from(income).into())
+                .map(|(&resource, &change)| {
+                    (resource_name(resource).into(), INT::from(change).into())
                 })
                 .collect()
         });
