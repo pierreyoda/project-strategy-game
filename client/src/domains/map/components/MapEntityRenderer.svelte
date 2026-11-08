@@ -3,7 +3,14 @@
   import { onMount } from "svelte";
 
   import type { PixiContext } from "../../../shared/pixi";
-  import { type EntityStrength, type MapEntity, entityCoords, inDrawOrder } from "../entities";
+  import {
+    type CompanyState,
+    type EntityStrength,
+    type MapEntity,
+    companyStates,
+    entityCoords,
+    inDrawOrder,
+  } from "../entities";
   import { type EntityTextures, loadEntityTextures, spriteTextures } from "../entityTextures";
   import { type HexLayout, hexCenter, wrapBounds } from "../hexLayout";
   import type { HexMapData } from "../hexMap";
@@ -23,7 +30,14 @@
   /** The sprites' frame, in which the counters leave their strength row's strip (see the Units artboard). */
   const SPRITE_FRAME = { width: 1110, height: 1280 };
   const STRENGTH_ROW = { y: 815, width: 54, height: 11, gap: 12, corner: 3 };
-  const STRENGTH_ALPHA = { held: 0.95, lost: 0.28 };
+  /** `--color-warning` in the design system's tokens: a suppressed company is a warning sign. */
+  const WARNING_COLOR = 0xf0b43c;
+  /** A company's segment: lit while it fights, in the warning colour while suppressed, faint once lost. */
+  const COMPANY_FILL: Record<CompanyState, { color: number; alpha: number }> = {
+    active: { color: 0xffffff, alpha: 0.95 },
+    suppressed: { color: WARNING_COLOR, alpha: 0.95 },
+    lost: { color: 0xffffff, alpha: 0.28 },
+  };
   /** Opacity of a sprite with nothing left to do this turn. */
   const SPENT_ALPHA = 0.55;
   /** A building still going up: fainter than a spent unit, like the panels' portrait of one. */
@@ -73,19 +87,20 @@
    * The strength row of a counter, drawn in the sprite's frame and scaled with it: the sprite is a
    * frame fitted to the hex, so a frame coordinate maps to the hex the same way for both.
    */
-  const strengthRow = (layout: HexLayout, { held, steps }: EntityStrength): Graphics => {
+  const strengthRow = (layout: HexLayout, strength: EntityStrength): Graphics => {
     const sx = layout.width / SPRITE_FRAME.width;
     const sy = (2 * layout.size) / SPRITE_FRAME.height;
-    const total = steps * STRENGTH_ROW.width + (steps - 1) * STRENGTH_ROW.gap;
+    const states = companyStates(strength);
+    const total = states.length * STRENGTH_ROW.width + (states.length - 1) * STRENGTH_ROW.gap;
     const left = SPRITE_FRAME.width / 2 - total / 2;
     const row = new Graphics();
-    for (let step = 0; step < steps; step++) {
-      const x = (left + step * (STRENGTH_ROW.width + STRENGTH_ROW.gap) - SPRITE_FRAME.width / 2) * sx;
+    states.forEach((state, company) => {
+      const x = (left + company * (STRENGTH_ROW.width + STRENGTH_ROW.gap) - SPRITE_FRAME.width / 2) * sx;
       const y = (STRENGTH_ROW.y - SPRITE_FRAME.height / 2) * sy;
       row
         .roundRect(x, y, STRENGTH_ROW.width * sx, STRENGTH_ROW.height * sy, STRENGTH_ROW.corner * sx)
-        .fill({ color: 0xffffff, alpha: step < held ? STRENGTH_ALPHA.held : STRENGTH_ALPHA.lost });
-    }
+        .fill(COMPANY_FILL[state]);
+    });
     return row;
   };
 

@@ -27,7 +27,9 @@ const meta: ProjectionMeta = {
 const none = () => ({ ids: new Uint32Array(), tiles: new Uint32Array(), owners: new Uint16Array() });
 const noUnits = () => ({
   ...none(),
-  health: new Uint16Array(),
+  companies: new Uint8Array(),
+  suppressed: new Uint8Array(),
+  lost: new Uint8Array(),
   kinds: new Uint8Array(),
   movementLeft: new Uint8Array(),
 });

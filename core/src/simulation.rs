@@ -16,3 +16,4 @@ pub mod properties;
 pub mod resources;
 pub mod settlements;
 pub mod store;
+pub mod strength;

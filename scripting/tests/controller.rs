@@ -4,10 +4,11 @@ use project_x_core::{
     game::{
         ai::ControllerSlot,
         commands::GameCommand,
-        events::GameEvent,
+        events::{EventBuffer, GameEvent},
+        journal::TurnChanges,
         rng::GameSeed,
         session::GameSession,
-        state::World,
+        state::{World, WorldMut},
         turn::{StepBudget, TurnProgress},
     },
     hex_map::{
@@ -19,8 +20,9 @@ use project_x_core::{
     simulation::{
         buildings::{BuildingLevel, BuildingTemplate},
         ids::{NationId, SimulationID, UnitId},
-        military::{Unit, UnitTemplate},
+        military::{self, Unit, UnitTemplate},
         nations::Nation,
+        strength::{Damage, Recovery},
     },
 };
 use project_x_scripting::{ScriptEngine, ScriptError, ScriptKind, ScriptLimits, ScriptSource};
@@ -43,14 +45,30 @@ struct Game {
 }
 
 fn game(script: &str, limits: ScriptLimits) -> Game {
+    game_with(script, limits, |_, _, _| {})
+}
+
+/// `game`, with `setup` given the world once its units are in: the world, the player, and the
+/// scripted nation's scouts.
+fn game_with(
+    script: &str,
+    limits: ScriptLimits,
+    setup: impl FnOnce(&mut World, NationId, [UnitId; 2]),
+) -> Game {
     let shape = RectangularHexMapShape::new(12, 10);
     let mut tiles = HexMapStorage::with_capacity(shape.tiles_count());
     for coords in shape.coords() {
         tiles.insert(coords, HexMapTile::from_properties(120));
     }
     let mut world = World::new(shape, HexMap::from_tiles(tiles));
-    let scout = SimulationID::new_abstract_id("scout");
-    world.register_unit_template(UnitTemplate::new(scout.clone(), "scout".to_string(), 2, 1));
+    let scout = UnitTemplate::new(
+        SimulationID::new_abstract_id("scout"),
+        "scout".to_string(),
+        2,
+        1,
+        4,
+        Recovery::All,
+    );
     // free and quick, for the scripts that build
     world.register_building_template(BuildingTemplate::new(
         SimulationID::new_abstract_id("hut"),
@@ -73,10 +91,12 @@ fn game(script: &str, limits: ScriptLimits) -> Game {
         SimulationID::new_abstract_id("scripted"),
         "Scripted".to_string(),
     ));
-    let player_scout = world.place_unit(Unit::recruit(scout.clone(), player, at(1, 1)));
+    let player_scout = world.place_unit(Unit::recruit(&scout, player, at(1, 1)));
     let scouts = [(8, 6), (9, 7)]
-        .map(|(col, row)| world.place_unit(Unit::recruit(scout.clone(), ai, at(col, row))));
+        .map(|(col, row)| world.place_unit(Unit::recruit(&scout, ai, at(col, row))));
 
+    world.register_unit_template(scout);
+    setup(&mut world, player, scouts);
     let mut session = GameSession::new(world, SEED, player);
     let engine = ScriptEngine::load_with(
         &[ScriptSource {
@@ -281,6 +301,40 @@ fn test_a_script_cannot_see_through_the_fog() {
             "unknown unexplored"
         ]
     );
+}
+
+#[test]
+fn test_a_script_reads_the_strength_of_every_unit_in_sight() {
+    let script = r#"
+        fn plan(view, orders, rng) {
+            let own = view.units[0].strength;
+            print(`${own.companies} ${own.active} ${own.suppressed} ${own.lost}`);
+            let seen = view.foreign_units[0].strength;
+            print(`${view.foreign_units.len()}: ${seen.companies} ${seen.active} ${seen.suppressed} ${seen.lost}`);
+        }
+    "#;
+    let Game {
+        mut session, ai, ..
+    } = game_with(script, ScriptLimits::default(), |world, player, scouts| {
+        let scout = world
+            .unit_template(&SimulationID::new_abstract_id("scout"))
+            .unwrap();
+        // a scout of the player's, right next to the scripted nation's first
+        let unit = Unit::recruit(scout, player, at(7, 6));
+        let watched = world.place_unit(unit);
+        let mut changes = TurnChanges::new();
+        let mut gate = WorldMut::new(world, &mut changes);
+        let mut events = EventBuffer::new();
+        let mut hit = |unit, lost, suppressed| {
+            military::damage_unit(&mut gate, unit, Damage { lost, suppressed }, &mut events);
+        };
+        hit(scouts[0], 0, 1);
+        hit(watched, 1, 2);
+    });
+
+    // the script plans before the end of the turn: nothing has recovered yet
+    let events = end_turn(&mut session);
+    assert_eq!(logged_by(ai, &events), ["4 3 1 0", "1: 4 1 2 1"]);
 }
 
 #[test]

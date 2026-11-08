@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use project_x_core::simulation::resources::{Resource, ResourceQuantity};
-use rhai::{Array, INT, Map};
+use rhai::{Array, Dynamic, INT, Map};
 
 use crate::api::ScriptResult;
 
@@ -45,6 +45,11 @@ impl<'a> Fields<'a> {
             return Err(format!("{what} has no `{unknown}`; it takes {}", known.join(", ")).into());
         }
         Ok(Self { what, map })
+    }
+
+    /// The value under `key` as it is, for a field that takes more than one type.
+    pub fn value(&self, key: &str) -> Option<&Dynamic> {
+        self.map.get(key)
     }
 
     pub fn text(&self, key: &str) -> ScriptResult<String> {

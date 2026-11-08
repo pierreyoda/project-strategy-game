@@ -77,6 +77,9 @@
       case "unitMoved":
         // every step of every unit would drown everything else
         return null;
+      case "unitDestroyed":
+        // a rival's losses may happen out of sight: the fight that inflicts them is what will tell
+        return event.nation === viewer ? "One of our units was destroyed." : null;
       case "controllerLog":
         // a controller's own diagnostics: the viewer's to read when it plays for the viewer's nation
         // (their automation, once there is any - a disloyal general will need hiding again), and

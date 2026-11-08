@@ -428,9 +428,20 @@ impl WorldSnapshotView {
         self.inner.unit_owners.clone()
     }
 
-    #[wasm_bindgen(getter, js_name = unitHealth)]
-    pub fn unit_health(&self) -> Vec<u16> {
-        self.inner.unit_health.clone()
+    /// Every company of each unit, whatever its state.
+    #[wasm_bindgen(getter, js_name = unitCompanies)]
+    pub fn unit_companies(&self) -> Vec<u8> {
+        self.inner.unit_companies.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = unitSuppressed)]
+    pub fn unit_suppressed(&self) -> Vec<u8> {
+        self.inner.unit_suppressed.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = unitLost)]
+    pub fn unit_lost(&self) -> Vec<u8> {
+        self.inner.unit_lost.clone()
     }
 
     /// Indices into the meta's `unitTemplates`.
@@ -670,9 +681,20 @@ impl WorldDeltaView {
         self.inner.unit_owners.clone()
     }
 
-    #[wasm_bindgen(getter, js_name = unitHealth)]
-    pub fn unit_health(&self) -> Vec<u16> {
-        self.inner.unit_health.clone()
+    /// Every company of each unit, whatever its state.
+    #[wasm_bindgen(getter, js_name = unitCompanies)]
+    pub fn unit_companies(&self) -> Vec<u8> {
+        self.inner.unit_companies.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = unitSuppressed)]
+    pub fn unit_suppressed(&self) -> Vec<u8> {
+        self.inner.unit_suppressed.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = unitLost)]
+    pub fn unit_lost(&self) -> Vec<u8> {
+        self.inner.unit_lost.clone()
     }
 
     /// Indices into the meta's `unitTemplates`.
@@ -924,8 +946,17 @@ fn set_up_world(world: &mut World, generated: &GeneratedNations, content: Starti
                 .tile(coords)
                 .is_some_and(|tile| !tile.natural().terrain().is_water())
         }));
-        for (template, site) in setup.starting_units.into_iter().zip(sites) {
-            world.place_unit(Unit::recruit(template, nation, site));
+        // the scenario only starts a nation with templates it defines
+        let units: Vec<Unit> = setup
+            .starting_units
+            .iter()
+            .zip(sites)
+            .filter_map(|(template, site)| {
+                Some(Unit::recruit(world.unit_template(template)?, nation, site))
+            })
+            .collect();
+        for unit in units {
+            world.place_unit(unit);
         }
     }
 }
@@ -1285,6 +1316,21 @@ mod tests {
                 templates[*kind as usize]["movement"].as_u64().unwrap()
             );
         }
+        // and at the full strength of their template
+        let (companies, suppressed, lost) = (
+            snapshot.unit_companies(),
+            snapshot.unit_suppressed(),
+            snapshot.unit_lost(),
+        );
+        for (index, kind) in kinds.iter().enumerate() {
+            assert_eq!(
+                u64::from(companies[index]),
+                templates[*kind as usize]["companies"].as_u64().unwrap()
+            );
+            assert_eq!((suppressed[index], lost[index]), (0, 0));
+        }
+        let infantry = templates[0]["companies"].as_u64();
+        assert_eq!(infantry, Some(4), "the default scenario's infantry");
     }
 
     #[test]

@@ -4,7 +4,6 @@ import {
   SETTLEMENT_SPRITES,
   SETTLEMENT_TOKENS,
   buildingDrawing,
-  strengthOf,
   unitDrawing,
 } from "../../map/entities";
 import { nationColor } from "../nations";
@@ -48,7 +47,7 @@ export const mapEntitiesOf = (world: WorldState): MapEntity[] => {
       tint: nationColor(owner),
     });
   }
-  for (const { id, tile, owner, type, health, movementLeft } of world.units.values()) {
+  for (const { id, tile, owner, type, strength, movementLeft } of world.units.values()) {
     const drawing = unitDrawing(type);
     if (drawing) {
       entities.push({
@@ -56,7 +55,7 @@ export const mapEntitiesOf = (world: WorldState): MapEntity[] => {
         tile,
         ...drawing,
         tint: nationColor(owner),
-        strength: strengthOf(health),
+        strength,
         spent: movementLeft === 0,
       });
     }

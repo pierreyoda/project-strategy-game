@@ -29,6 +29,12 @@ pub enum GameEvent {
         from: TileIndex,
         to: TileIndex,
     },
+    /// A unit lost its last company: it is gone from the world. `tile` is where it stood.
+    UnitDestroyed {
+        unit: UnitId,
+        nation: NationId,
+        tile: TileIndex,
+    },
     SettlementFounded {
         settlement: SettlementId,
         nation: NationId,

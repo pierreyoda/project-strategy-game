@@ -6,26 +6,29 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use rhai::{Engine, Map};
+use rhai::{Engine, INT, Map};
 
 use project_x_core::simulation::{
     buildings::{BuildingLevel, BuildingTemplate, MAX_BUILDING_LEVELS},
     ids::SimulationID,
     military::UnitTemplate,
     resources::Resource,
+    strength::{MAX_UNIT_COMPANIES, Recovery},
 };
 
 use crate::api::common::{Fields, resource_name};
 
 use super::ScriptResult;
 
-/// A unit template, as a scenario defines it.
+/// A unit template, as a scenario defines it: checked, so that `core`'s asserts never fire.
 #[derive(Clone, Debug)]
 pub struct UnitDefinition {
     pub id: String,
     kind: String,
     movement: u8,
     sight: u8,
+    companies: u8,
+    recovery: Recovery,
 }
 
 impl UnitDefinition {
@@ -35,7 +38,52 @@ impl UnitDefinition {
             self.kind.clone(),
             self.movement,
             self.sight,
+            self.companies,
+            self.recovery,
         )
+    }
+
+    fn read(definition: &Map) -> ScriptResult<Self> {
+        let fields = Fields::new(
+            "a unit template",
+            definition,
+            &["id", "type", "movement", "sight", "companies", "recovery"],
+        )?;
+        let id = fields.text("id")?;
+        let companies: u8 = fields.number("companies")?;
+        if !(1..=MAX_UNIT_COMPANIES).contains(&companies) {
+            return Err(format!(
+                "unit template `{id}` has {companies} companies; it takes from 1 to \
+                 {MAX_UNIT_COMPANIES}"
+            )
+            .into());
+        }
+        // every suppressed company, unless the template holds them back
+        let recovery = match fields.value("recovery") {
+            None => Recovery::All,
+            Some(value) if value.clone().into_string().is_ok_and(|text| text == "all") => {
+                Recovery::All
+            }
+            Some(value) => value
+                .as_int()
+                .ok()
+                .filter(|&count| (1..=INT::from(companies)).contains(&count))
+                .map(|count| Recovery::UpTo(count as u8))
+                .ok_or_else(|| {
+                    format!(
+                        "unit template `{id}` recovers \"all\" its suppressed companies or a \
+                         number of them from 1 to {companies} a turn, not {value}"
+                    )
+                })?,
+        };
+        Ok(Self {
+            kind: fields.optional_text("type")?.unwrap_or_else(|| id.clone()),
+            movement: fields.number("movement")?,
+            sight: fields.number("sight")?,
+            companies,
+            recovery,
+            id,
+        })
     }
 }
 
@@ -154,18 +202,7 @@ pub fn register(engine: &mut Engine) {
         .register_fn(
             "define_unit_template",
             |scenario: &mut ScenarioHandle, definition: Map| -> ScriptResult<()> {
-                let fields = Fields::new(
-                    "a unit template",
-                    &definition,
-                    &["id", "type", "movement", "sight"],
-                )?;
-                let id = fields.text("id")?;
-                let unit = UnitDefinition {
-                    kind: fields.optional_text("type")?.unwrap_or_else(|| id.clone()),
-                    movement: fields.number("movement")?,
-                    sight: fields.number("sight")?,
-                    id,
-                };
+                let unit = UnitDefinition::read(&definition)?;
                 let mut definitions = scenario.0.borrow_mut();
                 if definitions.units.iter().any(|known| known.id == unit.id) {
                     return Err(format!("unit template `{}` is defined twice", unit.id).into());

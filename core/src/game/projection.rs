@@ -47,6 +47,8 @@ pub struct UnitTemplateMeta {
     pub r#type: String,
     pub movement: u8,
     pub sight: u8,
+    /// Companies a unit is recruited with.
+    pub companies: u8,
 }
 
 /// What a building template tells the client: what to order it by, what it is called, what it
@@ -138,7 +140,11 @@ pub struct WorldSnapshot {
     pub unit_ids: Vec<u32>,
     pub unit_tiles: Vec<u32>,
     pub unit_owners: Vec<u16>,
-    pub unit_health: Vec<u16>,
+    /// `Strength`: every company, then those suppressed and those lost - the viewer's own units'
+    /// and a rival's alike, since what is in sight is in sight.
+    pub unit_companies: Vec<u8>,
+    pub unit_suppressed: Vec<u8>,
+    pub unit_lost: Vec<u8>,
     /// Indices into the meta's `unit_templates`, or `UNKNOWN_UNIT_KIND`.
     pub unit_kinds: Vec<u8>,
     /// Movement points left this turn.
@@ -215,7 +221,11 @@ pub struct WorldDelta {
     pub unit_ids: Vec<u32>,
     pub unit_tiles: Vec<u32>,
     pub unit_owners: Vec<u16>,
-    pub unit_health: Vec<u16>,
+    /// `Strength`: every company, then those suppressed and those lost - the viewer's own units'
+    /// and a rival's alike, since what is in sight is in sight.
+    pub unit_companies: Vec<u8>,
+    pub unit_suppressed: Vec<u8>,
+    pub unit_lost: Vec<u8>,
     /// Indices into the meta's `unit_templates`, or `UNKNOWN_UNIT_KIND`.
     pub unit_kinds: Vec<u8>,
     /// Movement points left this turn.
@@ -272,7 +282,9 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         unit_ids: Vec::new(),
         unit_tiles: Vec::new(),
         unit_owners: Vec::new(),
-        unit_health: Vec::new(),
+        unit_companies: Vec::new(),
+        unit_suppressed: Vec::new(),
+        unit_lost: Vec::new(),
         unit_kinds: Vec::new(),
         unit_movement_left: Vec::new(),
         settlement_ids: Vec::new(),
@@ -320,7 +332,10 @@ pub fn snapshot(world: &World, viewer: NationId, version: StateVersion) -> World
         snapshot.unit_ids.push(id.raw());
         snapshot.unit_tiles.push(index);
         snapshot.unit_owners.push(unit.owner().raw());
-        snapshot.unit_health.push(unit.health_points());
+        let strength = unit.strength();
+        snapshot.unit_companies.push(strength.companies());
+        snapshot.unit_suppressed.push(strength.suppressed());
+        snapshot.unit_lost.push(strength.lost());
         snapshot.unit_kinds.push(unit_kind_of(&unit_kinds, unit));
         snapshot.unit_movement_left.push(unit.movement_left());
     }
@@ -386,7 +401,9 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
         unit_ids: Vec::new(),
         unit_tiles: Vec::new(),
         unit_owners: Vec::new(),
-        unit_health: Vec::new(),
+        unit_companies: Vec::new(),
+        unit_suppressed: Vec::new(),
+        unit_lost: Vec::new(),
         unit_kinds: Vec::new(),
         unit_movement_left: Vec::new(),
         units_removed: Vec::new(),
@@ -490,7 +507,10 @@ pub fn delta(world: &World, viewer: NationId, changes: &TurnChanges) -> WorldDel
                     delta.unit_ids.push(id.raw());
                     delta.unit_tiles.push(index.unwrap_or_default());
                     delta.unit_owners.push(unit.owner().raw());
-                    delta.unit_health.push(unit.health_points());
+                    let strength = unit.strength();
+                    delta.unit_companies.push(strength.companies());
+                    delta.unit_suppressed.push(strength.suppressed());
+                    delta.unit_lost.push(strength.lost());
                     delta.unit_kinds.push(unit_kind_of(&unit_kinds, unit));
                     delta.unit_movement_left.push(unit.movement_left());
                 } else {
@@ -725,6 +745,7 @@ fn meta(world: &World, viewer: NationId, version: StateVersion) -> SnapshotMeta 
                 r#type: template.r#type().to_string(),
                 movement: template.movement(),
                 sight: template.sight(),
+                companies: template.companies(),
             })
             .collect(),
     }

@@ -4,10 +4,19 @@
 // with. A template's `type` defaults to its `id`; a building level's `sprite` to `{type}_{level}`,
 // the naming the client's art follows.
 
-// The divisions, named after the client's counters.
-scenario.define_unit_template(#{ id: "infantry_division", movement: 2, sight: 2 });
-scenario.define_unit_template(#{ id: "motorized_division", movement: 4, sight: 3 });
-scenario.define_unit_template(#{ id: "light_tank_division", movement: 3, sight: 2 });
+// The divisions, named after the client's counters. A division fights with its companies, 1 to 8;
+// combat suppresses some and destroys others. At the end of every turn its suppressed companies
+// recover: `recovery` is "all" of them, the default, or at most so many.
+// TODO: placeholder strengths, to tune with combat.
+scenario.define_unit_template(#{
+    id: "infantry_division", movement: 2, sight: 2, companies: 4, recovery: "all"
+});
+scenario.define_unit_template(#{
+    id: "motorized_division", movement: 4, sight: 3, companies: 3, recovery: 2
+});
+scenario.define_unit_template(#{
+    id: "light_tank_division", movement: 3, sight: 2, companies: 3, recovery: 1
+});
 
 // The buildings, named after the client's sprites, by level: a level's cost and turns are what
 // reaching it takes - the construction for the first, an upgrade above.

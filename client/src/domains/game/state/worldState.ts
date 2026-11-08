@@ -1,3 +1,4 @@
+import type { EntityStrength } from "../../map/entities";
 import type { HexMapData, OffsetCoords } from "../../map/hexMap";
 import { RESOURCES, type Resource } from "../resources";
 import {
@@ -19,7 +20,8 @@ export type UnitView = {
   /** Row-major tile index. */
   tile: number;
   owner: number;
-  health: number;
+  /** Its companies, by state. The simulation's figures: a rival's as much as the viewer's. */
+  strength: EntityStrength;
   /** Its template's type (`infantry_division`...), `null` for one the simulation could not name. */
   type: string | null;
   /** Movement points per turn, and those left this turn. The simulation's figures, never ours. */
@@ -136,7 +138,11 @@ const readUnits = (into: Map<number, UnitView>, buffers: UnitsBuffers, meta: Pro
       id,
       tile: buffers.tiles[index],
       owner: buffers.owners[index],
-      health: buffers.health[index],
+      strength: {
+        companies: buffers.companies[index],
+        suppressed: buffers.suppressed[index],
+        lost: buffers.lost[index],
+      },
       type: template?.type ?? null,
       movement: template?.movement ?? 0,
       movementLeft: buffers.movementLeft[index],

@@ -1,9 +1,16 @@
-use crate::hex_map::coordinates::CubeCoords;
+use crate::{
+    game::{
+        events::{EventBuffer, GameEvent},
+        state::{World, WorldMut},
+    },
+    hex_map::coordinates::CubeCoords,
+};
 
 use super::{
     economy::{ConstructionCosts, MaintenanceCosts},
     ids::{HqUnitId, LeaderId, NationId, SimulationID, UnitId, WithSimulationID},
     properties::SimulationPropertyStorage,
+    strength::{Damage, MAX_UNIT_COMPANIES, Recovery, Strength, StrengthOutcome},
 };
 
 /// Template of a military unit, as defined by a script.
@@ -18,12 +25,24 @@ pub struct UnitTemplate {
     movement: u8,
     /// How far a unit of this template sees, in tiles.
     sight: u8,
+    /// Companies a unit of this template is recruited with, from 1 to `MAX_UNIT_COMPANIES`.
+    companies: u8,
+    /// How its suppressed companies recover at the end of every turn.
+    recovery: Recovery,
     attributes: SimulationPropertyStorage,
 }
 
 impl UnitTemplate {
-    pub fn new(id: SimulationID, r#type: String, movement: u8, sight: u8) -> Self {
+    pub fn new(
+        id: SimulationID,
+        r#type: String,
+        movement: u8,
+        sight: u8,
+        companies: u8,
+        recovery: Recovery,
+    ) -> Self {
         assert!(matches!(id, SimulationID::Abstract(_)));
+        assert!((1..=MAX_UNIT_COMPANIES).contains(&companies));
         Self {
             id,
             r#type,
@@ -31,6 +50,8 @@ impl UnitTemplate {
             upkeep: MaintenanceCosts::new(),
             movement,
             sight,
+            companies,
+            recovery,
             attributes: SimulationPropertyStorage::new(),
         }
     }
@@ -55,6 +76,14 @@ impl UnitTemplate {
         self.sight
     }
 
+    pub fn companies(&self) -> u8 {
+        self.companies
+    }
+
+    pub fn recovery(&self) -> Recovery {
+        self.recovery
+    }
+
     pub fn attributes(&self) -> &SimulationPropertyStorage {
         &self.attributes
     }
@@ -73,18 +102,19 @@ pub struct Unit {
     template: SimulationID,
     owner: NationId,
     position: CubeCoords,
-    health_points: u16,
+    strength: Strength,
     /// Movement points left this turn, refilled by `TurnPhase::Finalize`.
     movement_left: u8,
 }
 
 impl Unit {
-    pub fn recruit(template: SimulationID, owner: NationId, position: CubeCoords) -> Self {
+    /// A unit of the template, at full strength.
+    pub fn recruit(template: &UnitTemplate, owner: NationId, position: CubeCoords) -> Self {
         Self {
-            template,
+            template: template.id().clone(),
             owner,
             position,
-            health_points: u16::MAX,
+            strength: Strength::full(template.companies()),
             movement_left: 0,
         }
     }
@@ -105,8 +135,12 @@ impl Unit {
         self.position = position;
     }
 
-    pub fn health_points(&self) -> u16 {
-        self.health_points
+    pub fn strength(&self) -> Strength {
+        self.strength
+    }
+
+    pub fn strength_mut(&mut self) -> &mut Strength {
+        &mut self.strength
     }
 
     pub fn movement_left(&self) -> u8 {
@@ -120,6 +154,55 @@ impl Unit {
     pub fn refill_movement(&mut self, points: u8) {
         self.movement_left = points;
     }
+}
+
+/// Deal a blow to a unit: a unit destroyed by it is removed from the world, and its owner told.
+/// `None` for a unit that does not exist.
+pub fn damage_unit(
+    world: &mut WorldMut<'_>,
+    unit: UnitId,
+    damage: Damage,
+    events: &mut EventBuffer,
+) -> Option<StrengthOutcome> {
+    let outcome = world.unit_mut(unit)?.strength_mut().take(damage);
+    if outcome == StrengthOutcome::Destroyed {
+        let destroyed = world.remove_unit(unit)?;
+        events.push(GameEvent::UnitDestroyed {
+            unit,
+            nation: destroyed.owner(),
+            tile: world
+                .world()
+                .tile_index(destroyed.position())
+                .unwrap_or_default(),
+        });
+    }
+    Some(outcome)
+}
+
+/// Bring back every unit's suppressed companies, as its template says: at the end of a turn.
+pub fn recover_suppression(world: &mut WorldMut<'_>) {
+    let recoveries = suppressed_units(world.world());
+    for (id, recovery) in recoveries {
+        if let Some(unit) = world.unit_mut(id) {
+            unit.strength_mut().recover(recovery);
+        }
+    }
+}
+
+/// The units with suppressed companies, and how each recovers. A unit whose template is unknown
+/// recovers them all.
+fn suppressed_units(world: &World) -> Vec<(UnitId, Recovery)> {
+    world
+        .units()
+        .iter()
+        .filter(|(_, unit)| unit.strength().suppressed() > 0)
+        .map(|(id, unit)| {
+            let recovery = world
+                .unit_template(unit.template())
+                .map_or(Recovery::All, UnitTemplate::recovery);
+            (id, recovery)
+        })
+        .collect()
 }
 
 /// A HeadQuarters military unit.

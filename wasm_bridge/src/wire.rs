@@ -214,6 +214,8 @@ pub enum EventWire {
     #[serde(rename_all = "camelCase")]
     UnitMoved { unit: u32, from: u32, to: u32 },
     #[serde(rename_all = "camelCase")]
+    UnitDestroyed { unit: u32, nation: u16, tile: u32 },
+    #[serde(rename_all = "camelCase")]
     SettlementFounded {
         settlement: u32,
         nation: u16,
@@ -265,6 +267,11 @@ impl From<&GameEvent> for EventWire {
                 unit: unit.raw(),
                 from: *from,
                 to: *to,
+            },
+            GameEvent::UnitDestroyed { unit, nation, tile } => Self::UnitDestroyed {
+                unit: unit.raw(),
+                nation: nation.raw(),
+                tile: *tile,
             },
             GameEvent::SettlementFounded {
                 settlement,
@@ -408,6 +415,8 @@ pub struct UnitTemplateWire {
     pub r#type: String,
     pub movement: u8,
     pub sight: u8,
+    /// Companies a unit is recruited with.
+    pub companies: u8,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -449,6 +458,7 @@ impl From<&SnapshotMeta> for MetaWire {
                     r#type: template.r#type.clone(),
                     movement: template.movement,
                     sight: template.sight,
+                    companies: template.companies,
                 })
                 .collect(),
         }

@@ -61,11 +61,18 @@ export type MapEntity = {
   ghost?: boolean;
 };
 
-/** A unit's strength as the counters show it: `held` of `steps` segments lit. */
+/**
+ * A unit's strength, like `Strength` in the `core` crate: every company it has, whatever its state,
+ * then those suppressed and those lost. The rest are active.
+ */
 export type EntityStrength = {
-  held: number;
-  steps: number;
+  companies: number;
+  suppressed: number;
+  lost: number;
 };
+
+/** What a company is doing, as a counter's strength row shows it. */
+export type CompanyState = "active" | "suppressed" | "lost";
 
 /** How far a settlement has grown, mirroring `SettlementStage` in the `core` crate. */
 export const SettlementStage = {
@@ -180,18 +187,22 @@ export const UNIT_SPRITES: Record<UnitType, EntitySprite> = {
 /** One size for every counter: a unit's weight is read from its strength row, not from its token. */
 export const UNIT_TOKEN: EntityToken = { side: 0.5 };
 
-/** Steps on a counter's strength row. */
-export const STRENGTH_STEPS = 4;
-
 /**
- * A unit's strength steps from its health, which the simulation keeps as a plain figure out of
- * `0xffff`: four steps at full health, the last one held down to the last point. What a step is
- * worth is for combat to decide; this only has to draw it.
+ * The segments of a counter's strength row, one per company: the active ones first, then the
+ * suppressed, then the lost - so that the row reads as a bar running down from the left.
  */
-export const strengthOf = (health: number): EntityStrength => ({
-  held: Math.min(STRENGTH_STEPS, Math.ceil((STRENGTH_STEPS * health) / 0xffff)),
-  steps: STRENGTH_STEPS,
-});
+export const companyStates = ({ companies, suppressed, lost }: EntityStrength): CompanyState[] => {
+  const active = companies - suppressed - lost;
+  return Array.from({ length: companies }, (_, company) =>
+    company < active ? "active" : company < companies - lost ? "suppressed" : "lost",
+  );
+};
+
+/** How a unit's strength reads in words: "3 of 4 companies, 1 suppressed". */
+export const describeStrength = ({ companies, suppressed, lost }: EntityStrength): string => {
+  const remaining = `${companies - lost} of ${companies} ${companies === 1 ? "company" : "companies"}`;
+  return suppressed > 0 ? `${remaining}, ${suppressed} suppressed` : remaining;
+};
 
 /**
  * The drawing of a unit, or `null` for one the set has no counter for: like `buildingDrawing`,

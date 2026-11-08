@@ -61,7 +61,9 @@ const buffersOf = (projection: WorldProjection): Transferable[] => {
     units.ids.buffer,
     units.tiles.buffer,
     units.owners.buffer,
-    units.health.buffer,
+    units.companies.buffer,
+    units.suppressed.buffer,
+    units.lost.buffer,
     units.kinds.buffer,
     units.movementLeft.buffer,
     settlements.ids.buffer,
@@ -128,7 +130,9 @@ const readSnapshot = (view: {
   unitIds: Uint32Array;
   unitTiles: Uint32Array;
   unitOwners: Uint16Array;
-  unitHealth: Uint16Array;
+  unitCompanies: Uint8Array;
+  unitSuppressed: Uint8Array;
+  unitLost: Uint8Array;
   unitKinds: Uint8Array;
   unitMovementLeft: Uint8Array;
   settlementIds: Uint32Array;
@@ -177,14 +181,18 @@ const readUnits = (view: {
   unitIds: Uint32Array;
   unitTiles: Uint32Array;
   unitOwners: Uint16Array;
-  unitHealth: Uint16Array;
+  unitCompanies: Uint8Array;
+  unitSuppressed: Uint8Array;
+  unitLost: Uint8Array;
   unitKinds: Uint8Array;
   unitMovementLeft: Uint8Array;
 }): UnitsBuffers => ({
   ids: view.unitIds,
   tiles: view.unitTiles,
   owners: view.unitOwners,
-  health: view.unitHealth,
+  companies: view.unitCompanies,
+  suppressed: view.unitSuppressed,
+  lost: view.unitLost,
   kinds: view.unitKinds,
   movementLeft: view.unitMovementLeft,
 });
@@ -240,7 +248,9 @@ const readDelta = (view: {
   unitIds: Uint32Array;
   unitTiles: Uint32Array;
   unitOwners: Uint16Array;
-  unitHealth: Uint16Array;
+  unitCompanies: Uint8Array;
+  unitSuppressed: Uint8Array;
+  unitLost: Uint8Array;
   unitKinds: Uint8Array;
   unitMovementLeft: Uint8Array;
   unitsRemoved: Uint32Array;

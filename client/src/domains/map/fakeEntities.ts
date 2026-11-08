@@ -2,7 +2,6 @@ import {
   type MapEntity,
   SETTLEMENT_SPRITES,
   SETTLEMENT_TOKENS,
-  STRENGTH_STEPS,
   SettlementStage,
   UNIT_TYPES,
   buildingDrawing,
@@ -64,13 +63,16 @@ export const createFakeEntities = (map: HexMapData, density = 0.05): MapEntity[]
       entities.push({ id: tile, tile, ...buildingDrawing(`${type}_${level}`, level)!, tint });
     } else {
       const type = UNIT_TYPES[Math.floor(entityRandom(tile, 6) * UNIT_TYPES.length)];
-      const held = 1 + Math.floor(entityRandom(tile, 7) * STRENGTH_STEPS);
+      // 3 or 4 companies, some of them suppressed or lost
+      const companies = 3 + Math.floor(entityRandom(tile, 7) * 2);
+      const lost = Math.floor(entityRandom(tile, 9) * companies);
+      const suppressed = Math.floor(entityRandom(tile, 10) * (companies - lost));
       entities.push({
         id: tile,
         tile,
         ...unitDrawing(type)!,
         tint,
-        strength: { held, steps: STRENGTH_STEPS },
+        strength: { companies, suppressed, lost },
         spent: entityRandom(tile, 8) < 0.3,
       });
     }

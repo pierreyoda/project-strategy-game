@@ -18,6 +18,7 @@ use project_x_core::{
         ids::{BuildingId, DepositId, EntityIndex, NationId, SettlementId, SimulationID, UnitId},
         movement::Reachable,
         resources::{Resource, ResourceQuantity},
+        strength::Strength,
     },
 };
 
@@ -102,7 +103,7 @@ struct OwnUnit {
     tile: CubeCoords,
     template: ImmutableString,
     movement_left: u8,
-    health: u16,
+    strength: Strength,
 }
 
 #[derive(Debug)]
@@ -117,6 +118,8 @@ struct ForeignUnit {
     id: UnitId,
     tile: CubeCoords,
     owner: NationId,
+    /// What the nation's own units would show: a unit in sight is seen whole.
+    strength: Strength,
 }
 
 impl ScriptView {
@@ -137,7 +140,7 @@ impl ScriptView {
                 tile: unit.position(),
                 template: template_name(unit.template()),
                 movement_left: unit.movement_left(),
-                health: unit.health_points(),
+                strength: unit.strength(),
             })
             .collect();
         let reachable = units
@@ -159,6 +162,7 @@ impl ScriptView {
                 id,
                 tile: unit.position(),
                 owner: unit.owner(),
+                strength: unit.strength(),
             })
             .collect();
 
@@ -509,7 +513,7 @@ impl OwnUnit {
         unit.insert("tile".into(), tile(self.tile));
         unit.insert("template".into(), self.template.clone().into());
         unit.insert("movement_left".into(), INT::from(self.movement_left).into());
-        unit.insert("health".into(), INT::from(self.health).into());
+        unit.insert("strength".into(), strength(self.strength));
         Dynamic::from_map(unit)
     }
 }
@@ -530,8 +534,19 @@ impl ForeignUnit {
         unit.insert("id".into(), id(self.id).into());
         unit.insert("tile".into(), tile(self.tile));
         unit.insert("owner".into(), id(self.owner).into());
+        unit.insert("strength".into(), strength(self.strength));
         Dynamic::from_map(unit)
     }
+}
+
+/// A unit's strength, as scripts read it: `#{companies: 4, active: 2, suppressed: 1, lost: 1}`.
+fn strength(strength: Strength) -> Dynamic {
+    let mut figures = Map::new();
+    figures.insert("companies".into(), INT::from(strength.companies()).into());
+    figures.insert("active".into(), INT::from(strength.active()).into());
+    figures.insert("suppressed".into(), INT::from(strength.suppressed()).into());
+    figures.insert("lost".into(), INT::from(strength.lost()).into());
+    Dynamic::from_map(figures)
 }
 
 fn id(id: impl EntityIndex) -> INT {

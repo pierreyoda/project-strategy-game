@@ -509,9 +509,10 @@ mod tests {
         },
         simulation::{
             ids::{EntityIndex, NationId, SimulationID},
-            military::Unit,
+            military::{Unit, UnitTemplate},
             nations::Nation,
             resources::{Resource, ResourceDataStorage, ResourceDataStore, ResourceDeposit},
+            strength::Recovery,
         },
     };
 
@@ -719,11 +720,15 @@ mod tests {
         let mut world_mut = WorldMut::new(&mut world, &mut changes);
 
         let position = OffsetCoords::new(2, 1).into();
-        let unit = world_mut.insert_unit(Unit::recruit(
+        let infantry = UnitTemplate::new(
             SimulationID::new_abstract_id("infantry"),
-            nation,
-            position,
-        ));
+            "infantry".to_string(),
+            2,
+            2,
+            4,
+            Recovery::All,
+        );
+        let unit = world_mut.insert_unit(Unit::recruit(&infantry, nation, position));
         world_mut
             .tile_mut(OffsetCoords::new(3, 1).into())
             .unwrap()

@@ -21,6 +21,7 @@ use crate::{
     simulation::{
         economy,
         ids::{EntityIndex, NationId, UnitId},
+        military,
         resources::ResourceDataStore,
     },
 };
@@ -304,6 +305,8 @@ impl GameSession {
     fn finalize_turn(&mut self) {
         self.refill_movement();
         let mut world = WorldMut::new(&mut self.world, self.journal.pending_mut());
+        // TODO: only the units in supply, once the logistics phase knows which those are
+        military::recover_suppression(&mut world);
         let turn = world.advance_turn();
         world.set_active_nation(self.local_player);
         self.events.push(GameEvent::TurnStarted { turn });
@@ -427,23 +430,27 @@ mod tests {
             movement,
             nations::Nation,
             resources::{Resource, ResourceDataStorage, ResourceDataStore, ResourceDeposit},
+            strength::{Damage, Recovery, StrengthOutcome},
         },
     };
 
     use crate::simulation::ids::DepositId;
 
-    use super::{GameSession, fill_with_stub_ai};
+    use super::{GameSession, fill_with_stub_ai, military};
 
     const SEED: GameSeed = 20_260_129;
     const SCOUT: &str = "scout";
     const MINE: &str = "mine";
 
     fn scout_template() -> UnitTemplate {
+        // one company back a turn: the session tests tell the recovery apart from a reset
         UnitTemplate::new(
             SimulationID::new_abstract_id(SCOUT),
             "scout".to_string(),
             2,
             1,
+            4,
+            Recovery::UpTo(1),
         )
     }
 
@@ -494,9 +501,9 @@ mod tests {
             SimulationID::new_abstract_id("second"),
             "Second".to_string(),
         ));
-        let template = SimulationID::new_abstract_id(SCOUT);
-        let own = world.place_unit(Unit::recruit(template.clone(), first, at(1, 1)));
-        let rival = world.place_unit(Unit::recruit(template, second, at(8, 6)));
+        let template = scout_template();
+        let own = world.place_unit(Unit::recruit(&template, first, at(1, 1)));
+        let rival = world.place_unit(Unit::recruit(&template, second, at(8, 6)));
         (world, first, second, own, rival)
     }
 
@@ -516,12 +523,10 @@ mod tests {
             })
             .collect();
         world.paint_terrain(&kinds);
-        let template = SimulationID::new_abstract_id(SCOUT);
+        let template = scout_template();
         let extras = extra
             .iter()
-            .map(|&(col, row)| {
-                world.place_unit(Unit::recruit(template.clone(), first, at(col, row)))
-            })
+            .map(|&(col, row)| world.place_unit(Unit::recruit(&template, first, at(col, row))))
             .collect();
         let mut session = GameSession::new(world, SEED, first);
         fill_with_stub_ai(&mut session);
@@ -1160,6 +1165,121 @@ mod tests {
         assert!(session.snapshot(second).deposits.ids.is_empty());
     }
 
+    /// Deal a blow to a unit, the way combat will.
+    fn damage(
+        session: &mut GameSession,
+        unit: UnitId,
+        lost: u8,
+        suppressed: u8,
+    ) -> Option<StrengthOutcome> {
+        let mut world = WorldMut::new(&mut session.world, session.journal.pending_mut());
+        let outcome = military::damage_unit(
+            &mut world,
+            unit,
+            Damage { lost, suppressed },
+            &mut session.events,
+        );
+        session.journal.commit();
+        outcome
+    }
+
+    fn strength(session: &GameSession, unit: UnitId) -> (u8, u8, u8) {
+        let strength = session.world.units().get(unit).unwrap().strength();
+        (strength.active(), strength.suppressed(), strength.lost())
+    }
+
+    #[test]
+    fn test_suppressed_companies_recover_at_the_end_of_the_turn() {
+        let (mut session, first, _, own, _) = two_nation_session();
+        assert_eq!(
+            damage(&mut session, own, 1, 2),
+            Some(StrengthOutcome::Holding)
+        );
+        assert_eq!(strength(&session, own), (1, 2, 1));
+
+        let version = session.version();
+        resolve_turn(&mut session);
+        // the scout's template brings one company back a turn; the lost one stays lost
+        assert_eq!(strength(&session, own), (2, 1, 1));
+        let Projection::Delta(delta) = session.project(first, version) else {
+            panic!("a turn must not cost a full snapshot");
+        };
+        let at = delta
+            .unit_ids
+            .iter()
+            .position(|&id| id == own.raw())
+            .unwrap();
+        assert_eq!(delta.unit_companies[at], 4);
+        assert_eq!(delta.unit_suppressed[at], 1);
+        assert_eq!(delta.unit_lost[at], 1);
+
+        resolve_turn(&mut session);
+        assert_eq!(strength(&session, own), (3, 0, 1));
+    }
+
+    #[test]
+    fn test_a_destroyed_unit_is_removed_and_its_owner_told() {
+        let (mut session, first, _, own, _) = two_nation_session();
+        session.drain_events();
+        let version = session.version();
+        assert_eq!(
+            damage(&mut session, own, 3, 0),
+            Some(StrengthOutcome::Holding)
+        );
+        // suppressing the last company it has left, and then some
+        assert_eq!(
+            damage(&mut session, own, 0, 2),
+            Some(StrengthOutcome::Destroyed)
+        );
+
+        assert!(session.world.units().get(own).is_none());
+        assert_eq!(damage(&mut session, own, 1, 0), None, "it is gone");
+        let tile = session.world.tile_index(at(1, 1)).unwrap();
+        assert_eq!(
+            session.drain_events(),
+            vec![GameEvent::UnitDestroyed {
+                unit: own,
+                nation: first,
+                tile
+            }]
+        );
+        let Projection::Delta(delta) = session.project(first, version) else {
+            panic!("a loss must not cost a full snapshot");
+        };
+        assert_eq!(delta.units_removed, vec![own.raw()]);
+        assert!(session.snapshot(first).unit_ids.is_empty());
+    }
+
+    #[test]
+    fn test_a_rival_unit_in_sight_shows_its_strength() {
+        let (mut session, first, second, _, _) = two_nation_session();
+        let mut changes = TurnChanges::new();
+        let watched = WorldMut::new(&mut session.world, &mut changes).insert_unit(Unit::recruit(
+            &scout_template(),
+            second,
+            at(2, 1),
+        ));
+        damage(&mut session, watched, 1, 1);
+        session.recompute_fog_of(first);
+
+        let snapshot = session.snapshot(first);
+        assert_eq!(snapshot.meta.unit_templates[0].companies, 4);
+        let at = snapshot
+            .unit_ids
+            .iter()
+            .position(|&id| id == watched.raw())
+            .expect("the rival next door is in sight");
+        assert_eq!(snapshot.unit_owners[at], second.raw());
+        assert_eq!(
+            (
+                snapshot.unit_companies[at],
+                snapshot.unit_suppressed[at],
+                snapshot.unit_lost[at]
+            ),
+            (4, 1, 1)
+        );
+    }
+
     #[test]
     fn test_units_are_projected_with_their_kind_and_points_left() {
         let (mut session, first, _, own, _) = two_nation_session();
@@ -1488,7 +1608,7 @@ mod tests {
         let (mut session, first, _, landfall) = builders_session(1000);
         let mut changes = TurnChanges::new();
         let scout = WorldMut::new(&mut session.world, &mut changes).insert_unit(Unit::recruit(
-            SimulationID::new_abstract_id(SCOUT),
+            &scout_template(),
             first,
             at(5, 1),
         ));
@@ -2061,7 +2181,7 @@ mod tests {
         // a scout of the other nation's, next to the works
         let mut changes = TurnChanges::new();
         WorldMut::new(&mut session.world, &mut changes).insert_unit(Unit::recruit(
-            SimulationID::new_abstract_id(SCOUT),
+            &scout_template(),
             second,
             at(3, 1),
         ));

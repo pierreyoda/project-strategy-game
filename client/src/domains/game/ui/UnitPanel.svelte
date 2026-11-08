@@ -3,7 +3,13 @@
   import Button from "../../../shared/ui/Button.svelte";
   import Icon from "../../../shared/ui/Icon.svelte";
   import Panel from "../../../shared/ui/Panel.svelte";
-  import { STRENGTH_STEPS, UNIT_TYPE_NAMES, type UnitType, strengthOf } from "../../map/entities";
+  import {
+    type CompanyState,
+    UNIT_TYPE_NAMES,
+    type UnitType,
+    companyStates,
+    describeStrength,
+  } from "../../map/entities";
   import { nationColor } from "../nations";
   import type { SelectedUnit } from "../state/activeGame.svelte";
 
@@ -16,7 +22,12 @@
     light_tank_division: "M20 20 a12 7 0 1 0 24 0 a12 7 0 1 0 -24 0 M29 30 v6 h6",
   };
   const isUnitType = (type: string | null): type is UnitType => type !== null && type in UNIT_TYPE_NAMES;
-  const STEPS = [...Array(STRENGTH_STEPS).keys()];
+  /** A company's segment, like the counter's on the map: lit, in the warning colour, or faint. */
+  const COMPANY_CLASSES: Record<CompanyState, string> = {
+    active: "bg-fg opacity-95",
+    suppressed: "bg-warning opacity-95",
+    lost: "bg-fg opacity-25",
+  };
 </script>
 
 <script lang="ts">
@@ -32,7 +43,8 @@
 
   const unit = $derived(selected.unit);
   const type = $derived(isUnitType(unit.type) ? unit.type : null);
-  const strength = $derived(strengthOf(unit.health));
+  const companies = $derived(companyStates(unit.strength));
+  const strength = $derived(describeStrength(unit.strength));
   const spent = $derived(unit.movementLeft === 0);
 </script>
 
@@ -65,14 +77,9 @@
 
   <dl class="mt-3 grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1.5 text-sm">
     <dt class="flex items-center gap-2 text-fg-muted"><Icon name="health" />Strength</dt>
-    <dd class="flex items-center gap-1" aria-label="{strength.held} of {STRENGTH_STEPS} steps">
-      {#each STEPS as step (step)}
-        <span
-          class={[
-            "h-2 w-5 rounded-tl-cut-sm rounded-br-cut-sm bg-fg chamfer",
-            step < strength.held ? "opacity-95" : "opacity-25",
-          ]}
-        ></span>
+    <dd class="flex items-center gap-1" title={strength} aria-label={strength}>
+      {#each companies as state, company (company)}
+        <span class={["h-2 w-5 rounded-tl-cut-sm rounded-br-cut-sm chamfer", COMPANY_CLASSES[state]]}></span>
       {/each}
     </dd>
     <dt class="flex items-center gap-2 text-fg-muted"><Icon name="movement" />Movement</dt>

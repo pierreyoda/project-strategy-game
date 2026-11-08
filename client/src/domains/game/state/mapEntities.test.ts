@@ -65,7 +65,14 @@ const snapshot = (): WorldSnapshotData => ({
   tileOwner: new Uint16Array(5).fill(0xffff),
   tileSphere: new Uint16Array(5).fill(0xffff),
   tileFlags: new Uint8Array(5),
-  units: { ...none(), health: new Uint16Array(), kinds: new Uint8Array(), movementLeft: new Uint8Array() },
+  units: {
+    ...none(),
+    companies: new Uint8Array(),
+    suppressed: new Uint8Array(),
+    lost: new Uint8Array(),
+    kinds: new Uint8Array(),
+    movementLeft: new Uint8Array(),
+  },
   settlements: { ...none(), stages: new Uint8Array() },
   buildings: buildings(
     [0, 0, 0, 0, UnderConstruction, 2, 3],
@@ -117,6 +124,43 @@ describe("buildings on the map", () => {
     expect(constructionsOf(world())).toStrictEqual([
       { id: 0, tile: 0, turnsLeft: 2, turnsTotal: 3 },
       { id: 1, tile: 1, turnsLeft: 1, turnsTotal: 4 },
+    ]);
+  });
+});
+
+describe("units on the map", () => {
+  /** A rival's infantry, battered, next to the viewer's own at full strength. */
+  const withUnits = (): WorldSnapshotData => ({
+    ...snapshot(),
+    meta: {
+      ...meta,
+      unitTemplates: [{ type: "infantry_division", movement: 2, sight: 2, companies: 4 }],
+    },
+    units: {
+      ids: new Uint32Array([0, 1]),
+      tiles: new Uint32Array([0, 1]),
+      owners: new Uint16Array([0, 1]),
+      companies: new Uint8Array([4, 4]),
+      suppressed: new Uint8Array([0, 1]),
+      lost: new Uint8Array([0, 2]),
+      kinds: new Uint8Array([0, 0]),
+      movementLeft: new Uint8Array([2, 2]),
+    },
+  });
+
+  it("carry the strength the simulation sent, a rival's as much as the viewer's", () => {
+    const state = applyProjection(null, { kind: "full", snapshot: withUnits() }).state;
+    const strengths = [...state.units.values()].map(({ strength }) => strength);
+    expect(strengths).toStrictEqual([
+      { companies: 4, suppressed: 0, lost: 0 },
+      { companies: 4, suppressed: 1, lost: 2 },
+    ]);
+    const counters = mapEntitiesOf(state)
+      .filter(({ strength }) => strength !== undefined)
+      .map(({ tile, strength }) => ({ tile, strength }));
+    expect(counters).toStrictEqual([
+      { tile: 0, strength: { companies: 4, suppressed: 0, lost: 0 } },
+      { tile: 1, strength: { companies: 4, suppressed: 1, lost: 2 } },
     ]);
   });
 });

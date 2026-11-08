@@ -75,6 +75,8 @@ export type GameEvent =
   | { type: "turnStarted"; turn: number }
   | { type: "log"; nation: number | null; message: string }
   | { type: "unitMoved"; unit: number; from: number; to: number }
+  /** A unit lost its last company: it is gone. `tile` is where it stood. */
+  | { type: "unitDestroyed"; unit: number; nation: number; tile: number }
   | { type: "settlementFounded"; settlement: number; nation: number; tile: number }
   /*
    * The building events name the nation they are about: how its buildings fare is its own to know,
@@ -214,6 +216,8 @@ export type UnitTemplateMeta = {
   /** Movement points per turn. */
   movement: number;
   sight: number;
+  /** Companies a unit is recruited with. */
+  companies: number;
 };
 
 /** The entities of a projection, as parallel arrays. */
@@ -221,7 +225,13 @@ export type UnitsBuffers = {
   ids: Uint32Array;
   tiles: Uint32Array;
   owners: Uint16Array;
-  health: Uint16Array;
+  /**
+   * Its strength, like `Strength` in the `core` crate: every company, then those suppressed and those
+   * lost. A rival's as much as the viewer's: a unit in sight is seen whole.
+   */
+  companies: Uint8Array;
+  suppressed: Uint8Array;
+  lost: Uint8Array;
   /** Indices into `ProjectionMeta.unitTemplates`, `UNKNOWN_UNIT_KIND` for a template nobody registered. */
   kinds: Uint8Array;
   /** Movement points left this turn. */

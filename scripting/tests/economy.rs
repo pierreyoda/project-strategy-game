@@ -23,6 +23,7 @@ use project_x_core::{
         nations::Nation,
         resources::{Resource, ResourceDataStorage, ResourceDataStore, ResourceDeposit},
         settlements::Settlement,
+        strength::Recovery,
     },
 };
 use project_x_scripting::{ScriptEngine, ScriptKind, ScriptLimits, ScriptSource};
@@ -66,8 +67,14 @@ fn game(credits: u16, deposit: bool) -> Game {
         tiles.insert(coords, HexMapTile::from_properties(120));
     }
     let mut world = World::new(shape, HexMap::from_tiles(tiles));
-    let scout = SimulationID::new_abstract_id("scout");
-    world.register_unit_template(UnitTemplate::new(scout.clone(), "scout".to_string(), 2, 1));
+    let scout = UnitTemplate::new(
+        SimulationID::new_abstract_id("scout"),
+        "scout".to_string(),
+        2,
+        1,
+        4,
+        Recovery::All,
+    );
     world.register_building_template(BuildingTemplate::new(
         SimulationID::new_abstract_id("mine"),
         "mine".to_string(),
@@ -92,8 +99,8 @@ fn game(credits: u16, deposit: bool) -> Game {
         SimulationID::new_abstract_id("scripted"),
         "Scripted".to_string(),
     ));
-    world.place_unit(Unit::recruit(scout.clone(), player, at(1, 1)));
-    let scripted_scout = world.place_unit(Unit::recruit(scout, ai, at(7, 7)));
+    world.place_unit(Unit::recruit(&scout, player, at(1, 1)));
+    let scripted_scout = world.place_unit(Unit::recruit(&scout, ai, at(7, 7)));
     if deposit {
         let mut stock = ResourceDataStorage::new();
         stock.replenish(Resource::Metals, 500);
@@ -126,6 +133,7 @@ fn game(credits: u16, deposit: bool) -> Game {
         .resources_mut()
         .replenish(Resource::Credits, credits);
 
+    world.register_unit_template(scout);
     let mut session = GameSession::new(world, SEED, player);
     let engine = ScriptEngine::load_with(
         &[ScriptSource {

@@ -4,6 +4,7 @@ use project_x_core::simulation::{
     buildings::BuildingTemplate,
     ids::{SimulationID, WithSimulationID},
     resources::{Resource, ResourceDataStore},
+    strength::Recovery,
 };
 use project_x_scripting::{ScriptEngine, ScriptError, ScriptKind, ScriptLimits, ScriptSource};
 
@@ -49,19 +50,21 @@ fn test_the_default_scenario_defines_the_divisions_and_the_buildings() {
         .unit_templates()
         .map(|template| {
             format!(
-                "{} {} {}",
+                "{} {} {} {} {:?}",
                 template.r#type(),
                 template.movement(),
-                template.sight()
+                template.sight(),
+                template.companies(),
+                template.recovery()
             )
         })
         .collect();
     assert_eq!(
         units,
         [
-            "infantry_division 2 2",
-            "motorized_division 4 3",
-            "light_tank_division 3 2"
+            "infantry_division 2 2 4 All",
+            "motorized_division 4 3 3 UpTo(2)",
+            "light_tank_division 3 2 3 UpTo(1)"
         ]
     );
     let buildings: Vec<BuildingTemplate> = scenario.building_templates().collect();
@@ -222,7 +225,7 @@ fn test_the_default_scenario_answers_for_every_slot() {
 fn test_what_a_scenario_leaves_out_takes_a_default() {
     let engine = load(
         r#"
-        scenario.define_unit_template(#{ id: "scout", movement: 2, sight: 1 });
+        scenario.define_unit_template(#{ id: "scout", movement: 2, sight: 1, companies: 3 });
         fn nation(slot) { #{ definition: "lone", name: "Lone", income: #{ food: 3 } } }
         fn starting_units(slot) { ["scout"] }
         "#,
@@ -232,6 +235,11 @@ fn test_what_a_scenario_leaves_out_takes_a_default() {
 
     let scout = scenario.unit_templates().next().unwrap();
     assert_eq!(scout.r#type(), "scout", "the type defaults to the ID");
+    assert_eq!(
+        scout.recovery(),
+        Recovery::All,
+        "every suppressed company recovers"
+    );
     let setup = scenario.nation(0).unwrap();
     assert_eq!(setup.capital, "Lone capital");
     // an income with no stockpile still flows, into an empty one
@@ -262,16 +270,47 @@ fn test_a_scenario_must_declare_both_hooks() {
 fn test_a_template_defined_wrong_is_refused_at_load() {
     for (definition, expected) in [
         (
-            r#"scenario.define_unit_template(#{ id: "scout", movement: 2, sight: 1, speed: 9 })"#,
+            r#"scenario.define_unit_template(#{ id: "scout", movement: 2, sight: 1, companies: 3, speed: 9 })"#,
             "a unit template has no `speed`",
         ),
         (
-            r#"scenario.define_unit_template(#{ movement: 2, sight: 1 })"#,
+            r#"scenario.define_unit_template(#{ movement: 2, sight: 1, companies: 3 })"#,
             "a unit template needs `id`",
         ),
         (
-            r#"scenario.define_unit_template(#{ id: "scout", movement: 300, sight: 1 })"#,
+            r#"scenario.define_unit_template(#{ id: "scout", movement: 300, sight: 1, companies: 3 })"#,
             "a unit template's `movement` is out of range: 300",
+        ),
+        (
+            r#"scenario.define_unit_template(#{ id: "scout", movement: 2, sight: 1 })"#,
+            "a unit template needs `companies`",
+        ),
+        (
+            r#"scenario.define_unit_template(#{ id: "scout", movement: 2, sight: 1, companies: 0 })"#,
+            "unit template `scout` has 0 companies; it takes from 1 to 8",
+        ),
+        (
+            r#"scenario.define_unit_template(#{ id: "scout", movement: 2, sight: 1, companies: 9 })"#,
+            "unit template `scout` has 9 companies; it takes from 1 to 8",
+        ),
+        (
+            r#"scenario.define_unit_template(#{
+                id: "scout", movement: 2, sight: 1, companies: 3, recovery: 4
+            })"#,
+            "unit template `scout` recovers \"all\" its suppressed companies or a number of them \
+             from 1 to 3 a turn, not 4",
+        ),
+        (
+            r#"scenario.define_unit_template(#{
+                id: "scout", movement: 2, sight: 1, companies: 3, recovery: "most"
+            })"#,
+            "not most",
+        ),
+        (
+            r#"scenario.define_unit_template(#{
+                id: "scout", movement: 2, sight: 1, companies: 3, recovery: 0
+            })"#,
+            "from 1 to 3 a turn, not 0",
         ),
         (
             r#"scenario.define_building_template(#{ id: "farm", production: #{ food: 2 } })"#,
