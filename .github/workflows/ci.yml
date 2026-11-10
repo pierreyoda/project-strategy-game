@@ -19,6 +19,25 @@ jobs:
       - name: Run tests
         run: cargo test -- --no-capture
 
+  wasm-test:
+    name: wasm-pack test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      # the tests that must also hold where the client runs the game: `#[wasm_bindgen_test]`s, in Node
+      - name: Run tests
+        run: wasm-pack test --node wasm_bridge
+
   client-test:
     name: client tests
     runs-on: ubuntu-latest
