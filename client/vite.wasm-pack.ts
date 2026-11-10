@@ -7,11 +7,16 @@ import type { Plugin } from "vite";
 const GAME_RUST_CRATES = ["core", "procgen", "wasm_bridge"];
 const RUST_SOURCE_REGEX = /\.rs$|Cargo\.toml$/;
 const WASM_OUT_NAME = "project-x-wasm-pkg";
+/**
+ * The Cargo profile of development builds, defined in the workspace's `Cargo.toml`: a debug build, but
+ * optimised. Plain `--dev` is unoptimised, and generating a planet in the game then takes half a minute.
+ */
+const WASM_DEV_PROFILE = "wasm-dev";
 
 /**
  * Builds the `wasm_bridge` crate with wasm-pack into `../wasm-pkg`, where Vite's WebAssembly ES module
- * integration picks it up. The Rust build matches Vite's mode (debug or release build), and in watch mode
- * the Rust crates are watched to rebuild the WASM package, which in turn triggers a Vite rebuild.
+ * integration picks it up. The Rust build matches Vite's mode (`WASM_DEV_PROFILE` or release build), and in
+ * watch mode the Rust crates are watched to rebuild the WASM package, which in turn triggers a Vite rebuild.
  */
 export function wasmPack(): Plugin {
   let workspaceDir: string;
@@ -25,7 +30,7 @@ export function wasmPack(): Plugin {
     new Promise<void>((resolveBuild, rejectBuild) => {
       const args = [
         "build",
-        isProduction ? "--release" : "--dev",
+        ...(isProduction ? ["--release"] : ["--profile", WASM_DEV_PROFILE]),
         ...["--target", "bundler", "--out-dir", resolve(workspaceDir, "wasm-pkg"), "--out-name", WASM_OUT_NAME],
         resolve(workspaceDir, "wasm_bridge"),
       ];

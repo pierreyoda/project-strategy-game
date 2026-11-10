@@ -1,3 +1,15 @@
 [workspace]
 members = ["core", "procgen", "scripting", "wasm_bridge"]
 resolver = "3"
+
+# Profiles only count here, at the workspace's root: Cargo ignores those of its members.
+
+[profile.release]
+lto = true # Link-Time Optimisation: faster and smaller code but longer compilation
+
+# The WASM bridge as `pnpm start` builds it (see `client/vite.wasm-pack.ts`): a debug build, with its
+# assertions and overflow checks, but optimised. Unoptimised, generating a planet in the game takes half
+# a minute instead of a second or two; native debug builds and tests keep the plain `dev` profile.
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 2

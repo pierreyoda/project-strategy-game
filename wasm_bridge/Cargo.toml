@@ -9,9 +9,6 @@ edition = "2024"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
-[profile.release]
-lto = true # Link-Time Optimisation: faster and smaller code but longer compilation
-
 [dependencies]
 # internal:
 project_x_core = { path = "../core" }
