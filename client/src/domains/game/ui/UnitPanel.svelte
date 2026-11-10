@@ -15,18 +15,25 @@
 
   const cssColor = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
 
-  /** The counter's glyph, small: the same APP-6 shapes as the sprites, in a 64 x 44 card. */
-  const GLYPHS: Record<UnitType, string> = {
-    infantry_division: "M14 10 L50 34 M14 34 L50 10",
-    motorized_division: "M14 10 L50 34 M14 34 L50 10 M32 8 L32 36",
-    light_tank_division: "M20 20 a12 7 0 1 0 24 0 a12 7 0 1 0 -24 0 M29 30 v6 h6",
+  /**
+   * The counter's sign, small: the same WW2 shapes as the sprites, in a 64 x 44 card whose border
+   * runs from 3 to 61 and 3 to 41 - the cross from corner to corner, the wheels and the track inside.
+   */
+  const SIGNS: Record<UnitType, string> = {
+    infantry_division: "M3 3 L61 41 M3 41 L61 3",
+    motorized_division:
+      "M3 3 L61 41 M3 41 L61 3 M23.5 32 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0 M35.5 32 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0",
+    light_tank_division: "M22.5 11.5 h19 a9 9 0 0 1 0 18 h-19 a9 9 0 0 1 0 -18 Z",
   };
   const isUnitType = (type: string | null): type is UnitType => type !== null && type in UNIT_TYPE_NAMES;
-  /** A company's segment, like the counter's on the map: lit, in the warning colour, or faint. */
+  /**
+   * A company's circle, like the counter's on the map, on a dark disc: a lit core in a soft glow, a
+   * ring in the warning colour, or a faint socket.
+   */
   const COMPANY_CLASSES: Record<CompanyState, string> = {
-    active: "bg-fg opacity-95",
-    suppressed: "bg-warning opacity-95",
-    lost: "bg-fg opacity-25",
+    active: "after:bg-white shadow-[0_0_6px_1px_rgb(191_233_255/0.6)]",
+    suppressed: "after:border-[2.5px] after:border-warning",
+    lost: "after:bg-white/10",
   };
 </script>
 
@@ -61,11 +68,14 @@
 
   <div class="flex items-center gap-3">
     <svg viewBox="0 0 64 44" class="h-11 w-16 shrink-0 drop-shadow" role="img" aria-label="Counter">
+      <defs>
+        <clipPath id="unit-panel-sign"><path d="M6 3 H61 V37 L57 41 H3 V6 Z" /></clipPath>
+      </defs>
       <path d="M6 0 H64 V38 L58 44 H0 V6 Z" fill={cssColor(nationColor(viewer))} />
-      <path d="M6 3 H61 V37 L57 41 H3 V6 Z" fill="none" stroke="white" stroke-opacity="0.9" stroke-width="1.5" />
       {#if type}
-        <path d={GLYPHS[type]} fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+        <path d={SIGNS[type]} clip-path="url(#unit-panel-sign)" fill="none" stroke="white" stroke-width="2.5" />
       {/if}
+      <path d="M6 3 H61 V37 L57 41 H3 V6 Z" fill="none" stroke="white" stroke-width="1.5" />
     </svg>
     <div class="min-w-0">
       <div class="truncate font-display text-base font-semibold tracking-wide uppercase">
@@ -77,9 +87,15 @@
 
   <dl class="mt-3 grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1.5 text-sm">
     <dt class="flex items-center gap-2 text-fg-muted"><Icon name="health" />Strength</dt>
-    <dd class="flex items-center gap-1" title={strength} aria-label={strength}>
+    <dd class="flex max-w-36 flex-wrap justify-end gap-1" title={strength} aria-label={strength}>
       {#each companies as state, company (company)}
-        <span class={["h-2 w-5 rounded-tl-cut-sm rounded-br-cut-sm chamfer", COMPANY_CLASSES[state]]}></span>
+        <span
+          class={[
+            "relative size-3.5 rounded-full border border-line-strong bg-ground",
+            "after:absolute after:inset-[2px] after:rounded-full after:content-['']",
+            COMPANY_CLASSES[state],
+          ]}
+        ></span>
       {/each}
     </dd>
     <dt class="flex items-center gap-2 text-fg-muted"><Icon name="movement" />Movement</dt>

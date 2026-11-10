@@ -7,6 +7,7 @@
     type CompanyState,
     type EntityStrength,
     type MapEntity,
+    companyRows,
     companyStates,
     entityCoords,
     inDrawOrder,
@@ -27,16 +28,44 @@
   const ENTITIES_Z_INDEX = 5;
   /** Corner radius of a token, as a share of its side. */
   const TOKEN_CORNER = 0.2;
-  /** The sprites' frame, in which the counters leave their strength row's strip (see the Units artboard). */
+  /** The sprites' frame, in which a counter's card ends at y 835 (see the Units artboard). */
   const SPRITE_FRAME = { width: 1110, height: 1280 };
-  const STRENGTH_ROW = { y: 815, width: 54, height: 11, gap: 12, corner: 3 };
-  /** `--color-warning` in the design system's tokens: a suppressed company is a warning sign. */
-  const WARNING_COLOR = 0xf0b43c;
-  /** A company's segment: lit while it fights, in the warning colour while suppressed, faint once lost. */
-  const COMPANY_FILL: Record<CompanyState, { color: number; alpha: number }> = {
-    active: { color: 0xffffff, alpha: 0.95 },
-    suppressed: { color: WARNING_COLOR, alpha: 0.95 },
-    lost: { color: 0xffffff, alpha: 0.28 },
+  /**
+   * A counter's companies, in the sprites' frame: circles of `radius` centred on the card's bottom
+   * edge, half on the card and half over the ground, `gap` apart, the lines wrapping `lineGap` apart.
+   */
+  const COMPANY_ROW = { y: 835, radius: 46, gap: 12, lineGap: 8 };
+  /** The design system's tokens a company is drawn with - `--color-ground`, `--color-line-strong`, `--color-warning` - and its light. */
+  const COMPANY_COLORS = { disc: 0x090e14, rim: 0x405670, warning: 0xf0b43c, light: 0xf6fbff, glow: 0xbfe9ff };
+
+  /** The dark disc every company sits on, at a radius of 1, rimmed like the HUD's panels. */
+  const disc = (shape: GraphicsContext) =>
+    shape.circle(0, 0, 1).fill(COMPANY_COLORS.disc).stroke({ width: 0.065, color: COMPANY_COLORS.rim });
+  /**
+   * A company's circle at a radius of 1, to scale: every one sits on a dark disc of its own, so that
+   * it reads on any ground. Active, a white core in a soft glow; suppressed, a ring in the warning
+   * colour; lost, a faint socket, so that the unit's full size still shows.
+   */
+  const COMPANY_SHAPES: Record<CompanyState, () => GraphicsContext> = {
+    active: () => {
+      const shape = new GraphicsContext();
+      // the glow, as rings fading out rather than a filter on every counter
+      for (const [radius, alpha] of [
+        [1.3, 0.08],
+        [1.2, 0.14],
+        [1.1, 0.22],
+      ]) {
+        shape.circle(0, 0, radius).fill({ color: COMPANY_COLORS.glow, alpha });
+      }
+      return disc(shape)
+        .circle(0, 0, 0.78)
+        .fill(COMPANY_COLORS.light)
+        .circle(0, 0, 0.78)
+        .stroke({ width: 0.12, color: COMPANY_COLORS.glow, alpha: 0.7 });
+    },
+    suppressed: () =>
+      disc(new GraphicsContext()).circle(0, 0, 0.65).stroke({ width: 0.22, color: COMPANY_COLORS.warning }),
+    lost: () => disc(new GraphicsContext()).circle(0, 0, 0.72).fill({ color: 0xffffff, alpha: 0.1 }),
   };
   /** Opacity of a sprite with nothing left to do this turn. */
   const SPENT_ALPHA = 0.55;
@@ -56,6 +85,8 @@
     sprites: Container;
     /** Geometry of the tokens, shared by every entity drawn at the same size. */
     tokenShapes: Map<number, GraphicsContext>;
+    /** Geometry of a company, by state, shared by every counter. */
+    companyShapes: Record<CompanyState, GraphicsContext>;
   };
 
   /** The token geometry for this side, centered on the origin, built once and reused. */
@@ -84,22 +115,26 @@
   };
 
   /**
-   * The strength row of a counter, drawn in the sprite's frame and scaled with it: the sprite is a
+   * The strength row of a counter, laid out in the sprite's frame and scaled with it: the sprite is a
    * frame fitted to the hex, so a frame coordinate maps to the hex the same way for both.
    */
-  const strengthRow = (layout: HexLayout, strength: EntityStrength): Graphics => {
+  const strengthRow = (drawn: DrawnEntities, layout: HexLayout, strength: EntityStrength): Container => {
     const sx = layout.width / SPRITE_FRAME.width;
     const sy = (2 * layout.size) / SPRITE_FRAME.height;
-    const states = companyStates(strength);
-    const total = states.length * STRENGTH_ROW.width + (states.length - 1) * STRENGTH_ROW.gap;
-    const left = SPRITE_FRAME.width / 2 - total / 2;
-    const row = new Graphics();
-    states.forEach((state, company) => {
-      const x = (left + company * (STRENGTH_ROW.width + STRENGTH_ROW.gap) - SPRITE_FRAME.width / 2) * sx;
-      const y = (STRENGTH_ROW.y - SPRITE_FRAME.height / 2) * sy;
-      row
-        .roundRect(x, y, STRENGTH_ROW.width * sx, STRENGTH_ROW.height * sy, STRENGTH_ROW.corner * sx)
-        .fill(COMPANY_FILL[state]);
+    const pitch = 2 * COMPANY_ROW.radius + COMPANY_ROW.gap;
+    const row = new Container();
+    companyRows(companyStates(strength)).forEach((line, index) => {
+      const left = -((line.length - 1) * pitch) / 2;
+      const y = COMPANY_ROW.y + index * (2 * COMPANY_ROW.radius + COMPANY_ROW.lineGap) - SPRITE_FRAME.height / 2;
+      line.forEach((state, company) => {
+        row.addChild(
+          new Graphics({
+            context: drawn.companyShapes[state],
+            position: { x: (left + company * pitch) * sx, y: y * sy },
+            scale: COMPANY_ROW.radius * sx,
+          }),
+        );
+      });
     });
     return row;
   };
@@ -114,7 +149,17 @@
     const layer = new Container({ label: "map-entities", zIndex: ENTITIES_Z_INDEX });
     const tokens = layer.addChild(new Container({ label: "entity-tokens" }));
     const sprites = layer.addChild(new Container({ label: "entity-sprites", isRenderGroup: true }));
-    const drawn: DrawnEntities = { layer, tokens, sprites, tokenShapes: new Map() };
+    const drawn: DrawnEntities = {
+      layer,
+      tokens,
+      sprites,
+      tokenShapes: new Map(),
+      companyShapes: {
+        active: COMPANY_SHAPES.active(),
+        suppressed: COMPANY_SHAPES.suppressed(),
+        lost: COMPANY_SHAPES.lost(),
+      },
+    };
 
     // drawn twice side by side to wrap around east-west, like the map under it
     const copiesX = [0, wrapBounds(layout, map).period];
@@ -148,7 +193,7 @@
           parts.addChild(entitySprite(layout, mark, entity.tint));
         }
         if (entity.strength) {
-          parts.addChild(strengthRow(layout, entity.strength));
+          parts.addChild(strengthRow(drawn, layout, entity.strength));
         }
         if (entity.ghost) {
           parts.alpha = GHOST_ALPHA;
@@ -211,7 +256,7 @@
       layer = null;
       // the textures are shared, cached by PixiJS's `Assets`
       drawn.layer.destroy({ children: true });
-      for (const shape of drawn.tokenShapes.values()) {
+      for (const shape of [...drawn.tokenShapes.values(), ...Object.values(drawn.companyShapes)]) {
         shape.destroy();
       }
     };

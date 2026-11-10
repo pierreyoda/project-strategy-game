@@ -188,7 +188,7 @@ export const UNIT_SPRITES: Record<UnitType, EntitySprite> = {
 export const UNIT_TOKEN: EntityToken = { side: 0.5 };
 
 /**
- * The segments of a counter's strength row, one per company: the active ones first, then the
+ * The circles of a counter's strength row, one per company: the active ones first, then the
  * suppressed, then the lost - so that the row reads as a bar running down from the left.
  */
 export const companyStates = ({ companies, suppressed, lost }: EntityStrength): CompanyState[] => {
@@ -196,6 +196,19 @@ export const companyStates = ({ companies, suppressed, lost }: EntityStrength): 
   return Array.from({ length: companies }, (_, company) =>
     company < active ? "active" : company < companies - lost ? "suppressed" : "lost",
   );
+};
+
+/** The most companies a counter's strength row holds in one line, before it wraps. */
+export const COMPANIES_PER_ROW = 6;
+
+/**
+ * A strength row laid out in lines of `COMPANIES_PER_ROW` at most: past that, as few lines as it
+ * takes, evened out, the longer first - seven companies are 4 + 3, never 6 + 1.
+ */
+export const companyRows = <T>(companies: readonly T[]): T[][] => {
+  const rows = Math.max(Math.ceil(companies.length / COMPANIES_PER_ROW), 1);
+  const perRow = Math.ceil(companies.length / rows);
+  return Array.from({ length: rows }, (_, row) => companies.slice(row * perRow, (row + 1) * perRow));
 };
 
 /** How a unit's strength reads in words: "3 of 4 companies, 1 suppressed". */
