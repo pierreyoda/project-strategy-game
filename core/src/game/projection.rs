@@ -588,13 +588,7 @@ fn stage_of(world: &World, id: SettlementId, settlement: &Settlement) -> Settlem
     if is_capital {
         return SettlementStage::Capital;
     }
-    let people = settlement
-        .population()
-        .iter()
-        .filter_map(|&group| world.population_groups().get(group))
-        .map(|group| group.size())
-        .sum();
-    SettlementStage::for_population(people)
+    SettlementStage::for_population(world.population_of(settlement))
 }
 
 /// The rank of every unit template, which is its kind in the buffers (see `SnapshotMeta`).

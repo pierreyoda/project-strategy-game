@@ -127,6 +127,12 @@ impl Works {
     pub fn turns_total(&self) -> u16 {
         self.turns_total
     }
+
+    /// One turn of works. Returns whether it was their last.
+    pub fn advance(&mut self) -> bool {
+        self.turns_left -= 1;
+        self.turns_left == 0
+    }
 }
 
 /// A building somewhere on the world map. Not supposed to be moved.
@@ -219,11 +225,7 @@ impl Building {
 
     /// One turn of works. Returns whether they completed, which is when the level goes up.
     pub fn advance_works(&mut self) -> bool {
-        let Some(works) = self.works.as_mut() else {
-            return false;
-        };
-        works.turns_left -= 1;
-        if works.turns_left > 0 {
+        if !self.works.as_mut().is_some_and(Works::advance) {
             return false;
         }
         self.works = None;

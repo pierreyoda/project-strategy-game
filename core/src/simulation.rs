@@ -3,6 +3,7 @@
 //! entities/concepts and their interactions in Project Unshrouded.
 
 pub mod buildings;
+pub mod districts;
 pub mod economy;
 pub mod fog;
 pub mod ids;

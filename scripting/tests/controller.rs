@@ -19,9 +19,11 @@ use project_x_core::{
     },
     simulation::{
         buildings::{BuildingLevel, BuildingTemplate},
+        districts::District,
         ids::{NationId, SimulationID, UnitId},
         military::{self, Unit, UnitTemplate},
         nations::Nation,
+        settlements::Settlement,
         strength::{Damage, Recovery},
     },
 };
@@ -342,10 +344,9 @@ fn test_a_script_builds_by_the_rules_a_player_builds_by() {
     let script = r#"
         fn plan(view, orders, rng) {
             let scout = view.units[0];
-            orders.found_settlement(scout.id, "Camp");
-            // the founding claims the ground the scout stood on: it is the nation's land now
+            // the scout stands on a district of the nation's settlement
             orders.construct_building("hut", scout.tile);
-            // and the player's corner is not
+            // and the player's corner is not the nation's land
             orders.construct_building("hut", offset(1, 1));
         }
     "#;
@@ -354,7 +355,16 @@ fn test_a_script_builds_by_the_rules_a_player_builds_by() {
         ai,
         scouts,
         ..
-    } = game(script, ScriptLimits::default());
+    } = game_with(script, ScriptLimits::default(), |world, _, scouts| {
+        let scout = world.units().get(scouts[0]).unwrap();
+        let (ai, tile) = (scout.owner(), scout.position());
+        let mut changes = TurnChanges::new();
+        let mut gate = WorldMut::new(world, &mut changes);
+        let camp = gate.insert_settlement(Settlement::found("Camp".to_string(), ai, at(9, 6)));
+        let ground = gate.tile_mut(tile).unwrap().artificial_mut();
+        ground.set_owner(Some(ai));
+        ground.set_district(Some(District::laid_out(camp)));
+    });
     let tile = position(&session, scouts[0]);
 
     let events = end_turn(&mut session);

@@ -25,6 +25,7 @@ use crate::{
     },
     simulation::{
         buildings::{Building, BuildingTemplate},
+        districts::{DISTRICT_DISTANCE, District, DistrictRules, DistrictSite, DistrictTerms},
         fog::{FogOfWar, NationFog},
         ids::{
             BuildingId, DepositId, EntityIndex, EntityRef, HqUnitId, InfrastructureId, LeaderId,
@@ -36,7 +37,7 @@ use crate::{
         nations::Nation,
         people::{leaders::Leader, population::PopulationGroup},
         resources::ResourceDeposit,
-        settlements::Settlement,
+        settlements::{Settlement, SettlementStage},
         store::EntityStore,
     },
 };
@@ -67,6 +68,11 @@ pub struct World {
     /// Script-defined definitions, keyed by their `SimulationID::Abstract`.
     unit_templates: BTreeMap<SimulationID, UnitTemplate>,
     building_templates: BTreeMap<SimulationID, BuildingTemplate>,
+    /// The scenario's rule for what a district costs; none, and no district can be laid out.
+    ///
+    /// Behaviour rather than data, unlike the rest of the world: a save will have to set it up
+    /// again from its scenario, like the templates.
+    district_rules: Option<Box<dyn DistrictRules>>,
     fog: FogOfWar,
     /// How the world was generated; empty when it was not.
     genesis: WorldGenesis,
@@ -95,6 +101,7 @@ impl World {
             deposits: EntityStore::new(),
             unit_templates: BTreeMap::new(),
             building_templates: BTreeMap::new(),
+            district_rules: None,
             fog: FogOfWar::new(shape.tiles_count()),
             genesis: WorldGenesis::default(),
         }
@@ -256,6 +263,64 @@ impl World {
         &self.deposits
     }
 
+    /// How many people a settlement has, across its population groups.
+    pub fn population_of(&self, settlement: &Settlement) -> u32 {
+        settlement
+            .population()
+            .iter()
+            .filter_map(|&group| self.population_groups.get(group))
+            .map(|group| group.size())
+            .sum()
+    }
+
+    /// A settlement's districts, with their tiles, in tile order: those on the ring around it.
+    pub fn districts_of(&self, settlement: SettlementId) -> Vec<(CubeCoords, &District)> {
+        let Some(seat) = self.settlements.get(settlement) else {
+            return Vec::new();
+        };
+        self.tiles_within(seat.position(), DISTRICT_DISTANCE)
+            .into_iter()
+            .filter_map(|index| {
+                let coords = self.tile_coords(index)?;
+                let district = self.tile(coords)?.artificial().district()?;
+                (district.settlement() == settlement).then_some((coords, district))
+            })
+            .collect()
+    }
+
+    /// A settlement, as the scenario's district rules weigh it.
+    pub fn district_site(&self, settlement: SettlementId) -> Option<DistrictSite> {
+        let seat = self.settlements.get(settlement)?;
+        let population = self.population_of(seat);
+        Some(DistrictSite {
+            settlement,
+            stage: SettlementStage::for_population(population),
+            capital: self
+                .nations
+                .get(seat.owner())
+                .is_some_and(|nation| nation.capital() == Some(settlement)),
+            // at most the six tiles of its ring
+            districts: self.districts_of(settlement).len() as u8,
+            population,
+        })
+    }
+
+    /// What a settlement's next district costs and takes, by the scenario's rules - or why it
+    /// cannot have one.
+    pub fn district_terms(&self, settlement: SettlementId) -> Result<DistrictTerms, String> {
+        let rules = self
+            .district_rules
+            .as_ref()
+            .ok_or("the scenario defines no districts")?;
+        let site = self.district_site(settlement).ok_or("no such settlement")?;
+        let terms = rules.terms(&site)?;
+        // checked here rather than trusted: the rules are a script's, and works take a turn at least
+        if terms.turns == 0 {
+            return Err("laying out a district takes at least a turn".to_string());
+        }
+        Ok(terms)
+    }
+
     pub fn unit_template(&self, id: &SimulationID) -> Option<&UnitTemplate> {
         self.unit_templates.get(id)
     }
@@ -326,6 +391,11 @@ impl World {
         use crate::simulation::ids::WithSimulationID;
         self.building_templates
             .insert(template.id().clone(), template);
+    }
+
+    /// Set the scenario's rule for what a district costs. See `register_unit_template`.
+    pub fn set_district_rules(&mut self, rules: Box<dyn DistrictRules>) {
+        self.district_rules = Some(rules);
     }
 
     /// Add a nation before the game starts, with its fog record.

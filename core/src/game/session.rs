@@ -297,6 +297,7 @@ impl GameSession {
             }
             // its income is in: its buildings pay and make on top of it
             economy::run_buildings(&mut world, nation, &mut self.events);
+            economy::run_districts(&mut world, nation, &mut self.events);
         }
         state.advance_cursor(end - start.min(end));
         end >= nations.len()
@@ -422,6 +423,7 @@ mod tests {
         },
         simulation::{
             buildings::{Building, BuildingTemplate},
+            districts::{District, DistrictRules, DistrictSite, DistrictTerms},
             fog::TileVisibility,
             ids::{
                 BuildingId, EntityIndex, EntityRef, NationId, SettlementId, SimulationID, UnitId,
@@ -430,6 +432,7 @@ mod tests {
             movement,
             nations::Nation,
             resources::{Resource, ResourceDataStorage, ResourceDataStore, ResourceDeposit},
+            settlements::SettlementStage,
             strength::{Damage, Recovery, StrengthOutcome},
         },
     };
@@ -456,6 +459,17 @@ mod tests {
 
     fn at(col: i16, row: i16) -> CubeCoords {
         OffsetCoords::new(col, row).into()
+    }
+
+    /// A district of `settlement` on (col, row), laid out already: set down as a scenario's setup
+    /// would, rather than ordered.
+    fn laid_out(session: &mut GameSession, settlement: SettlementId, col: i16, row: i16) {
+        let mut changes = TurnChanges::new();
+        WorldMut::new(&mut session.world, &mut changes)
+            .tile_mut(at(col, row))
+            .unwrap()
+            .artificial_mut()
+            .set_district(Some(District::laid_out(settlement)));
     }
 
     /// A free building, so that a test can construct one without a stockpile to budget for.
@@ -1323,17 +1337,18 @@ mod tests {
             .expect("a legal founding");
         let settlement =
             SettlementId::from_index(session.snapshot(first).settlement_ids[0] as usize);
+        laid_out(&mut session, settlement, 2, 1);
         let version = session.version();
 
         session
             .submit(GameCommand::ConstructBuilding {
                 template: SimulationID::new_abstract_id(MINE),
-                tile: at(1, 1),
+                tile: at(2, 1),
             })
             .expect("a legal construction");
         let building = session
             .world()
-            .tile(at(1, 1))
+            .tile(at(2, 1))
             .unwrap()
             .artificial()
             .buildings()[0];
@@ -1348,7 +1363,7 @@ mod tests {
         );
 
         let snapshot = session.snapshot(first);
-        let tile = session.world().tile_index(at(1, 1)).unwrap();
+        let tile = session.world().tile_index(at(2, 1)).unwrap();
         assert_eq!(snapshot.building_ids.len(), 1);
         assert_eq!(snapshot.building_tiles, vec![tile]);
         assert_eq!(snapshot.building_owners, vec![first.raw()]);
@@ -1416,7 +1431,7 @@ mod tests {
 
     /// The first nation settled at (1, 1) - which claims the ring around it - holding `credits`. In
     /// that ring: water at (0, 1), metals at (2, 2), metals run dry at (1, 2), oil at (2, 0); (2, 1)
-    /// and (1, 0) are plain land.
+    /// and (1, 0) are plain land, both laid out as districts of the settlement.
     fn builders_session(credits: u16) -> (GameSession, NationId, NationId, SettlementId) {
         let (mut world, first, second, own, _) = two_nation_world();
         world.register_building_template(plant_template());
@@ -1463,6 +1478,8 @@ mod tests {
             })
             .expect("a legal founding");
         let settlement = session.world().settlements().ids().next().unwrap();
+        laid_out(&mut session, settlement, 2, 1);
+        laid_out(&mut session, settlement, 1, 0);
         session.drain_events();
         (session, first, second, settlement)
     }
@@ -1564,7 +1581,11 @@ mod tests {
             refused("the tile is already built on"),
             "one building per tile"
         );
-        construct(&mut session, PLANT, 1, 1).expect("the settlement's own tile is land like any");
+        assert_eq!(
+            construct(&mut session, PLANT, 1, 1),
+            Err(CommandRejection::NoDistrict),
+            "nor on the settlement's own tile, where no district is laid out"
+        );
         assert_eq!(
             construct(&mut session, "nothing", 1, 0),
             Err(CommandRejection::UnknownDefinition(
@@ -1604,7 +1625,43 @@ mod tests {
     }
 
     #[test]
-    fn test_a_building_belongs_to_the_nearest_settlement() {
+    fn test_a_building_on_a_district_belongs_to_its_settlement() {
+        let (mut session, first, _, landfall) = builders_session(1000);
+        let mut changes = TurnChanges::new();
+        let scout = WorldMut::new(&mut session.world, &mut changes).insert_unit(Unit::recruit(
+            &scout_template(),
+            first,
+            at(3, 1),
+        ));
+        session
+            .submit(GameCommand::FoundSettlement {
+                founder: scout,
+                name: "Outpost".to_string(),
+            })
+            .expect("a legal founding");
+        let outpost = session
+            .world()
+            .settlements()
+            .ids()
+            .find(|&id| id != landfall)
+            .unwrap();
+        // between the two, as near one as the other: the nearest would be Landfall, the lower ID
+        laid_out(&mut session, outpost, 2, 1);
+
+        construct(&mut session, PLANT, 2, 1).unwrap();
+
+        let building = building_at(&session, 2, 1);
+        let settlement = session
+            .world()
+            .buildings()
+            .get(building)
+            .unwrap()
+            .settlement();
+        assert_eq!(settlement, outpost);
+    }
+
+    #[test]
+    fn test_an_extractor_belongs_to_the_nearest_settlement() {
         let (mut session, first, _, landfall) = builders_session(1000);
         let mut changes = TurnChanges::new();
         let scout = WorldMut::new(&mut session.world, &mut changes).insert_unit(Unit::recruit(
@@ -1624,9 +1681,17 @@ mod tests {
             .ids()
             .find(|&id| id != landfall)
             .unwrap();
+        let mut stock = ResourceDataStorage::new();
+        stock.replenish(Resource::Metals, 100);
+        session.world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit"),
+            at(4, 1),
+            stock,
+            600,
+        ));
 
-        construct(&mut session, PLANT, 2, 1).unwrap();
-        construct(&mut session, PLANT, 4, 1).unwrap();
+        construct(&mut session, DRILL, 2, 2).unwrap();
+        construct(&mut session, DRILL, 4, 1).unwrap();
 
         let settlement_of = |col, row| {
             let building = building_at(&session, col, row);
@@ -1638,7 +1703,7 @@ mod tests {
                 .settlement()
         };
         assert_eq!(
-            settlement_of(2, 1),
+            settlement_of(2, 2),
             landfall,
             "one tile from Landfall, three from Outpost"
         );
@@ -1648,22 +1713,27 @@ mod tests {
     #[test]
     fn test_a_nation_without_a_settlement_cannot_build() {
         let (mut world, first, ..) = two_nation_world();
-        world.register_building_template(plant_template());
+        world.register_building_template(drill_template());
+        let mut stock = ResourceDataStorage::new();
+        stock.replenish(Resource::Metals, 100);
+        world.place_deposit(ResourceDeposit::new(
+            SimulationID::new_abstract_id("deposit"),
+            at(2, 1),
+            stock,
+            600,
+        ));
         let mut changes = TurnChanges::new();
-        let mut gate = WorldMut::new(&mut world, &mut changes);
         // land of its own, handed over rather than claimed by a founding
-        gate.tile_mut(at(2, 1))
+        WorldMut::new(&mut world, &mut changes)
+            .tile_mut(at(2, 1))
             .unwrap()
             .artificial_mut()
             .set_owner(Some(first));
-        gate.nation_mut(first)
-            .unwrap()
-            .resources_mut()
-            .replenish(Resource::Credits, 100);
         let mut session = GameSession::new(world, SEED, first);
 
+        // an extractor, since anything else needs a district, which needs a settlement
         assert_eq!(
-            construct(&mut session, PLANT, 2, 1),
+            construct(&mut session, DRILL, 2, 1),
             Err(CommandRejection::NoSettlement)
         );
     }
@@ -1767,6 +1837,252 @@ mod tests {
             Err(CommandRejection::UnknownEntity(EntityRef::Building(
                 nowhere
             )))
+        );
+    }
+
+    /// District terms for the tests: `credits`, and `step` more for each district the settlement
+    /// has, in `turns`; none past `most`.
+    #[derive(Debug)]
+    struct Districts {
+        credits: u16,
+        step: u16,
+        turns: u16,
+        most: u8,
+    }
+
+    impl DistrictRules for Districts {
+        fn terms(&self, site: &DistrictSite) -> Result<DistrictTerms, String> {
+            if site.districts >= self.most {
+                return Err(format!("{} is all it takes", self.most));
+            }
+            let credits = self.credits + self.step * u16::from(site.districts);
+            Ok(DistrictTerms {
+                cost: [(Resource::Credits, credits)].into(),
+                turns: self.turns,
+            })
+        }
+    }
+
+    /// `builders_session`, with district terms of 30 credits and 10 more per district, in 2 turns,
+    /// 4 districts at most: its settlement has 2.
+    fn districts_session(credits: u16) -> (GameSession, NationId, SettlementId) {
+        let (mut session, first, _, settlement) = builders_session(credits);
+        session.world.set_district_rules(Box::new(Districts {
+            credits: 30,
+            step: 10,
+            turns: 2,
+            most: 4,
+        }));
+        (session, first, settlement)
+    }
+
+    fn lay_out(
+        session: &mut GameSession,
+        settlement: SettlementId,
+        col: i16,
+        row: i16,
+    ) -> Result<(), CommandRejection> {
+        session.submit(GameCommand::LayOutDistrict {
+            settlement,
+            tile: at(col, row),
+        })
+    }
+
+    fn district_at(session: &GameSession, col: i16, row: i16) -> Option<District> {
+        session
+            .world()
+            .tile(at(col, row))
+            .unwrap()
+            .artificial()
+            .district()
+            .copied()
+    }
+
+    #[test]
+    fn test_a_building_that_extracts_nothing_stands_on_a_district() {
+        let (mut session, ..) = builders_session(1000);
+
+        assert_eq!(
+            construct(&mut session, PLANT, 2, 0),
+            Err(CommandRejection::NoDistrict),
+            "free land of its own, but no district on it"
+        );
+        construct(&mut session, DRILL, 2, 2)
+            .expect("an extractor needs its deposit, not a district");
+        construct(&mut session, PLANT, 2, 1).expect("on a district");
+    }
+
+    #[test]
+    fn test_a_district_is_laid_out_on_free_land_of_the_nation_next_to_its_settlement() {
+        let (mut session, first, landfall) = districts_session(1000);
+        let refused = |reason| Err(CommandRejection::IllegalPlacement { reason });
+        let mut changes = TurnChanges::new();
+        let mut gate = WorldMut::new(&mut session.world, &mut changes);
+        // land of its own two tiles away, and a tile of its ring handed back
+        gate.tile_mut(at(3, 1))
+            .unwrap()
+            .artificial_mut()
+            .set_owner(Some(first));
+        gate.tile_mut(at(2, 0))
+            .unwrap()
+            .artificial_mut()
+            .set_owner(None);
+        let theirs = gate.insert_settlement(crate::simulation::settlements::Settlement::found(
+            "Theirs".to_string(),
+            NationId::from_index(1),
+            at(8, 6),
+        ));
+        construct(&mut session, DRILL, 2, 2).unwrap();
+
+        let unknown = SettlementId::from_index(99);
+        assert_eq!(
+            lay_out(&mut session, unknown, 2, 1),
+            Err(CommandRejection::UnknownEntity(EntityRef::Settlement(
+                unknown
+            )))
+        );
+        assert_eq!(
+            lay_out(&mut session, theirs, 7, 6),
+            Err(CommandRejection::NotYours(EntityRef::Settlement(theirs)))
+        );
+        assert_eq!(
+            lay_out(&mut session, landfall, 1, -1),
+            refused("the tile is off the map")
+        );
+        assert_eq!(
+            lay_out(&mut session, landfall, 3, 1),
+            refused("a district is laid out next to its settlement")
+        );
+        assert_eq!(
+            lay_out(&mut session, landfall, 1, 1),
+            refused("a district is laid out next to its settlement"),
+            "not on the settlement's own tile"
+        );
+        assert_eq!(
+            lay_out(&mut session, landfall, 2, 0),
+            refused("the tile is not the nation's land")
+        );
+        assert_eq!(
+            lay_out(&mut session, landfall, 0, 1),
+            refused("a district cannot be laid out on water")
+        );
+        assert_eq!(
+            lay_out(&mut session, landfall, 2, 1),
+            refused("a district is already laid out on the tile")
+        );
+        assert_eq!(
+            lay_out(&mut session, landfall, 2, 2),
+            refused("the tile is already built on")
+        );
+        lay_out(&mut session, landfall, 1, 2)
+            .expect("free land of its own next to it, deposit or not");
+    }
+
+    #[test]
+    fn test_a_district_is_paid_at_once_and_built_on_once_its_turns_pass() {
+        let (mut session, first, landfall) = districts_session(100);
+
+        lay_out(&mut session, landfall, 2, 0).expect("a legal district");
+        assert_eq!(
+            credits(&session, first),
+            50,
+            "30, and 10 for each of the 2 it has"
+        );
+        let district = district_at(&session, 2, 0).unwrap();
+        assert_eq!(district.settlement(), landfall);
+        assert_eq!(
+            district
+                .works()
+                .map(|works| (works.turns_left(), works.turns_total())),
+            Some((2, 2))
+        );
+        assert!(session.drain_events().contains(&GameEvent::Log {
+            nation: Some(first),
+            message: "Landfall lays out a district.".to_string(),
+        }));
+        assert_eq!(
+            construct(&mut session, PLANT, 2, 0),
+            Err(CommandRejection::IllegalPlacement {
+                reason: "a district is still being laid out on the tile",
+            })
+        );
+
+        resolve_turn(&mut session);
+        assert!(!district_at(&session, 2, 0).unwrap().is_laid_out());
+        session.drain_events();
+        resolve_turn(&mut session);
+        assert!(district_at(&session, 2, 0).unwrap().is_laid_out());
+        assert!(session.drain_events().contains(&GameEvent::Log {
+            nation: Some(first),
+            message: "A district of Landfall is laid out.".to_string(),
+        }));
+
+        construct(&mut session, PLANT, 2, 0).expect("built on once laid out");
+        let building = building_at(&session, 2, 0);
+        let settlement = session
+            .world()
+            .buildings()
+            .get(building)
+            .unwrap()
+            .settlement();
+        assert_eq!(settlement, landfall);
+    }
+
+    #[test]
+    fn test_the_scenarios_rules_set_a_districts_terms_or_refuse_it() {
+        let (mut session, _, _, landfall) = builders_session(1000);
+        assert_eq!(
+            lay_out(&mut session, landfall, 2, 0),
+            Err(CommandRejection::DistrictRefused(
+                "the scenario defines no districts".to_string()
+            ))
+        );
+
+        let (mut session, first, landfall) = districts_session(109);
+        assert_eq!(
+            session.world().district_site(landfall),
+            Some(DistrictSite {
+                settlement: landfall,
+                stage: SettlementStage::Outpost,
+                capital: true,
+                districts: 2,
+                population: 0,
+            }),
+            "what the rules are handed: a capital of no one yet, with 2 districts"
+        );
+        lay_out(&mut session, landfall, 2, 0).expect("50 for the third");
+        assert_eq!(
+            lay_out(&mut session, landfall, 1, 2),
+            Err(CommandRejection::InsufficientResources {
+                resource: Resource::Credits,
+                missing: 1,
+            }),
+            "60 for the fourth"
+        );
+        assert_eq!(district_at(&session, 1, 2), None, "nothing laid out");
+        assert_eq!(credits(&session, first), 59, "nor taken");
+
+        give(&mut session, first, Resource::Credits, 1);
+        lay_out(&mut session, landfall, 1, 2).expect("60 for 60");
+        assert_eq!(
+            lay_out(&mut session, landfall, 2, 2),
+            Err(CommandRejection::DistrictRefused(
+                "4 is all it takes".to_string()
+            ))
+        );
+
+        // works take a turn at least, whatever the rules say
+        session.world.set_district_rules(Box::new(Districts {
+            credits: 0,
+            step: 0,
+            turns: 0,
+            most: 6,
+        }));
+        assert_eq!(
+            lay_out(&mut session, landfall, 2, 2),
+            Err(CommandRejection::DistrictRefused(
+                "laying out a district takes at least a turn".to_string()
+            ))
         );
     }
 

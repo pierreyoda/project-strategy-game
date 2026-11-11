@@ -191,6 +191,8 @@ impl From<&CommandRejection> for RejectionWire {
             CommandRejection::NoSettlement => "noSettlement",
             CommandRejection::AtMaxLevel => "atMaxLevel",
             CommandRejection::WorksUnderWay => "worksUnderWay",
+            CommandRejection::NoDistrict => "noDistrict",
+            CommandRejection::DistrictRefused(_) => "districtRefused",
             CommandRejection::NotImplemented(_) => "notImplemented",
         };
         Self {

@@ -4,7 +4,10 @@
 //! stores. Owning them here would give every entity two owners, and would make a tile impossible to
 //! hand out for the cheap, copy-free projection the client reads.
 
-use crate::simulation::ids::{BuildingId, InfrastructureId, NationId, SettlementId, SupplyNodeId};
+use crate::simulation::{
+    districts::District,
+    ids::{BuildingId, InfrastructureId, NationId, SettlementId, SupplyNodeId},
+};
 
 #[derive(Debug, Default)]
 pub struct HexMapArtificialTileData {
@@ -12,6 +15,9 @@ pub struct HexMapArtificialTileData {
     supply_node: Option<SupplyNodeId>,
     infrastructure: Vec<InfrastructureId>,
     settlement: Option<SettlementId>,
+    /// Unlike what else stands on a tile, kept here rather than referenced: a district is a state
+    /// of its tile, see `simulation::districts`.
+    district: Option<District>,
     buildings: Vec<BuildingId>,
 }
 
@@ -50,6 +56,18 @@ impl HexMapArtificialTileData {
 
     pub fn set_settlement(&mut self, settlement: Option<SettlementId>) {
         self.settlement = settlement;
+    }
+
+    pub fn district(&self) -> Option<&District> {
+        self.district.as_ref()
+    }
+
+    pub fn district_mut(&mut self) -> Option<&mut District> {
+        self.district.as_mut()
+    }
+
+    pub fn set_district(&mut self, district: Option<District>) {
+        self.district = district;
     }
 
     pub fn buildings(&self) -> &[BuildingId] {

@@ -2,9 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use crate::game::{
-    events::{EventBuffer, GameEvent},
-    state::{World, WorldMut},
+use crate::{
+    game::{
+        events::{EventBuffer, GameEvent},
+        state::{World, WorldMut},
+    },
+    hex_map::coordinates::CubeCoords,
 };
 
 use super::{
@@ -55,6 +58,38 @@ pub fn run_buildings(world: &mut WorldMut<'_>, nation: NationId, events: &mut Ev
     for building in buildings_of(world.world(), nation) {
         operate(world, nation, building, events);
         advance_works(world, nation, building, events);
+    }
+}
+
+/// One turn of a nation's districts being laid out, settlement by settlement in ID order: each
+/// one's works advance a turn, and on the last the district can be built on.
+pub fn run_districts(world: &mut WorldMut<'_>, nation: NationId, events: &mut EventBuffer) {
+    let under_way: Vec<(CubeCoords, String)> = {
+        let state = world.world();
+        state
+            .settlements()
+            .iter()
+            .filter(|(_, settlement)| settlement.owner() == nation)
+            .flat_map(|(id, settlement)| {
+                state
+                    .districts_of(id)
+                    .into_iter()
+                    .filter(|(_, district)| district.works().is_some())
+                    .map(|(coords, _)| (coords, settlement.name().to_string()))
+            })
+            .collect()
+    };
+    for (coords, name) in under_way {
+        if let Some(district) = world
+            .tile_mut(coords)
+            .and_then(|tile| tile.artificial_mut().district_mut())
+            && district.advance_works()
+        {
+            events.push(GameEvent::Log {
+                nation: Some(nation),
+                message: format!("A district of {name} is laid out."),
+            });
+        }
     }
 }
 

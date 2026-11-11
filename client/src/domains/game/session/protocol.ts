@@ -66,6 +66,8 @@ export type CommandRejection = {
     | "noSettlement"
     | "atMaxLevel"
     | "worksUnderWay"
+    | "noDistrict"
+    | "districtRefused"
     | "notImplemented";
   message: string;
 };

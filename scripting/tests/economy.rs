@@ -18,6 +18,7 @@ use project_x_core::{
     },
     simulation::{
         buildings::{BuildingLevel, BuildingTemplate},
+        districts::District,
         ids::{BuildingId, NationId, SimulationID, UnitId},
         military::{Unit, UnitTemplate},
         nations::Nation,
@@ -56,7 +57,8 @@ struct Game {
 }
 
 /// The player in the north-west; the scripted nation in the south-east, settled at `SETTLEMENT` with
-/// the ring around it its own, a scout, and `credits` - and a metals deposit at `DEPOSIT` if asked.
+/// the ring around it its own and laid out as districts, a scout, and `credits` - and a metals
+/// deposit at `DEPOSIT` if asked.
 ///
 /// A mine is built in 2 turns for 100 credits and raised to level 2 in 1 for 150, upkeep 1 then 2;
 /// a plant is built in 1 for 300, upkeep 1.
@@ -115,7 +117,7 @@ fn game(credits: u16, deposit: bool) -> Game {
     let mut changes = TurnChanges::new();
     let mut gate = WorldMut::new(&mut world, &mut changes);
     let settled = at(SETTLEMENT.0, SETTLEMENT.1);
-    gate.insert_settlement(Settlement::found("Outpost".to_string(), ai, settled));
+    let outpost = gate.insert_settlement(Settlement::found("Outpost".to_string(), ai, settled));
     let ring: Vec<CubeCoords> = gate
         .world()
         .tiles_within(settled, 1)
@@ -123,10 +125,11 @@ fn game(credits: u16, deposit: bool) -> Game {
         .filter_map(|index| gate.world().tile_coords(index))
         .collect();
     for coords in ring {
-        gate.tile_mut(coords)
-            .unwrap()
-            .artificial_mut()
-            .set_owner(Some(ai));
+        let ground = gate.tile_mut(coords).unwrap().artificial_mut();
+        ground.set_owner(Some(ai));
+        if coords != settled {
+            ground.set_district(Some(District::laid_out(outpost)));
+        }
     }
     gate.nation_mut(ai)
         .unwrap()

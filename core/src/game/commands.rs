@@ -16,6 +16,7 @@ use crate::{
     hex_map::coordinates::CubeCoords,
     simulation::{
         buildings::Building,
+        districts::{DISTRICT_DISTANCE, District},
         economy::{self, ConstructionCosts},
         ids::{BuildingId, EntityRef, NationId, SettlementId, SimulationID, UnitId},
         movement::{self, StepRefusal},
@@ -31,8 +32,10 @@ pub enum GameCommand {
     MoveUnit { unit: UnitId, path: Vec<CubeCoords> },
     /// Found a settlement where the founding unit stands. The unit is spent.
     FoundSettlement { founder: UnitId, name: String },
-    /// Order a building on a tile of the issuer's own land, belonging to its nearest settlement:
-    /// level 1's cost is paid at once, and its turns pass before the building works.
+    /// Order a building on a tile of the issuer's own land: level 1's cost is paid at once, and its
+    /// turns pass before the building works. One that extracts nothing stands on a laid-out
+    /// district and belongs to its settlement; an extractor stands on its deposit, and belongs to
+    /// the district's settlement if there is one, to the nearest settlement if not.
     ConstructBuilding {
         template: SimulationID,
         tile: CubeCoords,
@@ -40,6 +43,12 @@ pub enum GameCommand {
     /// Order a building's next level: that level's cost at once, then its turns, during which the
     /// building keeps working at the level it has.
     UpgradeBuilding { building: BuildingId },
+    /// Lay out a district for one of the issuer's settlements on a free tile of its land next to
+    /// it: the scenario's terms are paid at once, and their turns pass before it can be built on.
+    LayOutDistrict {
+        settlement: SettlementId,
+        tile: CubeCoords,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,6 +82,10 @@ pub enum CommandRejection {
     AtMaxLevel,
     /// Works are already under way on the building: one level at a time.
     WorksUnderWay,
+    /// A building that extracts nothing stands on a laid-out district, and the tile has none.
+    NoDistrict,
+    /// The scenario's rules give the settlement no district: none defined, or none for it now.
+    DistrictRefused(String),
     /// Rejected by a rule that has not been written yet.
     NotImplemented(&'static str),
 }
@@ -96,6 +109,8 @@ impl std::fmt::Display for CommandRejection {
             Self::NoSettlement => write!(f, "a building needs a settlement to belong to"),
             Self::AtMaxLevel => write!(f, "the building is at its last level"),
             Self::WorksUnderWay => write!(f, "works are already under way"),
+            Self::NoDistrict => write!(f, "it needs a district laid out on the tile"),
+            Self::DistrictRefused(reason) => write!(f, "no district: {reason}"),
             Self::NotImplemented(what) => write!(f, "not implemented yet: {what}"),
         }
     }
@@ -124,6 +139,9 @@ pub fn apply(
         }
         GameCommand::UpgradeBuilding { building } => {
             upgrade_building(*building, issuer, world, events)
+        }
+        GameCommand::LayOutDistrict { settlement, tile } => {
+            lay_out_district(*settlement, *tile, issuer, world, events)
         }
     }
 }
@@ -283,6 +301,15 @@ fn construct_building(
                 reason: "the tile is already built on",
             });
         }
+        let district = ground.artificial().district();
+        if district.is_some_and(|district| !district.is_laid_out()) {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "a district is still being laid out on the tile",
+            });
+        }
+        if definition.deposit().is_none() && district.is_none() {
+            return Err(CommandRejection::NoDistrict);
+        }
         // judged against the truth, like every order: an extractor on ground the nation never
         // looked at is refused on what is there, not on what it knows
         if let Some(resource) = definition.deposit() {
@@ -296,8 +323,24 @@ fn construct_building(
                 return Err(CommandRejection::MissingDeposit { resource });
             }
         }
-        let settlement =
-            nearest_settlement(state, issuer, position).ok_or(CommandRejection::NoSettlement)?;
+        let settlement = match district {
+            Some(district) => {
+                let settlement = district.settlement();
+                if state
+                    .settlements()
+                    .get(settlement)
+                    .is_none_or(|seat| seat.owner() != issuer)
+                {
+                    return Err(CommandRejection::NotYours(EntityRef::Settlement(
+                        settlement,
+                    )));
+                }
+                settlement
+            }
+            None => {
+                nearest_settlement(state, issuer, position).ok_or(CommandRejection::NoSettlement)?
+            }
+        };
         let level = definition.first_level();
         affordable(state, issuer, &level.cost)?;
         (position, settlement, level.cost.clone(), level.turns)
@@ -364,6 +407,78 @@ fn upgrade_building(
         nation: issuer,
         building,
         level,
+    });
+    Ok(())
+}
+
+fn lay_out_district(
+    settlement: SettlementId,
+    tile: CubeCoords,
+    issuer: NationId,
+    world: &mut WorldMut<'_>,
+    events: &mut EventBuffer,
+) -> Result<(), CommandRejection> {
+    let (position, terms, name) = {
+        let state = world.world();
+        let seat = state
+            .settlements()
+            .get(settlement)
+            .ok_or(CommandRejection::UnknownEntity(EntityRef::Settlement(
+                settlement,
+            )))?;
+        if seat.owner() != issuer {
+            return Err(CommandRejection::NotYours(EntityRef::Settlement(
+                settlement,
+            )));
+        }
+        let off_map = CommandRejection::IllegalPlacement {
+            reason: "the tile is off the map",
+        };
+        let position = state.shape().wrap(tile).ok_or(off_map.clone())?;
+        let ground = state.tile(position).ok_or(off_map)?;
+        if state.shape().distance(seat.position(), position) != DISTRICT_DISTANCE {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "a district is laid out next to its settlement",
+            });
+        }
+        if ground.artificial().owner() != Some(issuer) {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "the tile is not the nation's land",
+            });
+        }
+        if ground.natural().terrain().is_water() {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "a district cannot be laid out on water",
+            });
+        }
+        if ground.artificial().district().is_some() {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "a district is already laid out on the tile",
+            });
+        }
+        if ground.artificial().settlement().is_some() || !ground.artificial().buildings().is_empty()
+        {
+            return Err(CommandRejection::IllegalPlacement {
+                reason: "the tile is already built on",
+            });
+        }
+        let terms = state
+            .district_terms(settlement)
+            .map_err(CommandRejection::DistrictRefused)?;
+        affordable(state, issuer, &terms.cost)?;
+        (position, terms, seat.name().to_string())
+    };
+
+    pay(world, issuer, &terms.cost);
+    if let Some(ground) = world.tile_mut(position) {
+        ground
+            .artificial_mut()
+            .set_district(Some(District::order(settlement, terms.turns)));
+    }
+
+    events.push(GameEvent::Log {
+        nation: Some(issuer),
+        message: format!("{name} lays out a district."),
     });
     Ok(())
 }
