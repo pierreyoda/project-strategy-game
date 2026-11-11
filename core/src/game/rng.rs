@@ -27,6 +27,8 @@ pub enum RngPurpose {
     /// The resource deposits of a generated world, apart from `WorldGeneration` so that placing
     /// them never shifts the capitals, nor the capitals them.
     DepositGeneration,
+    /// The planet itself, beyond its noise: which of its poles land may reach.
+    PlanetGeneration,
     Economy,
     Logistics,
     Military,
@@ -50,6 +52,7 @@ impl RngPurpose {
             Self::Population => (4, 0),
             Self::Ai(nation) => (5, nation.index() as u32),
             Self::DepositGeneration => (6, 0),
+            Self::PlanetGeneration => (7, 0),
         };
         (u64::from(purpose) << 32) | u64::from(nation)
     }
@@ -132,6 +135,10 @@ mod tests {
         assert_ne!(draws(7, ai(0)), draws(7, RngPurpose::WorldGeneration));
         assert_ne!(
             draws(7, RngPurpose::DepositGeneration),
+            draws(7, RngPurpose::WorldGeneration)
+        );
+        assert_ne!(
+            draws(7, RngPurpose::PlanetGeneration),
             draws(7, RngPurpose::WorldGeneration)
         );
     }

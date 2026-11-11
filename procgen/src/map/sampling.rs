@@ -9,7 +9,7 @@ use project_x_core::hex_map::{
 };
 
 use super::{
-    projection::CylinderProjection, settings::MapGeneratorSettings,
+    coastline::Coastline, projection::CylinderProjection, settings::MapGeneratorSettings,
     terrain::TERRAIN_GRADIENT_BOUNDS,
 };
 
@@ -84,34 +84,109 @@ impl ElevationField {
     /// Build the `HexMap`, converting the elevations from planetary elevation units to meters
     /// like the final planet subgroup of libnoise's complex planet example, with the water
     /// line of the wanted ocean coverage as sea level.
+    ///
+    /// The `Coastline` decides which tiles are land. A tile it leaves on the side of the water line
+    /// it was sampled on keeps its sampled elevation. One it sinks takes the depth of the blended
+    /// field below the coastline's own water line, on the right side of sea level - shallows
+    /// where a neck was cut. One it raises from the sea takes the elevation of the land around
+    /// it, spread in from the coast it grew from: a bay filled between hills is hilly too.
     pub fn into_hex_map(self, settings: &MapGeneratorSettings) -> HexMap {
         let (scale, bias) = settings.get_elevation_scale_bias();
         let water_line = self.water_line(settings.get_ocean_coverage());
         let flattening = settings.get_lowland_flattening();
-        let shelf = self.shelf(water_line, settings.get_coastal_shelf_width());
+        let coastline = Coastline::draw(self.shape, &self.values, settings);
+        let shelf = self.shelf(coastline.land(), settings.get_coastal_shelf_width());
+
+        let mut elevations = Vec::with_capacity(self.values.len());
+        let mut raised = Vec::with_capacity(self.values.len());
+        for (index, (&value, &on_shelf)) in self.values.iter().zip(&shelf).enumerate() {
+            let land = coastline.is_land(index);
+            raised.push(land && value < water_line);
+            let above = if land == (value >= water_line) {
+                value - water_line
+            } else {
+                coastline.relief(index)
+            };
+            let above = if on_shelf { shelf_value(above) } else { above };
+            let elevation = to_meters(above, flattening, scale, bias);
+            elevations.push(if land {
+                elevation.max(0)
+            } else {
+                elevation.min(-1)
+            });
+        }
+        self.spread_inland(&mut elevations, &raised);
 
         let mut tiles = HexMapStorage::with_capacity(self.values.len());
-        for ((coords, value), on_shelf) in self.shape.coords().zip(self.values).zip(shelf) {
-            let value = if on_shelf {
-                shelf_value(value, water_line)
-            } else {
-                value
-            };
-            let elevation = to_meters(value, water_line, flattening, scale, bias);
+        for (coords, elevation) in self.shape.coords().zip(elevations) {
             tiles.insert(coords, HexMapTile::from_properties(elevation));
         }
         HexMap::from_tiles(tiles)
     }
 
+    /// Give each raised tile the mean elevation of its neighbors on land already settled - the
+    /// land as sampled first, then the raised tiles one step further at a time: a breadth-first
+    /// search from the coasts the coastline grew from. A raised tile out of reach of any
+    /// sampled land keeps its elevation.
+    fn spread_inland(&self, elevations: &mut [i16], raised: &[bool]) {
+        let columns = self.shape.columns() as usize;
+        let index = |coords: OffsetCoords| coords.row() as usize * columns + coords.col() as usize;
+        let neighbors: Vec<Vec<usize>> = self
+            .shape
+            .coords()
+            .map(|coords| {
+                self.shape
+                    .neighbors(coords)
+                    .map(|neighbor| index(neighbor.into()))
+                    .collect()
+            })
+            .collect();
+        let land = |tile: usize| elevations[tile] >= 0;
+        let mut settled: Vec<bool> = (0..raised.len())
+            .map(|tile| land(tile) && !raised[tile])
+            .collect();
+        let mut ring: Vec<usize> = (0..raised.len())
+            .filter(|&tile| raised[tile] && neighbors[tile].iter().any(|&n| settled[n]))
+            .collect();
+        while !ring.is_empty() {
+            // a whole ring from the elevations of the ones before, so that the order within it
+            // does not matter
+            let spread: Vec<(usize, i16)> = ring
+                .iter()
+                .map(|&tile| {
+                    let around: Vec<i32> = neighbors[tile]
+                        .iter()
+                        .filter(|&&n| settled[n])
+                        .map(|&n| i32::from(elevations[n]))
+                        .collect();
+                    let mean = around.iter().sum::<i32>() as f64 / around.len() as f64;
+                    (tile, mean.round() as i16)
+                })
+                .collect();
+            for &(tile, elevation) in &spread {
+                elevations[tile] = elevation;
+                settled[tile] = true;
+            }
+            let mut next: Vec<usize> = spread
+                .iter()
+                .flat_map(|&(tile, _)| neighbors[tile].iter().copied())
+                .filter(|&n| raised[n] && !settled[n])
+                .collect();
+            next.sort_unstable();
+            next.dedup();
+            ring = next;
+        }
+    }
+
     /// Whether each tile is sea within `width` steps of land, in the order of the values: a
     /// breadth-first search from every shore at once, wrapping around east-west like the map.
-    fn shelf(&self, water_line: f64, width: u32) -> Vec<bool> {
+    fn shelf(&self, land: &[bool], width: u32) -> Vec<bool> {
         let columns = self.shape.columns() as usize;
         let index = |coords: OffsetCoords| coords.row() as usize * columns + coords.col() as usize;
         let mut distance = vec![u32::MAX; self.values.len()];
         let mut queue = VecDeque::new();
-        for (coords, &value) in self.shape.coords().zip(&self.values) {
-            if value >= water_line {
+        for coords in self.shape.coords() {
+            if land[index(coords.into())] {
                 distance[index(coords.into())] = 0;
                 queue.push_back(coords);
             }
@@ -136,25 +211,24 @@ impl ElevationField {
     }
 }
 
-/// A sea tile's value once on the shelf: depths already within the upper half of the shallow
-/// band are kept, deeper ones compressed into its lower half, so that the sea floor keeps the
-/// order it was sampled in and every shelf tile reads as shallow water.
-fn shelf_value(value: f64, water_line: f64) -> f64 {
-    let depth = water_line - value;
+/// A sea tile's height once on the shelf, below the water line: depths already within the upper
+/// half of the shallow band are kept, deeper ones compressed into its lower half, so that the sea
+/// floor keeps the order it was sampled in and every shelf tile reads as shallow water.
+fn shelf_value(above: f64) -> f64 {
+    let depth = -above;
     if depth <= SHELF_KEPT {
-        return value;
+        return above;
     }
     let beyond = depth - SHELF_KEPT;
     let compressed = SHELF_KEPT + (SHELF_FLOOR - SHELF_KEPT) * beyond / (beyond + SHELF_HALF_DEPTH);
-    water_line - compressed
+    -compressed
 }
 
-/// Elevation in meters of a sampled value, the water line becoming sea level and the lowlands
-/// above it flattened: a height `h` becomes `h² / (h + flattening)`, which sinks the plateaus
-/// towards the plains and costs a peak little more than the flattening itself. The seas keep
-/// their depths.
-fn to_meters(value: f64, water_line: f64, flattening: f64, scale: f64, bias: f64) -> i16 {
-    let above = value - water_line;
+/// Elevation in meters of a height above the water line, in planetary elevation units, the
+/// water line becoming sea level and the lowlands above it flattened: a height `h` becomes
+/// `h² / (h + flattening)`, which sinks the plateaus towards the plains and costs a peak little
+/// more than the flattening itself. The seas keep their depths.
+fn to_meters(above: f64, flattening: f64, scale: f64, bias: f64) -> i16 {
     let relieved = if above > 0.0 {
         above * above / (above + flattening)
     } else {
@@ -228,7 +302,7 @@ mod tests {
         ];
         for (value, water_line, flattening, expected) in cases {
             assert_eq!(
-                to_meters(value, water_line, flattening, scale, bias),
+                to_meters(value - water_line, flattening, scale, bias),
                 expected,
                 "value {value}, water line {water_line}, flattening {flattening}"
             );
@@ -237,15 +311,11 @@ mod tests {
 
     #[test]
     fn test_shelf_keeps_shoals_and_brings_the_abyss_up_into_the_shallow_band() {
-        let water_line = 0.125;
         // a shoal keeps its depth
-        assert_eq!(shelf_value(0.12, water_line), 0.12);
+        assert_eq!(shelf_value(-0.005), -0.005);
         // depths of any size end up shallower than the band, in the order they came in
         let depths = [0.01, 0.05, 0.3, 1.0, 5.0];
-        let shelved: Vec<f64> = depths
-            .iter()
-            .map(|depth| water_line - shelf_value(water_line - depth, water_line))
-            .collect();
+        let shelved: Vec<f64> = depths.iter().map(|depth| -shelf_value(-depth)).collect();
         for (depth, shelved) in depths.iter().zip(&shelved) {
             assert!(
                 *shelved > 0.0 && *shelved < SHALLOW_BAND,
@@ -269,21 +339,19 @@ mod tests {
             (-128..0).contains(&elevation)
         };
 
-        let settings = MapGeneratorSettings::default().with_ocean_coverage(0.6);
-        let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&settings);
+        let sampled = MapGeneratorSettings::default()
+            .with_ocean_coverage(0.6)
+            .with_sampled_coastline();
+        let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&sampled);
         assert!(shallow(&map, 5), "the row along the coast");
         assert!(!shallow(&map, 4), "the next one out");
         assert!(!shallow(&map, 6), "the land");
 
-        let wide = MapGeneratorSettings::default()
-            .with_ocean_coverage(0.6)
-            .with_coastal_shelf_width(2);
+        let wide = sampled.clone().with_coastal_shelf_width(2);
         let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&wide);
         assert!(shallow(&map, 5) && shallow(&map, 4) && !shallow(&map, 3));
 
-        let none = MapGeneratorSettings::default()
-            .with_ocean_coverage(0.6)
-            .with_coastal_shelf_width(0);
+        let none = sampled.with_coastal_shelf_width(0);
         let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&none);
         assert!(!shallow(&map, 5), "the sea floor as sampled");
     }
@@ -309,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_elevation_field_into_hex_map_floods_the_map_up_to_the_water_line() {
-        let settings = MapGeneratorSettings::default();
+        let settings = MapGeneratorSettings::default().with_sampled_coastline();
         let shape = RectangularHexMapShape::new(2, 10);
         let field = ElevationField::sample(shape, &Height, |_| {});
         let water_line = field.water_line(settings.get_ocean_coverage());
@@ -327,12 +395,72 @@ mod tests {
 
     #[test]
     fn test_elevation_field_into_hex_map_converts_a_flat_field_to_sea_level() {
-        let settings = MapGeneratorSettings::default();
+        let settings = MapGeneratorSettings::default().with_sampled_coastline();
         let shape = RectangularHexMapShape::new(3, 2);
         let map =
             ElevationField::sample(shape, &Constant::new(0.5), |_| {}).into_hex_map(&settings);
         for coords in shape.coords() {
             assert_eq!(map.tile(&coords).expect("missing tile").elevation(), 0);
         }
+    }
+
+    /// Rows from the north pole to the south pole that hold land, and the land tiles.
+    fn land_rows(
+        map: &project_x_core::hex_map::HexMap,
+        shape: RectangularHexMapShape,
+    ) -> (Vec<bool>, usize) {
+        let mut rows = vec![false; shape.rows() as usize];
+        let mut land = 0;
+        for coords in shape.coords() {
+            if map.tile(&coords).expect("missing tile").elevation() >= 0 {
+                let row = project_x_core::hex_map::coordinates::OffsetCoords::from(coords).row();
+                rows[row as usize] = true;
+                land += 1;
+            }
+        }
+        (rows, land)
+    }
+
+    #[test]
+    fn test_raised_tiles_take_the_elevation_of_the_land_around_them() {
+        // one row of 6, wrapping around: sampled land at 300 m and 900 m, then three raised
+        // tiles, then the sea
+        let shape = RectangularHexMapShape::new(6, 1);
+        let field = ElevationField::sample(shape, &Constant::new(0.0), |_| {});
+        let mut elevations = vec![300, 900, 0, 0, 0, -50];
+        let raised = [false, false, true, true, true, false];
+        field.spread_inland(&mut elevations, &raised);
+        // each from the one before it, the sea never counting
+        assert_eq!(elevations, [300, 900, 900, 900, 900, -50]);
+
+        // between two settled tiles, the mean
+        let mut elevations = vec![300, 0, 900, -50, -50, -50];
+        field.spread_inland(&mut elevations, &[false, true, false, false, false, false]);
+        assert_eq!(elevations[1], 600);
+        // out of reach of any sampled land, as it was
+        let mut elevations = vec![-50, 12, -50, -50, -50, -50];
+        field.spread_inland(&mut elevations, &[false, true, false, false, false, false]);
+        assert_eq!(elevations[1], 12);
+    }
+
+    #[test]
+    fn test_elevation_field_into_hex_map_keeps_the_land_off_a_closed_pole() {
+        // the land rises towards the south pole
+        let shape = RectangularHexMapShape::new(6, 20);
+        let settings = MapGeneratorSettings::default()
+            .with_ocean_coverage(0.6)
+            .with_polar_land_chance(1.0);
+        let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&settings);
+        let (rows, land) = land_rows(&map, shape);
+        assert!(rows[19], "an open pole keeps its land");
+        assert_eq!(land, 48);
+
+        let closed = settings.with_polar_land_chance(0.0);
+        let map = ElevationField::sample(shape, &Height, |_| {}).into_hex_map(&closed);
+        let (rows, land) = land_rows(&map, shape);
+        assert!(!rows[19], "a closed pole is open sea: {rows:?}");
+        // the land the pole gave up is found further north
+        assert_eq!(land, 48);
+        assert!(rows[11] && !rows[10], "{rows:?}");
     }
 }

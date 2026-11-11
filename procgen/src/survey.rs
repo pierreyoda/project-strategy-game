@@ -3,7 +3,8 @@
 //!
 //! The two halves weigh the same in the world's score, so that the terrain's longer list of
 //! criteria does not drown the settlement's. A few criteria are **mandatory**: a world missing one
-//! fails outright, whatever its score. `view_survey` prints both halves over many seeds; the tests
+//! fails outright, whatever its score - two continents too close, land on a closed pole, a nation
+//! left out or short of its guarantees, a deposit on ice or under a capital. `view_survey` prints both halves over many seeds; the tests
 //! hold the default settings to every mandatory criterion.
 
 use std::fmt;
@@ -66,18 +67,19 @@ pub struct WorldSurvey {
 }
 
 impl WorldSurvey {
+    /// The world generated with the given settings: its surface, nations and deposits.
     pub fn of(
         surface: &PlanetSurface,
         nations: &GeneratedNations,
         deposits: &GeneratedDeposits,
-        deposits_settings: &DepositsGeneratorSettings,
+        settings: &WorldSettings,
     ) -> Self {
         Self::of_settled(
-            PlanetSurvey::of(surface),
+            PlanetSurvey::of(surface, settings.map.open_poles()),
             surface,
             nations,
             deposits,
-            deposits_settings,
+            &settings.deposits,
         )
     }
 
@@ -107,7 +109,7 @@ impl WorldSurvey {
     pub fn generate(settings: &WorldSettings) -> Self {
         let surface = settings.generate_surface();
         let (nations, deposits) = settings.settle(&surface);
-        Self::of(&surface, &nations, &deposits, &settings.deposits)
+        Self::of(&surface, &nations, &deposits, settings)
     }
 
     /// The terrain half: the planet's own criteria.
@@ -303,7 +305,7 @@ pub(crate) mod tests {
             .filter(|criterion| criterion.mandatory)
             .map(|criterion| criterion.id)
             .collect();
-        assert_eq!(mandatory, ["D1", "N1", "E7", "F1", "F8"]);
+        assert_eq!(mandatory, ["A8", "D1", "D3", "N1", "E7", "F1", "F8"]);
     }
 
     #[test]

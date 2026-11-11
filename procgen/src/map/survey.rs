@@ -10,11 +10,16 @@ use std::{cmp::Reverse, collections::VecDeque, fmt};
 
 use project_x_core::game::state::TileIndex;
 
-use super::{TerrainKind, landmasses::Landmasses, surface::PlanetSurface};
+use super::{
+    TerrainKind,
+    coastline::{MIN_STRAIT, OpenPoles},
+    hull::hull_tiles,
+    landmasses::{CONTINENT_SHARE, Landmasses},
+    shores::{Straightness, Stretch},
+    surface::PlanetSurface,
+    terrain::polar_rows,
+};
 use crate::forests::{Forests, wind_towards};
-
-/// Share of the land a landmass needs to count as a continent.
-const CONTINENT_SHARE: f64 = 0.05;
 /// Below this share of the land, a landmass is a speck.
 const ISLET_SHARE: f64 = 0.01;
 /// A mountain component counts as a chain from this many tiles.
@@ -30,6 +35,12 @@ const SHADOW_REACH: i64 = 3;
 const STAND_MIN: usize = 5;
 /// The wet bands, in absolute latitude: the equatorial one, then the temperate one.
 const WET_BANDS: [(f64, f64); 2] = [(0.0, 0.15), (0.45, 0.65)];
+
+/// Arms and peninsulas up to twice this many tiles across count as arms: what an opening of this
+/// radius takes off a continent.
+const ARM_RADIUS: u32 = 3;
+/// A cape reaching this many tiles or fewer out of the body of a continent is no arm.
+const CAPE_REACH: u32 = 2;
 
 /// Hills this close to a mountain are its foothills.
 const FOOTHILLS_REACH: u32 = 2;
@@ -163,6 +174,26 @@ pub struct PlanetSurvey {
     pub neighbour_distance_max: f64,
     pub islet_share: f64,
     pub islands: usize,
+    /// The least round continent: the coast a hexagon of its area would have, over its own.
+    pub roundness_min: f64,
+    /// Land tiles that pinch the land - land on two sides of them or more, the sea between - per
+    /// 100 land tiles: the necks and the narrows.
+    pub isthmuses_per_hundred: f64,
+    /// Pairs of continents fewer than `MIN_STRAIT` tiles of sea apart.
+    pub close_continents: usize,
+    /// The least filled-in continent: its land over the tiles of its convex hull, the tips of
+    /// its capes aside. A crescent, a star, a continent wrapped around a deep bay all leave their
+    /// hull half empty.
+    pub fill_min: f64,
+    /// The most sprawling continent: the share of its land in arms and peninsulas no more than
+    /// `2 × ARM_RADIUS` tiles across, the capes and coves of its coast aside.
+    pub arms_share_max: f64,
+    /// The share of the coast in stretches drawn with a ruler: see `Stretch::RULER`.
+    pub ruler_coast_share: f64,
+    /// The longest stretch of coast drawn with a ruler, in tiles.
+    pub longest_ruler_coast: f64,
+    /// The share of the coast in long stretches that keep to a line: see `Stretch::TREND`.
+    pub straight_trend_coast_share: f64,
     // B: relief
     pub plains_share: f64,
     pub hills_share: f64,
@@ -190,7 +221,10 @@ pub struct PlanetSurvey {
     pub circumnavigable: bool,
     // D: poles
     pub polar_sea_ice_share: f64,
-    pub polar_continent: bool,
+    /// Poles with land on their polar rows.
+    pub poles_reached: usize,
+    /// Land tiles on the polar rows of the poles closed to land.
+    pub land_on_closed_poles: usize,
     // G: forests
     pub forest_share: f64,
     /// Of the forests, the share in the subtropical dry belt.
@@ -216,12 +250,14 @@ pub struct PlanetSurvey {
 }
 
 impl PlanetSurvey {
-    pub fn of(surface: &PlanetSurface) -> Self {
-        Self::of_with_forests(surface, &Forests::grow(surface))
+    /// `poles` are the poles land may reach, as the generator drew them: `OpenPoles::BOTH` for a
+    /// planet that has no say in it.
+    pub fn of(surface: &PlanetSurface, poles: OpenPoles) -> Self {
+        Self::of_with_forests(surface, &Forests::grow(surface), poles)
     }
 
     /// With forests grown some other way than by default, as when tuning them.
-    pub fn of_with_forests(surface: &PlanetSurface, forests: &Forests) -> Self {
+    pub fn of_with_forests(surface: &PlanetSurface, forests: &Forests, poles: OpenPoles) -> Self {
         let tiles = surface.tiles_count() as f64;
         let landmasses = Landmasses::find(surface);
         let land = landmasses.land_tiles();
@@ -263,6 +299,46 @@ impl PlanetSurvey {
             .iter()
             .filter(|&&size| (ISLET_SHARE..CONTINENT_SHARE).contains(&share(size)))
             .count();
+        let roundness_min = min_over(continent_ids.iter().map(|&id| {
+            let tiles = landmasses.tiles(id);
+            let coast: usize = tiles
+                .iter()
+                .map(|&index| {
+                    surface
+                        .neighbors(index)
+                        .filter(|&n| !surface.is_land(n))
+                        .count()
+                })
+                .sum();
+            if coast == 0 {
+                f64::NAN
+            } else {
+                hexagon_coast(tiles.len()) / coast as f64
+            }
+        }));
+        let isthmuses_per_hundred = if land == 0 {
+            f64::NAN
+        } else {
+            let isthmuses = (0..surface.tiles_count() as TileIndex)
+                .filter(|&index| pinches(surface, index))
+                .count();
+            isthmuses as f64 * 100.0 / land_f
+        };
+        let close_continents = close_continent_pairs(surface, &landmasses, &continent_ids);
+        let fill_min = min_over(
+            continent_ids
+                .iter()
+                .map(|&id| hull_fill(surface, landmasses.tiles(id))),
+        );
+        let arms_share_max = continent_ids
+            .iter()
+            .map(|&id| arm_share(surface, landmasses.tiles(id)))
+            .fold(f64::NAN, f64::max);
+        let land_mask: Vec<bool> = (0..surface.tiles_count() as TileIndex)
+            .map(|index| surface.is_land(index))
+            .collect();
+        let ruler = Straightness::of(surface.shape(), &land_mask, Stretch::RULER);
+        let trend = Straightness::of(surface.shape(), &land_mask, Stretch::TREND);
 
         // B: relief
         let count = |kind: TerrainKind| {
@@ -442,13 +518,10 @@ impl PlanetSurvey {
             polar_sea_ice as f64 / polar_sea as f64
         };
         let forests = ForestSurvey::of(surface, forests, land);
-        let last_row = surface.shape().rows() as u32 - 1;
-        let polar_continent = continent_ids.iter().any(|&id| {
-            landmasses.tiles(id).iter().any(|&index| {
-                let row = index / surface.shape().columns() as u32;
-                row == 0 || row == last_row
-            })
-        });
+        let (north_land, south_land) = polar_land(surface);
+        let poles_reached = usize::from(north_land > 0) + usize::from(south_land > 0);
+        let land_on_closed_poles =
+            if poles.north { 0 } else { north_land } + if poles.south { 0 } else { south_land };
 
         Self {
             land_share: land_f / tiles,
@@ -459,6 +532,18 @@ impl PlanetSurvey {
             neighbour_distance_max,
             islet_share,
             islands,
+            roundness_min,
+            isthmuses_per_hundred,
+            close_continents,
+            fill_min,
+            arms_share_max,
+            ruler_coast_share: ruler.share(),
+            longest_ruler_coast: if ruler.edges == 0 {
+                f64::NAN
+            } else {
+                ruler.longest
+            },
+            straight_trend_coast_share: trend.share(),
             plains_share: plains as f64 / classified,
             hills_share: hills as f64 / classified,
             mountains_share: mountains as f64 / classified,
@@ -479,7 +564,8 @@ impl PlanetSurvey {
             world_ocean_share,
             circumnavigable,
             polar_sea_ice_share,
-            polar_continent,
+            poles_reached,
+            land_on_closed_poles,
             forest_share: forests.forest_share,
             dry_belt_forest_share: forests.dry_belt_share,
             wet_bands_wooded_share: forests.wet_bands_wooded_share,
@@ -508,26 +594,28 @@ impl PlanetSurvey {
         };
         vec![
             criterion("A1", "land", self.land_share, Share, Within(0.40, 0.50)),
+            // a few big continents, rather than many middling ones (user decision, 2026-11-10)
             criterion(
                 "A2",
                 "continents",
                 self.continents as f64,
                 Count,
-                Within(3.0, 6.0),
+                Within(2.0, 3.0),
             ),
+            // three continents of a size hold a third of the land each
             criterion(
                 "A2",
                 "biggest continent, of the land",
                 self.biggest_continent_share,
                 Share,
-                Within(0.35, 0.60),
+                Within(0.30, 0.65),
             ),
             criterion(
                 "A2",
                 "top three continents, of the land",
                 self.top_three_share,
                 Share,
-                AtLeast(0.85),
+                AtLeast(0.90),
             ),
             criterion(
                 "A3",
@@ -556,6 +644,66 @@ impl PlanetSurvey {
                 self.islands as f64,
                 Count,
                 Within(1.0, 4.0),
+            ),
+            criterion(
+                "A6",
+                "least round continent, roundness",
+                self.roundness_min,
+                Ratio,
+                AtLeast(0.45),
+            ),
+            criterion(
+                "A7",
+                "isthmus tiles per 100 land tiles",
+                self.isthmuses_per_hundred,
+                Ratio,
+                AtMost(0.5),
+            ),
+            // the sea all around every continent (user decision, 2026-11-10)
+            criterion(
+                "A8",
+                "continent pairs under 2 sea tiles apart",
+                self.close_continents as f64,
+                Count,
+                AtMost(0.0),
+            )
+            .mandatory(),
+            // whole continents, filled in rather than star-shaped
+            criterion(
+                "A9",
+                "least filled continent, land over its hull",
+                self.fill_min,
+                Share,
+                AtLeast(0.75),
+            ),
+            criterion(
+                "A10",
+                "most sprawling continent, land in arms",
+                self.arms_share_max,
+                Share,
+                AtMost(0.05),
+            ),
+            // coasts the sea drew, not a ruler: what the noise's own coast keeps to on nine planets in ten
+            criterion(
+                "A11",
+                "coast in straight runs of 8 tiles or more",
+                self.ruler_coast_share,
+                Share,
+                AtMost(0.10),
+            ),
+            criterion(
+                "A12",
+                "longest straight run of coast",
+                self.longest_ruler_coast,
+                Tiles,
+                AtMost(10.0),
+            ),
+            criterion(
+                "A13",
+                "coast keeping to a line over 14 tiles or more",
+                self.straight_trend_coast_share,
+                Share,
+                AtMost(0.20),
             ),
             criterion("B1", "plains", self.plains_share, Share, Within(0.65, 0.75)),
             criterion("B1", "hills", self.hills_share, Share, Within(0.20, 0.28)),
@@ -682,11 +830,20 @@ impl PlanetSurvey {
             .mandatory(),
             criterion(
                 "D2",
-                "a polar continent",
-                flag(self.polar_continent),
-                Flag,
+                "poles reached by land",
+                self.poles_reached as f64,
+                Count,
                 Info,
             ),
+            // land on a pole only when the seed opened it (user decision, 2026-11-10)
+            criterion(
+                "D3",
+                "land tiles on a closed pole",
+                self.land_on_closed_poles as f64,
+                Count,
+                AtMost(0.0),
+            )
+            .mandatory(),
             criterion(
                 "G1",
                 "forests, of the land",
@@ -963,6 +1120,159 @@ fn rain_shadows(surface: &PlanetSurface) -> (Vec<TileIndex>, Vec<TileIndex>) {
     (of(1), of(2))
 }
 
+// the name of A8 spells the strait out
+const _: () = assert!(MIN_STRAIT == 2, "rename criterion A8");
+
+/// Coast edges of a hexagon of `area` tiles: `3r² + 3r + 1` tiles of radius `r` have `6(2r + 1)`
+/// of them, which is `2√(12 area - 3)`.
+fn hexagon_coast(area: usize) -> f64 {
+    2.0 * (12.0 * area as f64 - 3.0).sqrt()
+}
+
+/// Whether a land tile pinches the land: two separate arcs of land or more around it, the sea
+/// between them. Tiles on the polar rows' edge, short of neighbors, never do.
+fn pinches(surface: &PlanetSurface, index: TileIndex) -> bool {
+    if !surface.is_land(index) {
+        return false;
+    }
+    // the neighbors come in turn around the tile
+    let ring: Vec<bool> = surface
+        .neighbors(index)
+        .map(|neighbor| surface.is_land(neighbor))
+        .collect();
+    ring.len() == 6 && (0..6).filter(|&k| ring[k] && !ring[(k + 5) % 6]).count() >= 2
+}
+
+/// Whether each tile lies within `radius` steps of the given ones.
+fn near(surface: &PlanetSurface, from: &[bool], radius: u32) -> Vec<bool> {
+    let mut distance: Vec<u32> = from
+        .iter()
+        .map(|&inside| if inside { 0 } else { u32::MAX })
+        .collect();
+    let mut queue: VecDeque<TileIndex> = (0..surface.tiles_count() as TileIndex)
+        .filter(|&index| from[index as usize])
+        .collect();
+    while let Some(index) = queue.pop_front() {
+        let next = distance[index as usize] + 1;
+        if next > radius {
+            continue;
+        }
+        for neighbor in surface.neighbors(index) {
+            if distance[neighbor as usize] == u32::MAX {
+                distance[neighbor as usize] = next;
+                queue.push_back(neighbor);
+            }
+        }
+    }
+    distance
+        .into_iter()
+        .map(|steps| steps != u32::MAX)
+        .collect()
+}
+
+/// What is left of the given tiles more than `radius` steps away from anything else.
+fn core(surface: &PlanetSurface, of: &[bool], radius: u32) -> Vec<bool> {
+    let off: Vec<bool> = of.iter().map(|&on| !on).collect();
+    near(surface, &off, radius)
+        .into_iter()
+        .map(|near_shore| !near_shore)
+        .collect()
+}
+
+/// The tiles of a continent, as a mask over the planet.
+fn mask(surface: &PlanetSurface, tiles: &[TileIndex]) -> Vec<bool> {
+    let mut on = vec![false; surface.tiles_count()];
+    for &index in tiles {
+        on[index as usize] = true;
+    }
+    on
+}
+
+/// The share of a continent's land in arms: what an opening of radius `ARM_RADIUS` takes away -
+/// the land within `ARM_RADIUS` of anything else is stripped, what is left grown back by as much,
+/// and the arms and peninsulas too narrow to keep a core do not grow back. The detail of the
+/// coast is no arm: the coves a tile deep are filled first, and the capes, the land within
+/// `CAPE_REACH` of what the opening keeps, are left out.
+fn arm_share(surface: &PlanetSurface, tiles: &[TileIndex]) -> f64 {
+    let on = mask(surface, tiles);
+    let coves_filled = core(surface, &near(surface, &on, 1), 1);
+    let body = near(
+        surface,
+        &core(surface, &coves_filled, ARM_RADIUS),
+        ARM_RADIUS + CAPE_REACH,
+    );
+    let kept = tiles.iter().filter(|&&index| body[index as usize]).count();
+    1.0 - kept as f64 / tiles.len() as f64
+}
+
+/// How much of the convex hull of a continent its land fills: see `hull::hull_tiles`. The hull
+/// is that of its body, the tips of its capes left out - the tiles with land on two sides or
+/// fewer - so that a cape of one tile does not stretch the hull along a whole coast, and pass
+/// for a hole in the continent. `NaN` for one that goes all the way around the world.
+fn hull_fill(surface: &PlanetSurface, tiles: &[TileIndex]) -> f64 {
+    let on = mask(surface, tiles);
+    let mut body: Vec<usize> = tiles
+        .iter()
+        .filter(|&&index| {
+            surface
+                .neighbors(index)
+                .filter(|&neighbor| on[neighbor as usize])
+                .count()
+                > 2
+        })
+        .map(|&index| index as usize)
+        .collect();
+    if body.is_empty() {
+        // nothing but capes: its own hull
+        body = tiles.iter().map(|&index| index as usize).collect();
+    }
+    hull_tiles(surface.shape().columns() as usize, &body).map_or(f64::NAN, |hull| {
+        let filled = hull.iter().filter(|&&index| on[index]).count();
+        filled as f64 / hull.len() as f64
+    })
+}
+
+/// Pairs of continents fewer than `MIN_STRAIT` tiles of sea apart, going straight across: hex
+/// distance, whatever lies between.
+fn close_continent_pairs(
+    surface: &PlanetSurface,
+    landmasses: &Landmasses,
+    continents: &[super::landmasses::LandmassId],
+) -> usize {
+    let mut pairs = Vec::new();
+    for &id in continents {
+        for &index in landmasses.tiles(id) {
+            if !surface.is_coastal(index) {
+                continue;
+            }
+            for (other, _) in surface.within(index, MIN_STRAIT) {
+                if let Some(other_id) = landmasses.of(other)
+                    && other_id > id
+                    && continents.contains(&other_id)
+                {
+                    pairs.push((id, other_id));
+                }
+            }
+        }
+    }
+    pairs.sort_unstable();
+    pairs.dedup();
+    pairs.len()
+}
+
+/// Land tiles on the polar rows of the north pole, and of the south pole.
+fn polar_land(surface: &PlanetSurface) -> (usize, usize) {
+    let columns = surface.shape().columns() as TileIndex;
+    let rows = surface.shape().rows() as TileIndex;
+    let polar = (polar_rows(surface.shape().rows()) as TileIndex).min(rows);
+    let land_on = |rows: std::ops::Range<TileIndex>| {
+        rows.flat_map(|row| row * columns..(row + 1) * columns)
+            .filter(|&index| surface.is_land(index))
+            .count()
+    };
+    (land_on(0..polar), land_on(rows - polar..rows))
+}
+
 fn mean(values: impl Iterator<Item = f64>) -> f64 {
     let (mut sum, mut count) = (0.0, 0usize);
     for value in values {
@@ -1116,7 +1426,7 @@ fn wraps_around(surface: &PlanetSurface, group: &[TileIndex]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{PlanetSurvey, Target};
-    use crate::map::surface::tests::surface_from_art;
+    use crate::map::{OpenPoles, surface::tests::surface_from_art};
 
     #[test]
     fn test_survey_counts_continents_islands_and_islets() {
@@ -1138,7 +1448,7 @@ mod tests {
             ]
             .join("|"),
         );
-        let survey = PlanetSurvey::of(&surface);
+        let survey = PlanetSurvey::of(&surface, OpenPoles::BOTH);
         assert_eq!(survey.continents, 1, "6 of 128 land tiles is under 5%");
         assert_eq!(survey.islands, 1, "but over 1%");
         assert!((survey.islet_share - 2.0 / 128.0).abs() < 1e-9);
@@ -1162,7 +1472,7 @@ mod tests {
             ]
             .join("|"),
         );
-        let survey = PlanetSurvey::of(&surface);
+        let survey = PlanetSurvey::of(&surface, OpenPoles::BOTH);
         assert_eq!(survey.puddles, 1, "the lake");
         assert_eq!(
             survey.enclosed_seas, 1,
@@ -1175,10 +1485,10 @@ mod tests {
     #[test]
     fn test_survey_knows_when_land_blocks_the_way_around() {
         let open = surface_from_art("~~~~~|.....|~~~~~");
-        assert!(PlanetSurvey::of(&open).circumnavigable);
+        assert!(PlanetSurvey::of(&open, OpenPoles::BOTH).circumnavigable);
         // a column of land from pole to pole: the sea is one body, but no way around
         let barred = surface_from_art("~~.~~|~~.~~|~~.~~");
-        let survey = PlanetSurvey::of(&barred);
+        let survey = PlanetSurvey::of(&barred, OpenPoles::BOTH);
         assert_eq!(
             survey.enclosed_seas + survey.puddles,
             0,
@@ -1200,7 +1510,7 @@ mod tests {
             ]
             .join("|"),
         );
-        let survey = PlanetSurvey::of(&surface);
+        let survey = PlanetSurvey::of(&surface, OpenPoles::BOTH);
         assert!((survey.chained_mountains_share - 7.0 / 8.0).abs() < 1e-9);
         assert_eq!(survey.mean_chain_size, 7.0);
         assert!((survey.mean_chain_elongation - 6.0 / 7f64.sqrt()).abs() < 1e-9);
@@ -1227,7 +1537,7 @@ mod tests {
             ]
             .join("|"),
         );
-        let survey = PlanetSurvey::of(&surface);
+        let survey = PlanetSurvey::of(&surface, OpenPoles::BOTH);
         assert_eq!(survey.continents, 2);
         assert!(
             (survey.plains_share - 35.0 / 60.0).abs() < 1e-9,
@@ -1246,7 +1556,7 @@ mod tests {
         // two mountain walls from pole to pole - one across the seam - split the plain into a
         // strip of 1 and a strip of 2, hills along the first wall
         let surface = surface_from_art("^.:^..^|^.:^..^|^.:^..^|^.:^..^");
-        let survey = PlanetSurvey::of(&surface);
+        let survey = PlanetSurvey::of(&surface, OpenPoles::BOTH);
         assert!((survey.plains_connectivity_min - 2.0 / 3.0).abs() < 1e-9);
         assert_eq!(survey.foothills_share, 1.0);
         assert!(survey.interior_share_min > 0.99, "no water anywhere");
@@ -1256,16 +1566,241 @@ mod tests {
     fn test_survey_reads_the_coast_and_the_poles() {
         // ice over the polar sea on the first row, ice over land on the last, a shallow fringe
         let surface = surface_from_art(&["____~", "~~-~~", "~-.-~", "~~-~~", "**.**"].join("|"));
-        let survey = PlanetSurvey::of(&surface);
+        let survey = PlanetSurvey::of(&surface, OpenPoles::BOTH);
         assert_eq!(survey.polar_sea_ice_share, 4.0 / 5.0);
-        assert!(survey.polar_continent, "the icy land on the last row");
+        assert_eq!(survey.poles_reached, 1, "the icy land on the last row");
+        assert_eq!(survey.land_on_closed_poles, 0, "both poles open");
+        let closed = PlanetSurvey::of(&surface, OpenPoles::NONE);
+        assert_eq!(closed.land_on_closed_poles, 5);
+        let d3 = closed
+            .criteria()
+            .into_iter()
+            .find(|c| c.id == "D3")
+            .unwrap();
+        assert!(d3.mandatory && d3.met() == Some(false));
+        let north_closed = OpenPoles {
+            north: false,
+            south: true,
+        };
+        assert_eq!(
+            PlanetSurvey::of(&surface, north_closed).land_on_closed_poles,
+            0,
+            "ice over the sea is no land"
+        );
         // 9 water tiles touch land, the 4 shallow ones among them
         assert!((survey.shallow_fringe_share - 4.0 / 9.0).abs() < 1e-9);
     }
 
     #[test]
+    fn test_survey_tells_a_round_continent_from_one_pinched_in_two() {
+        // a hexagon of radius 2, then two of radius 1 joined by a neck
+        let round = surface_from_art(
+            &[
+                "~~~~~~~~~~~",
+                "~~~~...~~~~",
+                "~~~~....~~~",
+                "~~~.....~~~",
+                "~~~~....~~~",
+                "~~~~...~~~~",
+                "~~~~~~~~~~~",
+            ]
+            .join("|"),
+        );
+        let survey = PlanetSurvey::of(&round, OpenPoles::BOTH);
+        assert_eq!(survey.continents, 1);
+        assert!(
+            (survey.roundness_min - 1.0).abs() < 1e-9,
+            "{}",
+            survey.roundness_min
+        );
+        assert_eq!(survey.isthmuses_per_hundred, 0.0);
+
+        let pinched = surface_from_art(
+            &[
+                "~~~~~~~~~~~~~",
+                "~..~~~~~..~~~",
+                "~..........~~",
+                "~..~~~~~..~~~",
+                "~~~~~~~~~~~~~",
+            ]
+            .join("|"),
+        );
+        let survey = PlanetSurvey::of(&pinched, OpenPoles::BOTH);
+        assert_eq!(survey.continents, 1);
+        assert!(survey.roundness_min < 0.8, "{}", survey.roundness_min);
+        assert!(
+            survey.isthmuses_per_hundred > 10.0,
+            "{}",
+            survey.isthmuses_per_hundred
+        );
+    }
+
+    #[test]
+    fn test_survey_tells_a_filled_in_continent_from_a_crescent() {
+        // a hexagon of radius 3 across the seam: whole, no arms
+        let round = surface_from_art(
+            &[
+                "~~~~~~~~~~~~~~",
+                "..~~~~~~~~~~..",
+                "...~~~~~~~~~..",
+                "...~~~~~~~~...",
+                "....~~~~~~~...",
+                "...~~~~~~~~...",
+                "...~~~~~~~~~..",
+                "..~~~~~~~~~~..",
+                "~~~~~~~~~~~~~~",
+            ]
+            .join("|"),
+        );
+        let survey = PlanetSurvey::of(&round, OpenPoles::BOTH);
+        assert_eq!(survey.continents, 1);
+        assert!(survey.fill_min > 0.95, "{}", survey.fill_min);
+        assert_eq!(survey.arms_share_max, 0.0);
+
+        // a crescent of arms two tiles wide around a bay
+        let crescent = surface_from_art(
+            &[
+                "~~~~~~~~~~~~~~",
+                "~..........~~~",
+                "~..........~~~",
+                "~..~~~~~~~~~~~",
+                "~..~~~~~~~~~~~",
+                "~..~~~~~~~~~~~",
+                "~..........~~~",
+                "~..........~~~",
+                "~~~~~~~~~~~~~~",
+            ]
+            .join("|"),
+        );
+        let survey = PlanetSurvey::of(&crescent, OpenPoles::BOTH);
+        assert_eq!(survey.continents, 1);
+        assert!(survey.fill_min < 0.7, "{}", survey.fill_min);
+        assert_eq!(survey.arms_share_max, 1.0, "nothing but arms");
+        // a continent all the way around the world has no hull
+        let band = PlanetSurvey::of(&surface_from_art("~~~~|....|~~~~"), OpenPoles::BOTH);
+        assert!(band.fill_min.is_nan());
+    }
+
+    #[test]
+    fn test_survey_leaves_the_capes_and_coves_out_of_the_fill_and_the_arms() {
+        // the hexagon of radius 3 again, with capes of one tile and a cove
+        let rough = surface_from_art(
+            &[
+                "~~~~~~~~~~~~~~~~",
+                "~~~~~~.~~~~~~~~~",
+                "~~~~~....~~~~~~~",
+                "~~~~.....~~~~~~~",
+                "~~~~......~.~~~~",
+                "~~~.......~~~~~~",
+                "~~~~~.....~~~~~~",
+                "~~~~.....~~~~~~~",
+                "~~~~~....~~~~~~~",
+                "~~~~~~~.~~~~~~~~",
+                "~~~~~~~~~~~~~~~~",
+            ]
+            .join("|"),
+        );
+        let survey = PlanetSurvey::of(&rough, OpenPoles::BOTH);
+        assert_eq!(survey.continents, 1);
+        assert!(survey.fill_min > 0.9, "{}", survey.fill_min);
+        assert_eq!(survey.arms_share_max, 0.0);
+    }
+
+    #[test]
+    fn test_survey_tells_a_coast_drawn_with_a_ruler_from_one_that_wanders() {
+        let criteria = |survey: &PlanetSurvey| -> Vec<Option<bool>> {
+            let criteria = survey.criteria();
+            ["A11", "A12", "A13"]
+                .iter()
+                .map(|id| criteria.iter().find(|c| c.id == *id).unwrap().met())
+                .collect()
+        };
+        // a block of land: every coast along a row or straight down
+        let rows: Vec<String> = (0..12)
+            .map(|row| match row {
+                2..=9 => format!("~~~{}~~~~~~", ".".repeat(21)),
+                _ => "~".repeat(30),
+            })
+            .collect();
+        let block = PlanetSurvey::of(&surface_from_art(&rows.join("|")), OpenPoles::BOTH);
+        assert!(block.ruler_coast_share > 0.7, "{}", block.ruler_coast_share);
+        assert!(
+            block.longest_ruler_coast > 20.0,
+            "{}",
+            block.longest_ruler_coast
+        );
+        assert!(block.straight_trend_coast_share > 0.5);
+        assert_eq!(criteria(&block), [Some(false); 3]);
+
+        // the same block, a cape of one tile every third tile along its north and south coasts:
+        // no ruler any more, but the line shows through
+        let mut capes = rows.clone();
+        capes[1] = format!("~~~{}~~~~~~", ".~~".repeat(7));
+        capes[10] = capes[1].clone();
+        let nibbled = PlanetSurvey::of(&surface_from_art(&capes.join("|")), OpenPoles::BOTH);
+        assert!(
+            nibbled.ruler_coast_share < 0.25,
+            "{}",
+            nibbled.ruler_coast_share
+        );
+        assert!(
+            nibbled.straight_trend_coast_share > 0.5,
+            "{}",
+            nibbled.straight_trend_coast_share
+        );
+        assert_eq!(criteria(&nibbled)[2], Some(false));
+
+        // capes and coves of a tile or two, all around
+        let wandering = PlanetSurvey::of(
+            &surface_from_art(
+                &[
+                    "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+                    "~~~~~~..~~~~~~~~.~~~~~..~~~~",
+                    "~~.~~...~~.~~.~...~~~...~.~~",
+                    "~..........................~",
+                    "~~.........................~",
+                    "~.........................~~",
+                    "~..........................~",
+                    "~~.~...~~~...~.~~.~~...~~.~~",
+                    "~~~~..~~~~~.~~~~~~~~..~~~~~~",
+                    "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+                ]
+                .join("|"),
+            ),
+            OpenPoles::BOTH,
+        );
+        assert_eq!(wandering.ruler_coast_share, 0.0);
+        assert_eq!(wandering.longest_ruler_coast, 0.0);
+        assert_eq!(criteria(&wandering), [Some(true); 3]);
+        // no coast, nothing to measure
+        let sea = PlanetSurvey::of(&surface_from_art("~~~|~~~"), OpenPoles::BOTH);
+        assert_eq!(criteria(&sea), [None; 3]);
+    }
+
+    #[test]
+    fn test_survey_finds_continents_without_a_strait_between_them() {
+        // one tile of sea between two continents, then two
+        let close = surface_from_art("~...~...~~~|~...~...~~~|~...~...~~~");
+        let survey = PlanetSurvey::of(&close, OpenPoles::BOTH);
+        assert_eq!((survey.continents, survey.close_continents), (2, 1));
+        let a8 = survey
+            .criteria()
+            .into_iter()
+            .find(|c| c.id == "A8")
+            .unwrap();
+        assert!(a8.mandatory && a8.met() == Some(false));
+
+        let apart = surface_from_art("~...~~...~~~|~...~~...~~~|~...~~...~~~");
+        let survey = PlanetSurvey::of(&apart, OpenPoles::BOTH);
+        assert_eq!((survey.continents, survey.close_continents), (2, 0));
+        // one continent is never too close to itself
+        let survey = PlanetSurvey::of(&surface_from_art("~...~|~~.~~|~...~"), OpenPoles::BOTH);
+        assert_eq!((survey.continents, survey.close_continents), (1, 0));
+    }
+
+    #[test]
     fn test_survey_has_nothing_to_say_about_a_planet_without_land() {
-        let survey = PlanetSurvey::of(&surface_from_art("~~~|~~~"));
+        let survey = PlanetSurvey::of(&surface_from_art("~~~|~~~"), OpenPoles::BOTH);
         assert_eq!(survey.continents, 0);
         assert!(survey.interior_share_min.is_nan());
         assert!(survey.neighbour_distance_max.is_nan());
@@ -1301,12 +1836,12 @@ mod tests {
         );
         let info = super::Criterion {
             id: "D2",
-            name: "a polar continent",
-            value: 0.0,
-            unit: super::Unit::Flag,
+            name: "poles reached by land",
+            value: 1.0,
+            unit: super::Unit::Count,
             target: Target::Info,
             mandatory: false,
         };
-        assert_eq!(info.to_string(), "[ ] D2 a polar continent: no");
+        assert_eq!(info.to_string(), "[ ] D2 poles reached by land: 1");
     }
 }

@@ -1,6 +1,7 @@
 use project_x_core::hex_map::{HexMap, shape::RectangularHexMapShape};
 
 pub use self::{
+    coastline::{MIN_STRAIT, OpenPoles},
     graph::{PlanetGraph, SubGroupId},
     landmasses::{LandmassId, Landmasses},
     node::NoiseNode,
@@ -12,14 +13,17 @@ pub use self::{
     terrain::{TerrainClassifier, TerrainKind},
 };
 
+mod coastline;
 mod graph;
 mod groups;
+mod hull;
 mod landmasses;
 mod node;
 mod projection;
 pub mod renderers;
 mod sampling;
 mod settings;
+mod shores;
 pub(crate) mod surface;
 pub(crate) mod survey;
 mod terrain;

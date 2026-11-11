@@ -4,6 +4,9 @@ use project_x_core::game::state::TileIndex;
 
 use super::surface::PlanetSurface;
 
+/// Share of the land a landmass needs to count as a continent.
+pub(crate) const CONTINENT_SHARE: f64 = 0.05;
+
 /// A landmass, numbered from the north-west in row-major order.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LandmassId(u32);

@@ -19,6 +19,11 @@ pub(crate) const TERRAIN_GRADIENT_BOUNDS: [f64; 6] = [
 /// sail along the poles, around the world.
 const POLAR_ROWS_RATIO: f64 = 0.05;
 
+/// Number of rows at each pole whose land is covered in ice: the polar rows.
+pub(crate) fn polar_rows(rows: CubeCoordsScalar) -> CubeCoordsScalar {
+    ((f64::from(rows) * POLAR_ROWS_RATIO).round() as CubeCoordsScalar).max(1)
+}
+
 /// Upper bounds of each elevation band but the last one, in meters.
 pub(crate) fn elevation_band_bounds(
     settings: &MapGeneratorSettings,
@@ -45,12 +50,11 @@ pub struct TerrainClassifier {
 impl TerrainClassifier {
     pub fn new(settings: &MapGeneratorSettings) -> Self {
         let rows = settings.get_rows();
-        let polar_rows = (f64::from(rows) * POLAR_ROWS_RATIO).round() as CubeCoordsScalar;
         // elevation bands: deep water, shallow water, two of flat terrain, hills, two of mountains
         let bands = elevation_band_bounds(settings);
         Self {
             rows,
-            polar_rows: polar_rows.max(1),
+            polar_rows: polar_rows(rows),
             bounds: [bands[0], bands[1], bands[3], bands[4]],
         }
     }
