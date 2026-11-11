@@ -61,6 +61,18 @@ scenario.define_building_template(#{
     ]
 });
 
+// What a settlement's next district costs and takes. A district is a building slot it lays out on
+// its land next to it, and any building but an extractor stands on one. `settlement` is
+// #{ districts, stage, capital, population }: the districts it has, those being laid out included;
+// `stage`, what its people amount to, "outpost" to "city"; `capital`, whether its nation rules from
+// it. Returns #{ cost, turns } - or `throw` why it cannot have one, the reason its order is refused
+// with.
+// TODO: placeholder figures, to tune with the economy; a cap by population comes later.
+fn district(settlement) {
+    let n = settlement.districts;
+    #{ cost: #{ credits: 100 + 50 * n, metals: 40 + 20 * n }, turns: 2 + n / 2 }
+}
+
 // Who lives in a slot, counting from 0: the local player's is the first.
 fn nation(slot) {
     #{

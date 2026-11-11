@@ -79,6 +79,10 @@ pub mod tile_flags {
     pub const SUPPLY_NODE: u8 = 1 << 2;
     pub const INFRASTRUCTURE: u8 = 1 << 3;
     pub const DEPOSIT: u8 = 1 << 4;
+    /// A district is laid out on it, or is being: see `DISTRICT_WORKS`.
+    pub const DISTRICT: u8 = 1 << 5;
+    /// Its district is still being laid out: nothing can be built on it yet.
+    pub const DISTRICT_WORKS: u8 = 1 << 6;
 }
 
 /// Past this share of the map being dirty, a delta costs more than a snapshot.
@@ -690,6 +694,12 @@ fn flags_of(world: &World, coords: crate::hex_map::coordinates::CubeCoords) -> u
     }
     if !natural.deposits().is_empty() {
         flags |= tile_flags::DEPOSIT;
+    }
+    if let Some(district) = artificial.district() {
+        flags |= tile_flags::DISTRICT;
+        if !district.is_laid_out() {
+            flags |= tile_flags::DISTRICT_WORKS;
+        }
     }
     flags
 }

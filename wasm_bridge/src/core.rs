@@ -38,7 +38,7 @@ use project_x_procgen::{
     map::{MAX_SEED, MapGenerator, MapGeneratorSettings},
     nations::{GeneratedNations, NationsGeneratorSettings, PlanetSurface},
 };
-use project_x_scripting::{NationSetup, ScriptEngine, ScriptSource};
+use project_x_scripting::{NationSetup, ScriptEngine, ScriptSource, ScriptedDistrictRules};
 
 use crate::wire::{CommandWire, EventWire, MetaWire, NewGameSettings, RejectionWire};
 
@@ -876,6 +876,8 @@ impl WorldProjectionView {
 struct StartingContent {
     unit_templates: Vec<UnitTemplate>,
     building_templates: Vec<BuildingTemplate>,
+    /// What a district costs; none, and the game has no districts.
+    district_rules: Option<ScriptedDistrictRules>,
     /// One per nation, in `NationId` order.
     nations: Vec<NationSetup>,
 }
@@ -890,6 +892,7 @@ impl StartingContent {
         Ok(Self {
             unit_templates: scenario.unit_templates().collect(),
             building_templates: scenario.building_templates().collect(),
+            district_rules: scenario.district_rules(),
             nations: (0..nations as usize)
                 .map(|slot| scenario.nation(slot).map_err(|error| error.to_string()))
                 .collect::<Result<_, _>>()?,
@@ -905,6 +908,9 @@ fn set_up_world(world: &mut World, generated: &GeneratedNations, content: Starti
     }
     for template in content.building_templates {
         world.register_building_template(template);
+    }
+    if let Some(rules) = content.district_rules {
+        world.set_district_rules(Box::new(rules));
     }
 
     // where each nation was meant to grow, kept for the political map and the AI
@@ -1281,6 +1287,31 @@ mod tests {
             .find(|template| template["type"] == "solar_plant")
             .unwrap();
         assert!(solar["deposit"].is_null(), "it extracts nothing");
+    }
+
+    #[test]
+    fn test_a_new_game_prices_districts_by_its_scenario() {
+        use project_x_core::simulation::{
+            districts::DistrictTerms,
+            ids::{EntityIndex, NationId},
+            resources::Resource,
+        };
+
+        let session = start_game();
+        let world = session.inner.world();
+        let capital = world
+            .nations()
+            .get(NationId::from_index(0))
+            .and_then(|nation| nation.capital())
+            .expect("the player starts with a capital");
+        assert_eq!(
+            world.district_terms(capital),
+            Ok(DistrictTerms {
+                cost: [(Resource::Credits, 100), (Resource::Metals, 40)].into(),
+                turns: 2,
+            }),
+            "the default scenario's first district"
+        );
     }
 
     #[test]

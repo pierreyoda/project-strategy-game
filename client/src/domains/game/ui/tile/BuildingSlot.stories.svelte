@@ -106,6 +106,18 @@
 
 <Story name="No slot" args={{ slot: { state: "none", reason: "Nothing can be built on water." } }} template={frame} />
 
+<!-- The nation's own land, but no district laid out on it: as `slotOf` words it -->
+<Story
+  name="No district"
+  args={{
+    slot: {
+      state: "none",
+      reason: "No district is laid out here: without one, only an extractor on its deposit can be built.",
+    },
+  }}
+  template={frame}
+/>
+
 <Story name="Settlement" args={{ slot: { state: "settlement", settlement: "Town" } }} template={frame} />
 
 <!-- While a turn resolves: the orders are the next turn's, so every action says why it waits. -->

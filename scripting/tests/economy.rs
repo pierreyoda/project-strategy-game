@@ -18,7 +18,7 @@ use project_x_core::{
     },
     simulation::{
         buildings::{BuildingLevel, BuildingTemplate},
-        districts::District,
+        districts::{District, DistrictRules, DistrictSite, DistrictTerms},
         ids::{BuildingId, NationId, SimulationID, UnitId},
         military::{Unit, UnitTemplate},
         nations::Nation,
@@ -56,13 +56,31 @@ struct Game {
     scout: UnitId,
 }
 
+/// Districts at 100 credits each, laid out in a turn.
+#[derive(Debug)]
+struct FlatDistricts;
+
+impl DistrictRules for FlatDistricts {
+    fn terms(&self, _: &DistrictSite) -> Result<DistrictTerms, String> {
+        Ok(DistrictTerms {
+            cost: [(Resource::Credits, 100)].into(),
+            turns: 1,
+        })
+    }
+}
+
+/// `game_with`, the ring laid out as districts.
+fn game(credits: u16, deposit: bool) -> Game {
+    game_with(credits, deposit, true)
+}
+
 /// The player in the north-west; the scripted nation in the south-east, settled at `SETTLEMENT` with
-/// the ring around it its own and laid out as districts, a scout, and `credits` - and a metals
-/// deposit at `DEPOSIT` if asked.
+/// the ring around it its own - and laid out as districts if asked - a scout, and `credits`; and a
+/// metals deposit at `DEPOSIT` if asked.
 ///
 /// A mine is built in 2 turns for 100 credits and raised to level 2 in 1 for 150, upkeep 1 then 2;
-/// a plant is built in 1 for 300, upkeep 1.
-fn game(credits: u16, deposit: bool) -> Game {
+/// a plant is built in 1 for 300, upkeep 1; a district is laid out in 1 for 100.
+fn game_with(credits: u16, deposit: bool, laid_out: bool) -> Game {
     let shape = RectangularHexMapShape::new(12, 10);
     let mut tiles = HexMapStorage::with_capacity(shape.tiles_count());
     for coords in shape.coords() {
@@ -127,7 +145,7 @@ fn game(credits: u16, deposit: bool) -> Game {
     for coords in ring {
         let ground = gate.tile_mut(coords).unwrap().artificial_mut();
         ground.set_owner(Some(ai));
-        if coords != settled {
+        if laid_out && coords != settled {
             ground.set_district(Some(District::laid_out(outpost)));
         }
     }
@@ -137,6 +155,7 @@ fn game(credits: u16, deposit: bool) -> Game {
         .replenish(Resource::Credits, credits);
 
     world.register_unit_template(scout);
+    world.set_district_rules(Box::new(FlatDistricts));
     let mut session = GameSession::new(world, SEED, player);
     let engine = ScriptEngine::load_with(
         &[ScriptSource {
@@ -305,6 +324,9 @@ fn test_it_sees_its_economy_as_its_nation_knows_it() {
             let mine = view.templates[0];
             print(`mine ${mine.deposit} ${mine.levels[1].cost.credits} ${mine.levels[1].turns}`);
             print(`buildings ${view.buildings.len()}`);
+            let outpost = view.settlements[0];
+            let terms = outpost.district_terms;
+            print(`districts ${outpost.districts.len()} ${outpost.districts[0].works} ${terms.cost.credits} ${terms.turns}`);
         }
     "#;
     let Game {
@@ -339,8 +361,40 @@ fn test_it_sees_its_economy_as_its_nation_knows_it() {
             "templates [\"mine\", \"plant\"]",
             "mine metals 150 1",
             "buildings 0",
+            // its whole ring, all laid out; the next would cost 100 and take a turn
+            "districts 6  100 1",
         ]
     );
+}
+
+#[test]
+fn test_without_a_free_district_it_lays_one_out_then_builds_on_it() {
+    let Game {
+        mut session, ai, ..
+    } = game_with(10_000, false, false);
+    let outpost = session.world().settlements().ids().next().unwrap();
+
+    // turn 1: nowhere to build its plant, so it lays a district out, which takes the turn
+    let events = end_turn(&mut session);
+    assert!(ordered(ai, &events).is_empty(), "nothing built yet");
+    assert!(events.contains(&GameEvent::Log {
+        nation: Some(ai),
+        message: "Outpost lays out a district.".to_string(),
+    }));
+    let districts = session.world().districts_of(outpost);
+    let [(site, district)] = districts.as_slice() else {
+        panic!("one district, got {districts:?}");
+    };
+    assert!(district.is_laid_out());
+    let site = *site;
+
+    // turn 2: the plant goes on it
+    let orders = ordered(ai, &end_turn(&mut session));
+    let [("construct", plant)] = orders.as_slice() else {
+        panic!("a plant, got {orders:?}");
+    };
+    assert_eq!(template_of(&session, *plant), "abstract:plant");
+    assert_eq!(tile_of(&session, *plant), site);
 }
 
 #[test]

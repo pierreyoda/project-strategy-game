@@ -1,10 +1,11 @@
 // The default AI: it keeps an economy going, and scouts with every unit it has.
 //
 // Each turn, in this order:
-// - the economy, one works at a time. It raises a building it has - extractors first, then the
-//   lowest level - or failing that builds an extractor on a deposit of its own land, or failing that
-//   any other building on free land. Never what would leave it without `reserve_turns()` turns of
-//   its upkeep in hand once paid for.
+// - the economy, one works at a time - a district being laid out is works too. It raises a building
+//   it has - extractors first, then the lowest level - or failing that builds an extractor on a
+//   deposit of its own land, or failing that any other building on a district laid out and free, or
+//   failing that lays out a district next to a settlement, off the deposits it can extract. Never
+//   what would leave it without `reserve_turns()` turns of its upkeep in hand once paid for.
 // - scouting: every unit walks to the reachable tile bordering the most ground its nation has never
 //   seen, ties drawn at random. No two units head for - or through - the same tile in a turn: the
 //   second order would be refused, since the first unit stands there by the time it is judged.
@@ -81,6 +82,13 @@ fn economy(view, orders, rng) {
             return;
         }
     }
+    for settlement in view.settlements {
+        for district in settlement.districts {
+            if district.works != () {
+                return;
+            }
+        }
+    }
     let stockpile = view.stockpile;
     let upkeep = upkeep(view, templates);
 
@@ -106,7 +114,8 @@ fn economy(view, orders, rng) {
         }
     }
 
-    // build: an extractor on a deposit of its own land, or anything else on its free land
+    // build: an extractor on a deposit of its own land, or anything else on a district laid out and
+    // free - or failing that, lay a district out
     let extracted = #{};
     for template in view.templates {
         if template.deposit != () {
@@ -122,7 +131,8 @@ fn economy(view, orders, rng) {
         taken[key(settlement.tile)] = true;
     }
     let sites = [];
-    let free = [];
+    // the deposits it can extract, kept for its extractors
+    let kept = #{};
     for tile in view.territory {
         let terrain = view.terrain(tile);
         if taken.contains(key(tile)) || terrain == "deep_water" || terrain == "shallow_water" {
@@ -131,8 +141,7 @@ fn economy(view, orders, rng) {
         let deposit = view.deposit(tile);
         if deposit != () && deposit.level > 0 && extracted.contains(deposit.resource) {
             sites.push(#{ tile: tile, deposit: deposit });
-        } else {
-            free.push(tile);
+            kept[key(tile)] = true;
         }
     }
     // the richest deposits first
@@ -149,16 +158,56 @@ fn economy(view, orders, rng) {
             }
         }
     }
-    if free.is_empty() {
+
+    let others = [];
+    for template in view.templates {
+        if template.deposit == () {
+            others.push(template);
+        }
+    }
+    if others.is_empty() {
         return;
     }
-    for template in view.templates {
-        if template.deposit != () {
+    let districted = #{};
+    let free = [];
+    for settlement in view.settlements {
+        for district in settlement.districts {
+            districted[key(district.tile)] = true;
+            if !taken.contains(key(district.tile)) && !kept.contains(key(district.tile)) {
+                free.push(district.tile);
+            }
+        }
+    }
+    if !free.is_empty() {
+        for template in others {
+            let first = template.levels[0];
+            if affordable(stockpile, first.cost, adjusted(upkeep, first.maintenance, #{})) {
+                orders.construct_building(template.id, free[rng.range(0, free.len())]);
+                return;
+            }
+        }
+        return;
+    }
+
+    // no district to build on: lay one out on its land next to a settlement - a district has no
+    // upkeep of its own, so its cost is all it asks
+    for settlement in view.settlements {
+        let terms = settlement.district_terms;
+        if terms == () || !affordable(stockpile, terms.cost, upkeep) {
             continue;
         }
-        let first = template.levels[0];
-        if affordable(stockpile, first.cost, adjusted(upkeep, first.maintenance, #{})) {
-            orders.construct_building(template.id, free[rng.range(0, free.len())]);
+        let spots = [];
+        for tile in view.territory {
+            let terrain = view.terrain(tile);
+            let at = key(tile);
+            if view.distance(settlement.tile, tile) == 1 && !taken.contains(at)
+                && !districted.contains(at) && !kept.contains(at)
+                && terrain != "deep_water" && terrain != "shallow_water" {
+                spots.push(tile);
+            }
+        }
+        if !spots.is_empty() {
+            orders.lay_out_district(settlement.id, spots[rng.range(0, spots.len())]);
             return;
         }
     }

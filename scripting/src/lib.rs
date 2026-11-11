@@ -25,4 +25,4 @@ mod scenario;
 
 pub use controller::ScriptedController;
 pub use engine::{ScriptEngine, ScriptError, ScriptKind, ScriptLimits, ScriptSource};
-pub use scenario::{NationSetup, Scenario};
+pub use scenario::{NationSetup, Scenario, ScriptedDistrictRules};

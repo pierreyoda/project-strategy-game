@@ -37,6 +37,13 @@ pub const STARTING_UNITS: Hook = Hook {
     params: 1,
     signature: "starting_units(slot)",
 };
+/// What a settlement's next district costs and takes. Optional: a scenario without it has no
+/// districts, and so no buildings but extractors.
+pub const DISTRICT: Hook = Hook {
+    name: "district",
+    params: 1,
+    signature: "district(settlement)",
+};
 
 /// What a script is for, which decides the hooks it has to declare.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -47,7 +54,8 @@ pub enum ScriptKind {
     Ai,
     /// Says what a new game starts with: the templates, through the `scenario` handle its top level
     /// is run with, then who lives in each slot and what they start with, through
-    /// `fn nation(slot)` and `fn starting_units(slot)`.
+    /// `fn nation(slot)` and `fn starting_units(slot)`. Its rules for the rest of the game go in
+    /// optional hooks: what a district costs, through `fn district(settlement)`.
     Scenario,
 }
 
@@ -301,12 +309,15 @@ impl ScriptEngine {
     }
 }
 
+/// Whether a script declares `hook`, with its parameters.
+pub fn declares(ast: &AST, hook: &Hook) -> bool {
+    ast.iter_functions()
+        .any(|function| function.name == hook.name && function.params.len() == hook.params)
+}
+
 /// Refuse a script that does not declare `hook`, with its parameters.
 fn require(ast: &AST, script: &str, hook: &Hook) -> Result<(), ScriptError> {
-    let declared = ast
-        .iter_functions()
-        .any(|function| function.name == hook.name && function.params.len() == hook.params);
-    if declared {
+    if declares(ast, hook) {
         Ok(())
     } else {
         Err(ScriptError::MissingHook {

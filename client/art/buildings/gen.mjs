@@ -1,5 +1,6 @@
 /**
- * Generates the building sprites (mine, solar plant, water pump; three levels each) in the settlements' grammar:
+ * Generates the building sprites (mine, solar plant, water pump; three levels each), and the empty district's
+ * (one, `district_empty`, drawn wherever a district stands with no building on it), in the settlements' grammar:
  * 1110x1280 frame, hex centre (555, 640), light from the upper left, iso slope ~0.53, top faces `st-hi`,
  * lower-left faces `st-lit`, lower-right faces `st-mid`, no outlines. The one nation-coloured surface per
  * level goes to a separate white `mark` frame, as for the settlements (see `domains/map/entities.ts`).
@@ -11,7 +12,8 @@
  *
  * Emits, per building and level: `<name>_<level>_full.svg` (everything, nation colour included, for previews),
  * `_base.svg`, `_mark.svg`, and `<name>_<level>.frag.svg`, the drawing as a `<g id>` using the UI kit's CSS
- * variables, for the "Buildings" artboard of the design canvas.
+ * variables, for the "Buildings" artboard of the design canvas. The district has no levels: `district_empty_full.svg`
+ * and so on, for the "Districts" artboard.
  */
 import { writeFileSync, mkdirSync } from "node:fs";
 
@@ -896,19 +898,68 @@ function pump(d, level) {
   }
 }
 
+// ---------- DISTRICT ----------
+// an empty district: a survey plot, the quietest thing a nation puts on the map. A tinted diamond of
+// graded ground, taped off between four stakes, the nation's flag at the back corner where it never
+// crosses the plot. Out to the safe box (x 180-930): the widest ground mark in the set, and the lowest
+function stake(d, x, y, h) {
+  d.ellipse(x + 6, y + 3, 16, 6, { fill: "#000", opacity: 0.22 });
+  d.line([x, y], [x, y - h], { stroke: d.c("st-mid"), "stroke-width": 13, "stroke-linecap": "round" });
+}
+function district(d) {
+  const c = d.c.bind(d);
+  const [T, R, B, L] = diamond(CX, CY + 70, 375);
+  d.poly([T, R, B, L], { fill: c("st-deep"), opacity: 0.36 });
+  // the tape: twice as heavy as a building's accent strips, since it is what has to survive the zoom
+  d.poly([T, R, B, L], {
+    fill: "none",
+    stroke: c("accent"),
+    "stroke-width": 13,
+    opacity: 0.95,
+    "stroke-dasharray": "52 30",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  });
+  for (const [x, y] of [R, L, B]) {
+    stake(d, x, y, 84);
+    d.circle(x, y - 92, 15, { fill: c("accent") });
+  }
+  stake(d, T[0], T[1], 170);
+  d.poly(
+    [
+      [T[0] + 5, T[1] - 170],
+      [T[0] + 125, T[1] - 128],
+      [T[0] + 5, T[1] - 86],
+    ],
+    { fill: c("nation") },
+    true,
+  );
+  d.circle(T[0], T[1] - 178, 15, { fill: c("accent") });
+}
+
 // ---------- output ----------
 const OUT = process.argv[2] || "out";
 mkdirSync(OUT, { recursive: true });
+const svg = (d) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 1280" width="1110" height="1280">\n${d.out.join("\n")}\n</svg>\n`;
+// one drawing, no levels: `<name>_<mode>.svg`
+for (const [name, fn] of Object.entries({ district_empty: district })) {
+  for (const mode of ["full", "base", "mark"]) {
+    const d = new Draw(LIT, mode);
+    fn(d);
+    writeFileSync(`${OUT}/${name}_${mode}.svg`, svg(d));
+  }
+  const d = new Draw({ vars: true }, "full");
+  fn(d);
+  writeFileSync(`${OUT}/${name}.frag.svg`, `<g id="b-${name}">\n${d.out.join("\n")}</g>\n`);
+}
 const builders = { mine, solar_plant: solar, water_pump: pump };
 for (const [name, fn] of Object.entries(builders)) {
   for (const level of [1, 2, 3]) {
     for (const mode of ["full", "base", "mark"]) {
       const d = new Draw(LIT, mode);
       fn(d, level);
-      writeFileSync(
-        `${OUT}/${name}_${level}_${mode}.svg`,
-        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1110 1280" width="1110" height="1280">\n${d.out.join("\n")}\n</svg>\n`,
-      );
+      writeFileSync(`${OUT}/${name}_${level}_${mode}.svg`, svg(d));
     }
     // canvas flavour: css vars, as a <g id> symbol fragment
     const d = new Draw({ vars: true }, "full");

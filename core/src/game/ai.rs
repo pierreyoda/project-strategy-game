@@ -26,6 +26,7 @@ use crate::{
     hex_map::{coordinates::CubeCoords, terrain::TerrainKind, vegetation::Vegetation},
     simulation::{
         buildings::{Building, BuildingTemplate},
+        districts::{District, DistrictTerms},
         economy::{self, Forecast},
         fog::TileVisibility,
         ids::{BuildingId, DepositId, EntityIndex, NationId, SettlementId, SimulationID, UnitId},
@@ -118,6 +119,33 @@ impl<'a> NationView<'a> {
             .settlements()
             .iter()
             .filter(move |(_, settlement)| settlement.owner() == self.nation)
+    }
+
+    /// The districts of one of this nation's settlements, with their tiles, those being laid out
+    /// included: none for a rival's.
+    pub fn districts_of(&self, settlement: SettlementId) -> Vec<(CubeCoords, &District)> {
+        if !self.owns(settlement) {
+            return Vec::new();
+        }
+        self.world.districts_of(settlement)
+    }
+
+    /// What one of this nation's settlements' next district costs and takes, by the scenario's
+    /// rules, or why it cannot have one: the terms its order will be judged by. `None` for a
+    /// rival's.
+    pub fn district_terms(
+        &self,
+        settlement: SettlementId,
+    ) -> Option<Result<DistrictTerms, String>> {
+        self.owns(settlement)
+            .then(|| self.world.district_terms(settlement))
+    }
+
+    fn owns(&self, settlement: SettlementId) -> bool {
+        self.world
+            .settlements()
+            .get(settlement)
+            .is_some_and(|settlement| settlement.owner() == self.nation)
     }
 
     /// This nation's own buildings, its works under way included.

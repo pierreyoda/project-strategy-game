@@ -170,13 +170,15 @@
       // in draw order, so that a settlement overhanging its hex is overlapped by its southern neighbors
       for (const entity of ordered) {
         const position = hexCenter(layout, entityCoords(map.columns, entity.tile));
-        tokenCopy.addChild(
-          new Graphics({
-            context: tokenShape(drawn, layout, entity.token.side),
-            position,
-            tint: entity.tint,
-          }),
-        );
+        if (entity.token) {
+          tokenCopy.addChild(
+            new Graphics({
+              context: tokenShape(drawn, layout, entity.token.side),
+              position,
+              tint: entity.tint,
+            }),
+          );
+        }
         if (!textures) {
           continue;
         }

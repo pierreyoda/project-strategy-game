@@ -138,6 +138,10 @@ export const TileFlags = {
   SupplyNode: 1 << 2,
   Infrastructure: 1 << 3,
   Deposit: 1 << 4,
+  /** A district is laid out on it, or is being: see `DistrictWorks`. */
+  District: 1 << 5,
+  /** Its district is still being laid out: nothing can be built on it yet. */
+  DistrictWorks: 1 << 6,
 } as const;
 
 /** How far a settlement has grown, like `SettlementStage` in the `core` crate. */

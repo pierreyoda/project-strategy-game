@@ -409,7 +409,7 @@ mod tests {
             events::GameEvent,
             genesis::{Homeland, WorldGenesis},
             journal::TurnChanges,
-            projection::{NO_NATION, Projection},
+            projection::{NO_NATION, Projection, tile_flags},
             rng::GameSeed,
             state::{World, WorldMut},
             turn::{StepBudget, TurnProgress},
@@ -2026,6 +2026,32 @@ mod tests {
             .unwrap()
             .settlement();
         assert_eq!(settlement, landfall);
+    }
+
+    #[test]
+    fn test_a_district_is_projected_in_its_tiles_flags() {
+        let (mut session, first, landfall) = districts_session(100);
+        let index = session.world().tile_index(at(2, 0)).unwrap() as usize;
+        let both = tile_flags::DISTRICT | tile_flags::DISTRICT_WORKS;
+        let flags = |session: &GameSession| session.snapshot(first).tile_flags[index] & both;
+        assert_eq!(flags(&session), 0);
+        let version = session.version();
+
+        lay_out(&mut session, landfall, 2, 0).unwrap();
+        assert_eq!(flags(&session), both, "being laid out");
+        let Projection::Delta(delta) = session.project(first, version) else {
+            panic!("a district must not cost a full snapshot");
+        };
+        let position = delta
+            .tile_indices
+            .iter()
+            .position(|&tile| tile as usize == index)
+            .expect("its tile is in the delta");
+        assert_eq!(delta.tile_flags[position] & both, both);
+
+        resolve_turn(&mut session);
+        resolve_turn(&mut session);
+        assert_eq!(flags(&session), tile_flags::DISTRICT, "laid out");
     }
 
     #[test]

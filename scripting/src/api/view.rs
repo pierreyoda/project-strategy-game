@@ -14,6 +14,7 @@ use project_x_core::{
     },
     simulation::{
         buildings::BuildingLevel,
+        districts::DistrictTerms,
         fog::TileVisibility,
         ids::{BuildingId, DepositId, EntityIndex, NationId, SettlementId, SimulationID, UnitId},
         movement::Reachable,
@@ -111,6 +112,16 @@ struct OwnSettlement {
     id: SettlementId,
     tile: CubeCoords,
     name: ImmutableString,
+    districts: Vec<OwnDistrict>,
+    /// What its next district costs and takes; `None` when it cannot have one.
+    district_terms: Option<DistrictTerms>,
+}
+
+#[derive(Debug)]
+struct OwnDistrict {
+    tile: CubeCoords,
+    /// Turns left, and in all, while it is being laid out.
+    works: Option<(u16, u16)>,
 }
 
 #[derive(Debug)]
@@ -148,12 +159,25 @@ impl ScriptView {
             .filter(|unit| unit.movement_left > 0)
             .filter_map(|unit| Some((unit.id, view.reachable(unit.id)?)))
             .collect();
+        // its districts' terms are worked out by the scenario's script here, before the AI's runs:
+        // the engine runs one script at a time
         let settlements = view
             .own_settlements()
             .map(|(id, settlement)| OwnSettlement {
                 id,
                 tile: settlement.position(),
                 name: settlement.name().into(),
+                districts: view
+                    .districts_of(id)
+                    .into_iter()
+                    .map(|(tile, district)| OwnDistrict {
+                        tile,
+                        works: district
+                            .works()
+                            .map(|works| (works.turns_left(), works.turns_total())),
+                    })
+                    .collect(),
+                district_terms: view.district_terms(id).and_then(Result::ok),
             })
             .collect();
         let foreign_units = view
@@ -456,17 +480,19 @@ impl OwnBuilding {
         building.insert("template".into(), self.template.clone().into());
         building.insert("level".into(), INT::from(self.level).into());
         building.insert("halted".into(), self.halted.into());
-        let works = self
-            .works
-            .map_or(Dynamic::UNIT, |(turns_left, turns_total)| {
-                let mut works = Map::new();
-                works.insert("turns_left".into(), INT::from(turns_left).into());
-                works.insert("turns_total".into(), INT::from(turns_total).into());
-                Dynamic::from_map(works)
-            });
-        building.insert("works".into(), works);
+        building.insert("works".into(), works(self.works));
         Dynamic::from_map(building)
     }
+}
+
+/// Works under way, as scripts read them: `#{turns_left: 2, turns_total: 3}`, or `()` for none.
+fn works(works: Option<(u16, u16)>) -> Dynamic {
+    works.map_or(Dynamic::UNIT, |(turns_left, turns_total)| {
+        let mut works = Map::new();
+        works.insert("turns_left".into(), INT::from(turns_left).into());
+        works.insert("turns_total".into(), INT::from(turns_total).into());
+        Dynamic::from_map(works)
+    })
 }
 
 impl TemplateData {
@@ -524,6 +550,24 @@ impl OwnSettlement {
         settlement.insert("id".into(), id(self.id).into());
         settlement.insert("tile".into(), tile(self.tile));
         settlement.insert("name".into(), self.name.clone().into());
+        let districts: Array = self
+            .districts
+            .iter()
+            .map(|district| {
+                let mut entry = Map::new();
+                entry.insert("tile".into(), tile(district.tile));
+                entry.insert("works".into(), works(district.works));
+                Dynamic::from_map(entry)
+            })
+            .collect();
+        settlement.insert("districts".into(), Dynamic::from_array(districts));
+        let terms = self.district_terms.as_ref().map_or(Dynamic::UNIT, |terms| {
+            let mut figures = Map::new();
+            figures.insert("cost".into(), amounts(&terms.cost));
+            figures.insert("turns".into(), INT::from(terms.turns).into());
+            Dynamic::from_map(figures)
+        });
+        settlement.insert("district_terms".into(), terms);
         Dynamic::from_map(settlement)
     }
 }

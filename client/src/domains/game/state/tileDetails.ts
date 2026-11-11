@@ -59,6 +59,8 @@ export type TileDetails = {
   supplyNode: boolean;
   infrastructure: boolean;
   hasDeposit: boolean;
+  /** The building slot a settlement laid out on the tile, if any: see `slotOf`. */
+  district: { underWay: boolean } | null;
   building: TileBuilding | null;
   movementCost?: number;
   /** As a share: 0.25 is +25%. */
@@ -156,6 +158,7 @@ export const tileDetailsOf = (world: WorldState, index: number): TileDetails => 
     supplyNode: (flags & TileFlags.SupplyNode) !== 0,
     infrastructure: (flags & TileFlags.Infrastructure) !== 0,
     hasDeposit: (flags & TileFlags.Deposit) !== 0,
+    district: (flags & TileFlags.District) !== 0 ? { underWay: (flags & TileFlags.DistrictWorks) !== 0 } : null,
     deposit:
       deposit && deposit.resource
         ? {
@@ -187,8 +190,9 @@ export const tileDetailsOf = (world: WorldState, index: number): TileDetails => 
  * The state of a tile's building slot, for the panels to draw.
  *
  * Presentation only: the simulation judges every order. What is here mirrors its rules - a nation
- * builds on its own land, never on water, one building to a tile - so that the panel only offers
- * what an order would be accepted for.
+ * builds on its own land, never on water, one building to a tile; an extractor on its deposit, and
+ * anything else on a district laid out - so that the panel only offers what an order would be
+ * accepted for.
  */
 export const slotOf = (details: TileDetails, viewer: number): SlotView => {
   if (details.terrain === null) {
@@ -212,6 +216,15 @@ export const slotOf = (details: TileDetails, viewer: number): SlotView => {
   if (!details.owner) {
     return { state: "none", reason: "Only the nation's own land can be built on." };
   }
+  if (details.district?.underWay) {
+    return { state: "none", reason: "A district is being laid out here: it takes a building once it is done." };
+  }
+  if (!details.district && !((details.deposit?.level ?? 0) > 0)) {
+    return {
+      state: "none",
+      reason: "No district is laid out here: without one, only an extractor on its deposit can be built.",
+    };
+  }
   return { state: "free" };
 };
 
@@ -226,8 +239,9 @@ export const slotFiguresOf = (world: WorldState, details: TileDetails, slot: Slo
   const templates = world.meta.buildingTemplates;
   if (slot.state === "free") {
     const deposit = details.deposit;
+    // anything but an extractor needs the district
     const takes = (resource: Resource | null) =>
-      resource === null || (deposit?.resource === resource && (deposit.level ?? 0) > 0);
+      resource === null ? details.district !== null : deposit?.resource === resource && (deposit.level ?? 0) > 0;
     return {
       options: templates
         .filter(({ deposit }) => takes(deposit))

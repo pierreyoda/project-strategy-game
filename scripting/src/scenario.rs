@@ -4,18 +4,23 @@
 //! for each slot it placed, who lives there and what they start with. The world is written by the
 //! caller, never by the script - through `WorldMut`, like everything else.
 
-use std::{collections::BTreeSet, rc::Rc};
+use std::{collections::BTreeSet, fmt, rc::Rc};
 
 use rhai::{AST, Array, CallFnOptions, Dynamic, EvalAltResult, INT, Map, Scope};
 
 use project_x_core::simulation::{
-    buildings::BuildingTemplate, ids::SimulationID, military::UnitTemplate, nations::Nation,
+    buildings::BuildingTemplate,
+    districts::{DistrictRules, DistrictSite, DistrictTerms},
+    ids::SimulationID,
+    military::UnitTemplate,
+    nations::Nation,
     resources::ResourceDataStore,
+    settlements::SettlementStage,
 };
 
 use crate::{
     api::{Definitions, Fields, ScenarioHandle, UnitDefinition},
-    engine::{Hook, NATION, Runtime, STARTING_UNITS, ScriptError},
+    engine::{DISTRICT, Hook, NATION, Runtime, STARTING_UNITS, ScriptError, declares},
 };
 
 /// What one nation starts as, as the scenario decided it for its slot.
@@ -33,7 +38,8 @@ pub struct NationSetup {
 pub struct Scenario {
     runtime: Rc<Runtime>,
     script: String,
-    ast: AST,
+    /// Shared with the rules it hands the game, which call its hooks long after the setup.
+    ast: Rc<AST>,
     definitions: Definitions,
 }
 
@@ -56,7 +62,7 @@ impl Scenario {
             definitions: handle.take(),
             runtime,
             script,
-            ast,
+            ast: Rc::new(ast),
         })
     }
 
@@ -69,6 +75,16 @@ impl Scenario {
             .buildings
             .iter()
             .map(|building| building.template())
+    }
+
+    /// What its districts cost, through its `fn district(settlement)`: none if it declares none,
+    /// and then the game has no districts.
+    pub fn district_rules(&self) -> Option<ScriptedDistrictRules> {
+        declares(&self.ast, &DISTRICT).then(|| ScriptedDistrictRules {
+            runtime: Rc::clone(&self.runtime),
+            script: self.script.clone(),
+            ast: Rc::clone(&self.ast),
+        })
     }
 
     /// Who lives in `slot` - counted from 0, the local player's first - and what they start with.
@@ -167,5 +183,106 @@ impl Scenario {
                     hook.signature
                 ),
             })
+    }
+}
+
+/// What a district costs, as a scenario's `fn district(settlement)` says: the `DistrictRules` a
+/// game is set up with.
+///
+/// The hook is handed `#{ districts, stage, capital, population }` - `stage` is what the
+/// settlement's people amount to, "outpost" to "city"; `capital` whether its nation rules from it -
+/// and returns `#{ cost, turns }`, or `throw`s why the settlement cannot have one, which is the
+/// reason the order is refused with.
+pub struct ScriptedDistrictRules {
+    runtime: Rc<Runtime>,
+    script: String,
+    ast: Rc<AST>,
+}
+
+impl fmt::Debug for ScriptedDistrictRules {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // the engine and the script's AST have nothing worth printing
+        f.debug_struct("ScriptedDistrictRules")
+            .field("script", &self.script)
+            .finish_non_exhaustive()
+    }
+}
+
+impl DistrictRules for ScriptedDistrictRules {
+    fn terms(&self, site: &DistrictSite) -> Result<DistrictTerms, String> {
+        let mut settlement = Map::new();
+        settlement.insert("districts".into(), INT::from(site.districts).into());
+        settlement.insert("stage".into(), stage_name(site.stage).into());
+        settlement.insert("capital".into(), site.capital.into());
+        settlement.insert("population".into(), INT::from(site.population).into());
+        let result = self.runtime.engine.call_fn_with_options::<Dynamic>(
+            CallFnOptions::new().eval_ast(false),
+            &mut Scope::new(),
+            &self.ast,
+            DISTRICT.name,
+            (settlement,),
+        );
+        // a rule has no turn log of its own to print to
+        self.runtime.take_printed();
+        let returned = result.map_err(|error| self.refusal(&error))?;
+        self.read(returned)
+    }
+}
+
+impl ScriptedDistrictRules {
+    /// Why the hook stopped: the reason it threw, when it refused on purpose; what went wrong, when
+    /// it failed.
+    fn refusal(&self, error: &EvalAltResult) -> String {
+        thrown(error).unwrap_or_else(|| self.runtime.describe(&self.script, error).to_string())
+    }
+
+    /// The terms the hook returned, checked, so that `core`'s asserts never fire.
+    fn read(&self, returned: Dynamic) -> Result<DistrictTerms, String> {
+        let failed = |message: String| {
+            ScriptError::Runtime {
+                script: self.script.clone(),
+                message,
+            }
+            .to_string()
+        };
+        let type_name = returned.type_name();
+        let terms = returned.try_cast::<Map>().ok_or_else(|| {
+            failed(format!(
+                "`fn {}` must return a map, not {type_name}",
+                DISTRICT.signature
+            ))
+        })?;
+        let checked = || -> Result<DistrictTerms, Box<EvalAltResult>> {
+            let fields = Fields::new("a district's terms", &terms, &["cost", "turns"])?;
+            Ok(DistrictTerms {
+                cost: fields.quantities("cost")?,
+                turns: fields.number("turns")?,
+            })
+        };
+        checked().map_err(|error| failed(thrown(&error).unwrap_or_else(|| error.to_string())))
+    }
+}
+
+/// What an error was thrown with - by the script's `throw`, or by a check of ours - through
+/// however many of its functions it went up; `None` for an error the engine raised.
+fn thrown(error: &EvalAltResult) -> Option<String> {
+    let mut cause = error;
+    while let EvalAltResult::ErrorInFunctionCall(_, _, inner, _) = cause {
+        cause = inner;
+    }
+    match cause {
+        EvalAltResult::ErrorRuntime(reason, _) => Some(reason.to_string()),
+        _ => None,
+    }
+}
+
+/// A settlement's stage by the name the district hook knows it by.
+fn stage_name(stage: SettlementStage) -> &'static str {
+    match stage {
+        SettlementStage::Outpost => "outpost",
+        SettlementStage::Colony => "colony",
+        SettlementStage::Town => "town",
+        SettlementStage::City => "city",
+        SettlementStage::Capital => "capital",
     }
 }

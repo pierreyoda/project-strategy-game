@@ -10,7 +10,7 @@ use rhai::{Array, Engine, INT, ImmutableString, Map};
 
 use project_x_core::{
     game::commands::GameCommand,
-    simulation::ids::{BuildingId, SimulationID, UnitId},
+    simulation::ids::{BuildingId, SettlementId, SimulationID, UnitId},
 };
 
 use super::{ScriptResult, coords, entity_id};
@@ -82,6 +82,17 @@ pub fn register(engine: &mut Engine) {
             |orders: &mut Orders, building: INT| -> ScriptResult<()> {
                 orders.push(GameCommand::UpgradeBuilding {
                     building: entity_id::<BuildingId>(building, "building")?,
+                });
+                Ok(())
+            },
+        )
+        .register_fn(
+            "lay_out_district",
+            // on a free tile of the nation's land next to the settlement
+            |orders: &mut Orders, settlement: INT, tile: Map| -> ScriptResult<()> {
+                orders.push(GameCommand::LayOutDistrict {
+                    settlement: entity_id::<SettlementId>(settlement, "settlement")?,
+                    tile: coords::from_map(&tile)?,
                 });
                 Ok(())
             },

@@ -50,7 +50,8 @@ export type MapEntity = {
   /** Row-major tile index. */
   tile: number;
   sprite: EntitySprite;
-  token: EntityToken;
+  /** `null` for an entity with nothing to say zoomed out, which is drawn up close only. */
+  token: EntityToken | null;
   /** Color of the sprite's mark and of the token, in the owner's colors. */
   tint: number;
   /** Steps of strength to draw at the foot of a unit's counter. Left out by anything that is not a unit. */
@@ -156,6 +157,12 @@ export const buildingDrawing = (
   const step = Math.min(Math.max(Math.trunc(level), 1), BUILDING_TOKEN_SIDES.length) - 1;
   return { sprite: buildingSprite(sprite), token: { side: BUILDING_TOKEN_SIDES[step] } };
 };
+
+/**
+ * An empty district: a survey plot, with no token. Zoomed out, ground marked for a building is not
+ * worth a shape of its own; the building that stands on it later is.
+ */
+export const DISTRICT_SPRITE: EntitySprite = buildingSprite("district_empty");
 
 /**
  * The units the `units` entity set has counters for, by the type their template names them with

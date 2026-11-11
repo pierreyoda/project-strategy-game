@@ -2,8 +2,10 @@
 
 use project_x_core::simulation::{
     buildings::BuildingTemplate,
-    ids::{SimulationID, WithSimulationID},
+    districts::{DistrictRules, DistrictSite, DistrictTerms},
+    ids::{EntityIndex, SettlementId, SimulationID, WithSimulationID},
     resources::{Resource, ResourceDataStore},
+    settlements::SettlementStage,
     strength::Recovery,
 };
 use project_x_scripting::{ScriptEngine, ScriptError, ScriptKind, ScriptLimits, ScriptSource};
@@ -245,6 +247,101 @@ fn test_what_a_scenario_leaves_out_takes_a_default() {
     // an income with no stockpile still flows, into an empty one
     assert_eq!(setup.nation.resources()[&Resource::Food].quantity(), 0);
     assert_eq!(setup.nation.resources()[&Resource::Food].income(), Some(3));
+}
+
+/// A settlement with `districts` of them, as the district rules are handed it.
+fn site(districts: u8) -> DistrictSite {
+    DistrictSite {
+        settlement: SettlementId::from_index(0),
+        stage: SettlementStage::Town,
+        capital: true,
+        districts,
+        population: 6_000,
+    }
+}
+
+/// What a scenario's `fn district(settlement)` answers for `site`.
+fn district_terms(source: &str, site: &DistrictSite) -> Result<DistrictTerms, String> {
+    load(source)
+        .expect("the scenario loads")
+        .scenario()
+        .unwrap()
+        .district_rules()
+        .expect("it declares the hook")
+        .terms(site)
+}
+
+#[test]
+fn test_the_default_scenario_prices_districts_by_how_many_a_settlement_has() {
+    let terms = |districts| district_terms(DEFAULT_SCENARIO, &site(districts)).unwrap();
+    assert_eq!(
+        terms(0),
+        DistrictTerms {
+            cost: [(Resource::Credits, 100), (Resource::Metals, 40)].into(),
+            turns: 2,
+        }
+    );
+    assert_eq!(
+        terms(3),
+        DistrictTerms {
+            cost: [(Resource::Credits, 250), (Resource::Metals, 100)].into(),
+            turns: 3,
+        }
+    );
+}
+
+#[test]
+fn test_a_scenario_without_a_district_hook_has_no_districts() {
+    let engine = load(HOOKS).unwrap();
+    assert!(engine.scenario().unwrap().district_rules().is_none());
+}
+
+#[test]
+fn test_a_district_hook_is_handed_the_settlement_and_refuses_by_throwing() {
+    let hook = format!(
+        "{HOOKS}
+        fn district(settlement) {{
+            if settlement.districts >= 2 {{
+                throw `${{settlement.stage}} {{capital: ${{settlement.capital}}}} of ${{settlement.population}} has enough`;
+            }}
+            #{{ cost: #{{ credits: 10 }}, turns: 1 }}
+        }}"
+    );
+    assert_eq!(
+        district_terms(&hook, &site(1)),
+        Ok(DistrictTerms {
+            cost: [(Resource::Credits, 10)].into(),
+            turns: 1,
+        })
+    );
+    assert_eq!(
+        district_terms(&hook, &site(2)),
+        Err("town {capital: true} of 6000 has enough".to_string())
+    );
+}
+
+#[test]
+fn test_a_district_hook_answering_wrong_fails_with_why() {
+    for (body, expected) in [
+        ("3", "`fn district(settlement)` must return a map, not i64"),
+        (
+            "#{ cost: #{}, turns: 1, speed: 2 }",
+            "a district's terms has no `speed`",
+        ),
+        (
+            "#{ cost: #{ grain: 1 }, turns: 1 }",
+            "a district's terms's `cost` names `grain`, which is no resource",
+        ),
+        (
+            "#{ cost: #{}, turns: 70000 }",
+            "a district's terms's `turns` is out of range: 70000",
+        ),
+        ("settlement.nothing.at_all", "script `under_test` failed"),
+    ] {
+        let hook = format!("{HOOKS} fn district(settlement) {{ {body} }}");
+        let message = district_terms(&hook, &site(0)).unwrap_err();
+        assert!(message.contains(expected), "{body}: {message}");
+    }
 }
 
 #[test]

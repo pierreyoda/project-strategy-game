@@ -1,4 +1,5 @@
 import {
+  DISTRICT_SPRITE,
   type MapEntity,
   SETTLEMENT_SPRITES,
   SETTLEMENT_TOKENS,
@@ -43,14 +44,14 @@ const FAKE_LEVELS = 3;
 
 /**
  * Scatter settlements of every stage over the habitable tiles of a map, `density` of them taking one,
- * as many buildings of every type and level on their own tiles, and half as many units, at every
- * strength, some of them spent.
+ * as many buildings of every type and level on their own tiles, half as many units, at every
+ * strength, some of them spent, and half as many empty districts, some still being laid out.
  */
 export const createFakeEntities = (map: HexMapData, density = 0.05): MapEntity[] => {
   const entities: MapEntity[] = [];
   for (let tile = 0; tile < map.rows * map.columns; tile++) {
     const roll = entityRandom(tile, 1);
-    if (!SETTLEABLE.includes(map.terrain[tile]) || roll >= 2.5 * density) {
+    if (!SETTLEABLE.includes(map.terrain[tile]) || roll >= 3 * density) {
       continue;
     }
     const tint = FAKE_TINTS[Math.floor(entityRandom(tile, 3) * FAKE_TINTS.length)];
@@ -61,6 +62,15 @@ export const createFakeEntities = (map: HexMapData, density = 0.05): MapEntity[]
       const type = FAKE_BUILDINGS[Math.floor(entityRandom(tile, 4) * FAKE_BUILDINGS.length)];
       const level = 1 + Math.floor(entityRandom(tile, 5) * FAKE_LEVELS);
       entities.push({ id: tile, tile, ...buildingDrawing(`${type}_${level}`, level)!, tint });
+    } else if (roll >= 2.5 * density) {
+      entities.push({
+        id: tile,
+        tile,
+        sprite: DISTRICT_SPRITE,
+        token: null,
+        tint,
+        ghost: entityRandom(tile, 11) < 0.3,
+      });
     } else {
       const type = UNIT_TYPES[Math.floor(entityRandom(tile, 6) * UNIT_TYPES.length)];
       // 3 or 4 companies, some of them suppressed or lost

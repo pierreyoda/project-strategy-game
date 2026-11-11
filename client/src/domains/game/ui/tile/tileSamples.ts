@@ -22,6 +22,7 @@ export const HILLS: TileDetails = {
   supplyNode: true,
   infrastructure: true,
   hasDeposit: true,
+  district: null,
   building: {
     id: 0,
     template: "mine",
@@ -54,6 +55,7 @@ export const SPARSE: TileDetails = {
   supplyNode: false,
   infrastructure: false,
   hasDeposit: false,
+  district: null,
   building: null,
 };
 

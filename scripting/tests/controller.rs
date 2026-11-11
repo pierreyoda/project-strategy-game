@@ -403,6 +403,10 @@ fn test_numbers_a_script_makes_up_are_errors_not_panics() {
         ),
         ("orders.upgrade_building(-4)", "-4 is not a building ID"),
         (
+            "orders.lay_out_district(-2, #{ q: 0, r: 0 })",
+            "-2 is not a settlement ID",
+        ),
+        (
             "orders.construct_building(\"farm\", #{ q: 1 })",
             "coordinates need an integer `r`",
         ),

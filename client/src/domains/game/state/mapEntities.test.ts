@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { TerrainKind } from "../../map/terrain";
 import { Vegetation } from "../../map/vegetation";
+import { nationColor } from "../nations";
 import {
   type BuildingLevelMeta,
   BuildingState,
   type ProjectionMeta,
+  TileFlags,
   UNKNOWN_BUILDING_KIND,
   type WorldSnapshotData,
 } from "../session/protocol";
@@ -124,6 +126,34 @@ describe("buildings on the map", () => {
     expect(constructionsOf(world())).toStrictEqual([
       { id: 0, tile: 0, turnsLeft: 2, turnsTotal: 3 },
       { id: 1, tile: 1, turnsLeft: 1, turnsTotal: 4 },
+    ]);
+  });
+});
+
+describe("districts on the map", () => {
+  it("are drawn where no building stands yet, faded while laid out, in their owner's colours", () => {
+    const { District, DistrictWorks, Building } = TileFlags;
+    const state = applyProjection(null, {
+      kind: "full",
+      snapshot: {
+        ...snapshot(),
+        tileOwner: new Uint16Array([0, 1, 0, 0, 0xffff]),
+        tileFlags: new Uint8Array([District, District | DistrictWorks, District | Building, 0, 0]),
+        buildings: buildings(),
+      },
+    }).state;
+
+    const drawn = mapEntitiesOf(state).map(({ tile, sprite, token, tint, ghost }) => ({
+      tile,
+      base: sprite.base,
+      token,
+      tint,
+      ghost,
+    }));
+    expect(drawn).toStrictEqual([
+      { tile: 0, base: "district_empty.png", token: null, tint: nationColor(0), ghost: false },
+      { tile: 1, base: "district_empty.png", token: null, tint: nationColor(1), ghost: true },
+      // and the building on the third draws its own ground works
     ]);
   });
 });

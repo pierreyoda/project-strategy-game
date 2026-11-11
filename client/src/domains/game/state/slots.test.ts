@@ -52,7 +52,13 @@ type Tile = {
   deposit?: [(typeof RESOURCES)[number], number];
   /** `[kind, level, state, turnsLeft, turnsTotal]` of the building on it. */
   building?: [number, number, number, number, number];
+  district?: "laid out" | "under way";
 };
+
+const flagsOf = ({ deposit, district }: Tile) =>
+  (deposit ? TileFlags.Deposit : 0) |
+  (district ? TileFlags.District : 0) |
+  (district === "under way" ? TileFlags.DistrictWorks : 0);
 
 /** A one-row world of the given tiles, every one of them in sight. */
 const world = (...tiles: Tile[]) => {
@@ -69,7 +75,7 @@ const world = (...tiles: Tile[]) => {
     visibility: new Uint8Array(columns).fill(2),
     tileOwner: new Uint16Array(tiles.map(({ owner = NOBODY }) => owner)),
     tileSphere: new Uint16Array(columns).fill(NOBODY),
-    tileFlags: new Uint8Array(tiles.map(({ deposit }) => (deposit ? TileFlags.Deposit : 0))),
+    tileFlags: new Uint8Array(tiles.map(flagsOf)),
     units: {
       ids: new Uint32Array(),
       tiles: new Uint32Array(),
@@ -123,13 +129,29 @@ const { UnderConstruction, Upgrading, Halted } = BuildingState;
 
 describe("a tile's building slot", () => {
   it("is free on the viewer's own land only, as the simulation rules", () => {
-    expect(slotOfOnly({ owner: VIEWER }).slot).toStrictEqual({ state: "free" });
-    expect(slotOfOnly({}).slot).toStrictEqual({ state: "none", reason: "Only the nation's own land can be built on." });
+    expect(slotOfOnly({ owner: VIEWER, district: "laid out" }).slot).toStrictEqual({ state: "free" });
+    expect(slotOfOnly({ district: "laid out" }).slot).toStrictEqual({
+      state: "none",
+      reason: "Only the nation's own land can be built on.",
+    });
     expect(slotOfOnly({ owner: VIEWER, terrain: TerrainKind.ShallowWater }).slot).toStrictEqual({
       state: "none",
       reason: "Nothing can be built on water.",
     });
     expect(slotOfOnly({ owner: RIVAL }).slot.state).toBe("foreign");
+  });
+
+  it("takes a district laid out, or a deposit for an extractor", () => {
+    expect(slotOfOnly({ owner: VIEWER }).slot).toStrictEqual({
+      state: "none",
+      reason: "No district is laid out here: without one, only an extractor on its deposit can be built.",
+    });
+    expect(slotOfOnly({ owner: VIEWER, deposit: ["metals", 2] }).slot).toStrictEqual({ state: "free" });
+    expect(slotOfOnly({ owner: VIEWER, deposit: ["metals", 0] }).slot.state, "run dry").toBe("none");
+    expect(slotOfOnly({ owner: VIEWER, district: "under way", deposit: ["metals", 2] }).slot).toStrictEqual({
+      state: "none",
+      reason: "A district is being laid out here: it takes a building once it is done.",
+    });
   });
 
   it("shows works under way from the building's state, built otherwise", () => {
@@ -145,19 +167,24 @@ describe("a tile's building slot", () => {
 
 describe("a free slot's options", () => {
   const options = (tile: Tile) => slotOfOnly({ owner: VIEWER, ...tile }).figures.options;
+  const templates = (tile: Tile) => options(tile)?.map(({ template }) => template);
 
   it("offer an extractor on a deposit of what it extracts, favoured, with its first level's cost", () => {
-    expect(options({ deposit: ["metals", 2] })).toStrictEqual([
+    expect(options({ deposit: ["metals", 2], district: "laid out" })).toStrictEqual([
       { template: "mine", type: "mine", sprite: "", cost: { credits: 200 }, turns: 3, favoured: "Deposit" },
       { template: "plant", type: "plant", sprite: "", cost: { metals: 50 }, turns: 2, favoured: undefined },
     ]);
   });
 
   it("leave an extractor out where there is nothing for it to extract", () => {
-    const templates = (tile: Tile) => options(tile)?.map(({ template }) => template);
-    expect(templates({})).toStrictEqual(["plant"]);
-    expect(templates({ deposit: ["oil", 3] })).toStrictEqual(["plant"]);
-    expect(templates({ deposit: ["metals", 0] }), "run dry").toStrictEqual(["plant"]);
+    expect(templates({ district: "laid out" })).toStrictEqual(["plant"]);
+    expect(templates({ deposit: ["oil", 3], district: "laid out" })).toStrictEqual(["plant"]);
+    expect(templates({ deposit: ["metals", 0], district: "laid out" }), "run dry").toStrictEqual(["plant"]);
+  });
+
+  it("leave out what extracts nothing where no district is laid out", () => {
+    expect(templates({ deposit: ["metals", 2] })).toStrictEqual(["mine"]);
+    expect(templates({ deposit: ["oil", 3] }), "nothing extracts oil").toStrictEqual([]);
   });
 });
 
